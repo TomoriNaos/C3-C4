@@ -28,7 +28,8 @@ endif()
 
 add_executable(depth_image_to_pointcloud2
         src/main.cpp
-        src/depth_image_to_pointcloud2_node.cpp)
+        src/depth_image_to_pointcloud2_node.cpp
+        include/depth_image_to_pointcloud2/depth_image_to_pointcloud2_node.hpp)
 ament_target_dependencies(depth_image_to_pointcloud2 rclcpp std_msgs)
 target_include_directories(depth_image_to_pointcloud2 PRIVATE
         include
