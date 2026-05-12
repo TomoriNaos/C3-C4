@@ -1,0 +1,4 @@
+[submodule "src/depth_image_to_pointcloud2"]
+	path = src/depth_image_to_pointcloud2
+	url = https://github.com/hakuroyo/C3-C4.git
+	branch = main
