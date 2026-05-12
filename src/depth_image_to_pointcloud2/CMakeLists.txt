@@ -8,8 +8,9 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core imgproc)
+find_package(sensor_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -28,9 +29,11 @@ endif()
 
 add_executable(depth_image_to_pointcloud2
         src/main.cpp
-        src/depth_image_to_pointcloud2_node.cpp
-        include/depth_image_to_pointcloud2/depth_image_to_pointcloud2_node.hpp)
-ament_target_dependencies(depth_image_to_pointcloud2 rclcpp std_msgs)
+        src/depth_image_to_pointcloud2_node.cpp)
+ament_target_dependencies(depth_image_to_pointcloud2
+        rclcpp
+        sensor_msgs
+        cv_bridge)
 target_include_directories(depth_image_to_pointcloud2 PRIVATE
         include
         ${OpenCV_INCLUDE_DIRS})
@@ -40,5 +43,10 @@ install(TARGETS
         depth_image_to_pointcloud2
         DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY
+        launch
+        rviz
+        worlds
+        DESTINATION share/${PROJECT_NAME})
 
 ament_package()
