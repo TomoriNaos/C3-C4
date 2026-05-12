@@ -1,23 +1,42 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 
 
 def generate_launch_description():
     package_share = FindPackageShare("depth_image_to_pointcloud2")
-    gazebo_share = FindPackageShare("gazebo_ros")
 
     world_file = PathJoinSubstitution([package_share, "worlds", "fog_depth_camera.world"])
     rviz_config = PathJoinSubstitution([package_share, "rviz", "pointcloud.rviz"])
 
-    gazebo = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution([gazebo_share, "launch", "gazebo.launch.py"])
-        ),
-        launch_arguments={"world": world_file}.items(),
+    gui_arg = DeclareLaunchArgument(
+        "gui",
+        default_value="true",
+        description="Set to false to skip gzclient.",
+    )
+
+    gazebo_server = ExecuteProcess(
+        cmd=[
+            "gzserver",
+            world_file,
+            "-s",
+            "libgazebo_ros_init.so",
+            "-s",
+            "libgazebo_ros_factory.so",
+            "-s",
+            "libgazebo_ros_force_system.so",
+        ],
+        output="screen",
+    )
+
+    gazebo_client = ExecuteProcess(
+        cmd=["gzclient"],
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("gui")),
     )
 
     rgbd_processor = Node(
@@ -53,4 +72,9 @@ def generate_launch_description():
         output="screen",
     )
 
-    return LaunchDescription([gazebo, rgbd_processor, rviz])
+    delayed_visualization = TimerAction(
+        period=5.0,
+        actions=[gazebo_client, rgbd_processor, rviz],
+    )
+
+    return LaunchDescription([gui_arg, gazebo_server, delayed_visualization])
