@@ -1,0 +1,1 @@
+/home/hu/usv_ws/build/usv_description/ament_cmake_core/usv_descriptionConfig-version.cmake

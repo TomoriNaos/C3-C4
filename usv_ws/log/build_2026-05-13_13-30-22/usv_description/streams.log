@@ -1,0 +1,24 @@
+[0.020s] Invoking command in '/home/hu/usv_ws/build/usv_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/hu/usv_ws/build/usv_description -- -j24 -l24
+[0.161s] Invoked command in '/home/hu/usv_ws/build/usv_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/hu/usv_ws/build/usv_description -- -j24 -l24
+[0.169s] Invoking command in '/home/hu/usv_ws/build/usv_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/hu/usv_ws/build/usv_description
+[0.173s] -- Install configuration: ""
+[0.173s] -- Execute custom install script
+[0.174s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/urdf/wamv.urdf
+[0.174s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/urdf/wamv_base.urdf.xacro
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/rviz/default.rviz
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/package_run_dependencies/usv_description
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/parent_prefix_path/usv_description
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/ament_prefix_path.sh
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/ament_prefix_path.dsv
+[0.175s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/path.sh
+[0.176s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/path.dsv
+[0.177s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.bash
+[0.178s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.sh
+[0.178s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.zsh
+[0.179s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.dsv
+[0.179s] -- Symlinking: /home/hu/usv_ws/install/usv_description/share/usv_description/package.dsv
+[0.184s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/packages/usv_description
+[0.184s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/cmake/usv_descriptionConfig.cmake
+[0.185s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/cmake/usv_descriptionConfig-version.cmake
+[0.185s] -- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/package.xml
+[0.186s] Invoked command in '/home/hu/usv_ws/build/usv_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/hu/usv_ws/build/usv_description

@@ -1,0 +1,20 @@
+-- Install configuration: ""
+-- Execute custom install script
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/urdf/wamv.urdf
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/urdf/wamv_base.urdf.xacro
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/rviz/default.rviz
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/package_run_dependencies/usv_description
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/parent_prefix_path/usv_description
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/ament_prefix_path.sh
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/ament_prefix_path.dsv
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/path.sh
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/environment/path.dsv
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.bash
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.sh
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.zsh
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/local_setup.dsv
+-- Symlinking: /home/hu/usv_ws/install/usv_description/share/usv_description/package.dsv
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/ament_index/resource_index/packages/usv_description
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/cmake/usv_descriptionConfig.cmake
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/cmake/usv_descriptionConfig-version.cmake
+-- Up-to-date symlink: /home/hu/usv_ws/install/usv_description/share/usv_description/package.xml
