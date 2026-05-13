@@ -1,9 +1,0 @@
-/home/hu/usv_ws/build/usv_description/CMakeFiles/uninstall.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/usv_description_uninstall.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/test.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/edit_cache.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/rebuild_cache.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/list_install_components.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/install.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/install/local.dir
-/home/hu/usv_ws/build/usv_description/CMakeFiles/install/strip.dir

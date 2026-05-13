@@ -1,1 +1,0 @@
-/home/hu/usv_ws/build/usv_bringup/ament_cmake_core/usv_bringupConfig.cmake

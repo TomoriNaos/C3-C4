@@ -1,4 +1,0 @@
-Invoking command in '/home/hu/usv_ws/build/usv_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/hu/usv_ws/build/usv_description -- -j24 -l24
-Invoked command in '/home/hu/usv_ws/build/usv_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/hu/usv_ws/build/usv_description -- -j24 -l24
-Invoking command in '/home/hu/usv_ws/build/usv_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/hu/usv_ws/build/usv_description
-Invoked command in '/home/hu/usv_ws/build/usv_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/hu/usv_ws/build/usv_description

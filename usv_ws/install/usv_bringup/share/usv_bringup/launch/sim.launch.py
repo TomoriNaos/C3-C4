@@ -1,1 +1,0 @@
-/home/hu/usv_ws/src/usv_bringup/launch/sim.launch.py
