@@ -1,0 +1,20 @@
+[0mCMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+
+[0m
+[01m[K/home/feiniao/c3/src/lidar_robot/src/lidar_depth_node.cpp:[m[K In member function ‘[01m[Kstd::vector<Cluster> LidarDepthNode::spilt_point(const std::vector<PointXYZ>&)[m[K’:
+[01m[K/home/feiniao/c3/src/lidar_robot/src/lidar_depth_node.cpp:154:44:[m[K [01;35m[Kwarning: [m[Kcomparison of integer expressions of different signedness: ‘[01m[Kstd::vector<PointXYZ>::size_type[m[K’ {aka ‘[01m[Klong unsigned int[m[K’} and ‘[01m[Kint[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wsign-compare-Wsign-compare]8;;[m[K]
+  154 |           if ([01;35m[Kcurrent_points_vector.size() >= min_cluster_size_[m[K)
+      |               [01;35m[K~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~[m[K
+[01m[K/home/feiniao/c3/src/lidar_robot/src/lidar_depth_node.cpp:175:38:[m[K [01;35m[Kwarning: [m[Kcomparison of integer expressions of different signedness: ‘[01m[Kstd::vector<PointXYZ>::size_type[m[K’ {aka ‘[01m[Klong unsigned int[m[K’} and ‘[01m[Kint[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wsign-compare-Wsign-compare]8;;[m[K]
+  175 |     if ([01;35m[Kcurrent_points_vector.size() >= min_cluster_size_[m[K)
+      |         [01;35m[K~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~[m[K
+[01m[K/home/feiniao/c3/src/lidar_robot/src/lidar_depth_node.cpp:[m[K In lambda function:
+[01m[K/home/feiniao/c3/src/lidar_robot/src/lidar_depth_node.cpp:194:34:[m[K [01;35m[Kwarning: [m[Kcomparison of integer expressions of different signedness: ‘[01m[Kstd::vector<PointXYZ>::size_type[m[K’ {aka ‘[01m[Klong unsigned int[m[K’} and ‘[01m[Kint[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wsign-compare-Wsign-compare]8;;[m[K]
+  194 |           return [01;35m[Kc.points.size() < min_cluster_size_[m[K;
+      |                  [01;35m[K~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~[m[K

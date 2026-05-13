@@ -1,0 +1,318 @@
+[0.000000] (-) TimerEvent: {}
+[0.001763] (lidar_robot) JobQueued: {'identifier': 'lidar_robot', 'dependencies': OrderedDict()}
+[0.001852] (lidar_robot) JobStarted: {'identifier': 'lidar_robot'}
+[0.021377] (lidar_robot) JobProgress: {'identifier': 'lidar_robot', 'progress': 'cmake'}
+[0.023311] (lidar_robot) Command: {'cmd': ['/usr/bin/cmake', '/home/feiniao/c3/src/lidar_robot', '-DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot'], 'cwd': '/home/feiniao/c3/build/lidar_robot', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'), ('USER', 'feiniao'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/home/feiniao/github_download/mujoco/bin:/home/feiniao/github_download/mujoco/bin'), ('HOME', '/home/feiniao'), ('OLDPWD', '/home/feiniao'), ('ROS_PYTHON_VERSION', '3'), ('FISHROS_URL', 'http://mirror.fishros.com/install/'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('WSL_DISTRO_NAME', 'Ubuntu-22.04'), ('WAYLAND_DISPLAY', 'wayland-0'), ('ROS_DISTRO', 'humble'), ('GTK_IM_MODULE', 'fcitx5'), ('LOGNAME', 'feiniao'), ('NAME', 'localhost'), ('WSL_INTEROP', '/run/WSL/9777_interop'), ('PULSE_SERVER', 'unix:/mnt/wslg/PulseServer'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('TERM', 'xterm-256color'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/home/feiniao/.local/bin:/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA app/NvDLISR:/mnt/c/Program Files/dotnet/:/mnt/d/QT/5.14.2/mingw73_64/bin:/mnt/d/QT/Tools/mingw730_64/bin:/mnt/c/Program Files/usbipd-win/:/mnt/d/github_download/node.js/:/mnt/d/github_download/git/Git/cmd:/mnt/c/Users/18449/AppData/Local/Microsoft/WindowsApps:/mnt/d/vscode/Microsoft VS Code/bin:/mnt/c/Users/18449/AppData/Roaming/npm:/mnt/c/Users/18449/AppData/Roaming/npm:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000/'), ('MUJOCO_PY_MUJOCO_PATH', '/home/feiniao/github_download/mujoco'), ('DISPLAY', ':0'), ('MUJOCO_GL', 'egl'), ('LANG', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=fcitx5'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('ANDROID_SDK_ROOT', '/home/feiniao/Android/Sdk'), ('QT_IM_MODULE', 'fcitx5'), ('PWD', '/home/feiniao/c3/build/lidar_robot'), ('CUDA_HOME', '/usr/local/cuda-12.8'), ('ANDROID_HOME', '/home/feiniao/Android/Sdk'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('WSL2_GUI_APPS_ENABLED', '1'), ('HOSTTYPE', 'x86_64'), ('WSLENV', ''), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[0.098517] (lidar_robot) StderrLine: {'line': b'\x1b[0mCMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):\n'}
+[0.098806] (lidar_robot) StderrLine: {'line': b'  Compatibility with CMake < 3.10 will be removed from a future version of\n'}
+[0.098895] (lidar_robot) StderrLine: {'line': b'  CMake.\n'}
+[0.098966] (lidar_robot) StderrLine: {'line': b'\n'}
+[0.099030] (lidar_robot) StderrLine: {'line': b'  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax\n'}
+[0.099092] (lidar_robot) StderrLine: {'line': b'  to tell CMake that the project requires at least <min> but has been updated\n'}
+[0.099155] (lidar_robot) StderrLine: {'line': b'  to work with policies introduced by <max> or earlier.\n'}
+[0.099214] (lidar_robot) StderrLine: {'line': b'\n'}
+[0.099272] (lidar_robot) StderrLine: {'line': b'\x1b[0m\n'}
+[0.099565] (-) TimerEvent: {}
+[0.129116] (lidar_robot) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[0.200909] (-) TimerEvent: {}
+[0.303340] (-) TimerEvent: {}
+[0.405269] (-) TimerEvent: {}
+[0.505791] (-) TimerEvent: {}
+[0.508774] (lidar_robot) StdoutLine: {'line': b'-- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)\n'}
+[0.606066] (-) TimerEvent: {}
+[0.706599] (-) TimerEvent: {}
+[0.809110] (-) TimerEvent: {}
+[0.911068] (-) TimerEvent: {}
+[0.913758] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)\n'}
+[0.922904] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)\n'}
+[0.942037] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)\n'}
+[0.969463] (lidar_robot) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[1.003376] (lidar_robot) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[1.011347] (-) TimerEvent: {}
+[1.102837] (lidar_robot) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)\n'}
+[1.109251] (lidar_robot) StdoutLine: {'line': b'-- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)\n'}
+[1.111537] (-) TimerEvent: {}
+[1.213933] (-) TimerEvent: {}
+[1.316402] (-) TimerEvent: {}
+[1.418437] (-) TimerEvent: {}
+[1.520922] (-) TimerEvent: {}
+[1.622062] (-) TimerEvent: {}
+[1.724531] (-) TimerEvent: {}
+[1.825086] (-) TimerEvent: {}
+[1.927101] (-) TimerEvent: {}
+[2.027942] (-) TimerEvent: {}
+[2.128524] (-) TimerEvent: {}
+[2.231006] (-) TimerEvent: {}
+[2.333428] (-) TimerEvent: {}
+[2.435890] (-) TimerEvent: {}
+[2.538356] (-) TimerEvent: {}
+[2.640825] (-) TimerEvent: {}
+[2.743297] (-) TimerEvent: {}
+[2.845958] (-) TimerEvent: {}
+[2.948428] (-) TimerEvent: {}
+[3.050886] (-) TimerEvent: {}
+[3.151654] (-) TimerEvent: {}
+[3.252323] (-) TimerEvent: {}
+[3.354804] (-) TimerEvent: {}
+[3.457312] (-) TimerEvent: {}
+[3.559825] (-) TimerEvent: {}
+[3.662294] (-) TimerEvent: {}
+[3.764768] (-) TimerEvent: {}
+[3.866545] (-) TimerEvent: {}
+[3.969035] (-) TimerEvent: {}
+[4.070460] (-) TimerEvent: {}
+[4.171167] (-) TimerEvent: {}
+[4.272625] (-) TimerEvent: {}
+[4.374990] (-) TimerEvent: {}
+[4.477455] (-) TimerEvent: {}
+[4.579920] (-) TimerEvent: {}
+[4.682374] (-) TimerEvent: {}
+[4.784853] (-) TimerEvent: {}
+[4.887325] (-) TimerEvent: {}
+[4.990061] (-) TimerEvent: {}
+[5.092647] (-) TimerEvent: {}
+[5.193746] (-) TimerEvent: {}
+[5.295289] (-) TimerEvent: {}
+[5.397920] (-) TimerEvent: {}
+[5.500502] (-) TimerEvent: {}
+[5.602973] (-) TimerEvent: {}
+[5.705440] (-) TimerEvent: {}
+[5.806638] (-) TimerEvent: {}
+[5.908802] (-) TimerEvent: {}
+[6.011261] (-) TimerEvent: {}
+[6.113721] (-) TimerEvent: {}
+[6.214235] (-) TimerEvent: {}
+[6.316706] (-) TimerEvent: {}
+[6.419225] (-) TimerEvent: {}
+[6.521714] (-) TimerEvent: {}
+[6.624258] (-) TimerEvent: {}
+[6.724792] (-) TimerEvent: {}
+[6.827229] (-) TimerEvent: {}
+[6.929710] (-) TimerEvent: {}
+[7.032251] (-) TimerEvent: {}
+[7.134719] (-) TimerEvent: {}
+[7.237168] (-) TimerEvent: {}
+[7.339644] (-) TimerEvent: {}
+[7.442109] (-) TimerEvent: {}
+[7.544661] (-) TimerEvent: {}
+[7.647137] (-) TimerEvent: {}
+[7.749626] (-) TimerEvent: {}
+[7.852192] (-) TimerEvent: {}
+[7.952740] (-) TimerEvent: {}
+[8.054772] (-) TimerEvent: {}
+[8.155714] (-) TimerEvent: {}
+[8.257789] (-) TimerEvent: {}
+[8.360027] (-) TimerEvent: {}
+[8.462171] (-) TimerEvent: {}
+[8.564305] (-) TimerEvent: {}
+[8.666485] (-) TimerEvent: {}
+[8.768684] (-) TimerEvent: {}
+[8.870838] (-) TimerEvent: {}
+[8.972982] (-) TimerEvent: {}
+[9.075124] (-) TimerEvent: {}
+[9.177264] (-) TimerEvent: {}
+[9.279351] (-) TimerEvent: {}
+[9.380804] (-) TimerEvent: {}
+[9.482977] (-) TimerEvent: {}
+[9.585128] (-) TimerEvent: {}
+[9.687262] (-) TimerEvent: {}
+[9.789438] (-) TimerEvent: {}
+[9.891576] (-) TimerEvent: {}
+[9.993733] (-) TimerEvent: {}
+[10.096022] (-) TimerEvent: {}
+[10.196872] (-) TimerEvent: {}
+[10.298889] (-) TimerEvent: {}
+[10.401035] (-) TimerEvent: {}
+[10.503177] (-) TimerEvent: {}
+[10.605302] (-) TimerEvent: {}
+[10.707453] (-) TimerEvent: {}
+[10.769440] (lidar_robot) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_fastrtps_cpp' as default\n"}
+[10.808246] (-) TimerEvent: {}
+[10.910367] (-) TimerEvent: {}
+[10.920175] (lidar_robot) StdoutLine: {'line': b'-- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)\n'}
+[11.011746] (lidar_robot) StdoutLine: {'line': b'-- Found gazebo_ros_pkgs: 3.9.0 (/opt/ros/humble/share/gazebo_ros_pkgs/cmake)\n'}
+[11.011997] (-) TimerEvent: {}
+[11.114049] (-) TimerEvent: {}
+[11.136646] (lidar_robot) StdoutLine: {'line': b'-- Configuring done (11.1s)\n'}
+[11.179284] (lidar_robot) StdoutLine: {'line': b'-- Generating done (0.0s)\n'}
+[11.214793] (-) TimerEvent: {}
+[11.246517] (lidar_robot) StdoutLine: {'line': b'-- Build files have been written to: /home/feiniao/c3/build/lidar_robot\n'}
+[11.263650] (lidar_robot) CommandEnded: {'returncode': 0}
+[11.264737] (lidar_robot) JobProgress: {'identifier': 'lidar_robot', 'progress': 'build'}
+[11.267321] (lidar_robot) Command: {'cmd': ['/usr/bin/cmake', '--build', '/home/feiniao/c3/build/lidar_robot', '--', '-j32', '-l32'], 'cwd': '/home/feiniao/c3/build/lidar_robot', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'), ('USER', 'feiniao'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/home/feiniao/github_download/mujoco/bin:/home/feiniao/github_download/mujoco/bin'), ('HOME', '/home/feiniao'), ('OLDPWD', '/home/feiniao'), ('ROS_PYTHON_VERSION', '3'), ('FISHROS_URL', 'http://mirror.fishros.com/install/'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('WSL_DISTRO_NAME', 'Ubuntu-22.04'), ('WAYLAND_DISPLAY', 'wayland-0'), ('ROS_DISTRO', 'humble'), ('GTK_IM_MODULE', 'fcitx5'), ('LOGNAME', 'feiniao'), ('NAME', 'localhost'), ('WSL_INTEROP', '/run/WSL/9777_interop'), ('PULSE_SERVER', 'unix:/mnt/wslg/PulseServer'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('TERM', 'xterm-256color'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/home/feiniao/.local/bin:/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA app/NvDLISR:/mnt/c/Program Files/dotnet/:/mnt/d/QT/5.14.2/mingw73_64/bin:/mnt/d/QT/Tools/mingw730_64/bin:/mnt/c/Program Files/usbipd-win/:/mnt/d/github_download/node.js/:/mnt/d/github_download/git/Git/cmd:/mnt/c/Users/18449/AppData/Local/Microsoft/WindowsApps:/mnt/d/vscode/Microsoft VS Code/bin:/mnt/c/Users/18449/AppData/Roaming/npm:/mnt/c/Users/18449/AppData/Roaming/npm:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000/'), ('MUJOCO_PY_MUJOCO_PATH', '/home/feiniao/github_download/mujoco'), ('DISPLAY', ':0'), ('MUJOCO_GL', 'egl'), ('LANG', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=fcitx5'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('ANDROID_SDK_ROOT', '/home/feiniao/Android/Sdk'), ('QT_IM_MODULE', 'fcitx5'), ('PWD', '/home/feiniao/c3/build/lidar_robot'), ('CUDA_HOME', '/usr/local/cuda-12.8'), ('ANDROID_HOME', '/home/feiniao/Android/Sdk'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('WSL2_GUI_APPS_ENABLED', '1'), ('HOSTTYPE', 'x86_64'), ('WSLENV', ''), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[11.315786] (-) TimerEvent: {}
+[11.330127] (lidar_robot) StdoutLine: {'line': b'[ 50%] \x1b[32mBuilding CXX object CMakeFiles/lidar_depth_node.dir/src/lidar_depth_node.cpp.o\x1b[0m\n'}
+[11.417431] (-) TimerEvent: {}
+[11.519567] (-) TimerEvent: {}
+[11.621693] (-) TimerEvent: {}
+[11.723070] (-) TimerEvent: {}
+[11.825215] (-) TimerEvent: {}
+[11.927353] (-) TimerEvent: {}
+[12.029502] (-) TimerEvent: {}
+[12.131640] (-) TimerEvent: {}
+[12.233742] (-) TimerEvent: {}
+[12.335922] (-) TimerEvent: {}
+[12.438080] (-) TimerEvent: {}
+[12.540215] (-) TimerEvent: {}
+[12.642395] (-) TimerEvent: {}
+[12.744553] (-) TimerEvent: {}
+[12.846700] (-) TimerEvent: {}
+[12.949212] (-) TimerEvent: {}
+[13.051408] (-) TimerEvent: {}
+[13.153553] (-) TimerEvent: {}
+[13.255690] (-) TimerEvent: {}
+[13.356689] (-) TimerEvent: {}
+[13.458827] (-) TimerEvent: {}
+[13.560961] (-) TimerEvent: {}
+[13.663096] (-) TimerEvent: {}
+[13.765224] (-) TimerEvent: {}
+[13.867381] (-) TimerEvent: {}
+[13.969505] (-) TimerEvent: {}
+[14.071648] (-) TimerEvent: {}
+[14.173781] (-) TimerEvent: {}
+[14.276021] (-) TimerEvent: {}
+[14.378140] (-) TimerEvent: {}
+[14.480308] (-) TimerEvent: {}
+[14.582444] (-) TimerEvent: {}
+[14.684588] (-) TimerEvent: {}
+[14.786715] (-) TimerEvent: {}
+[14.888843] (-) TimerEvent: {}
+[14.991000] (-) TimerEvent: {}
+[15.093120] (-) TimerEvent: {}
+[15.195266] (-) TimerEvent: {}
+[15.297388] (-) TimerEvent: {}
+[15.399541] (-) TimerEvent: {}
+[15.501832] (-) TimerEvent: {}
+[15.604057] (-) TimerEvent: {}
+[15.706202] (-) TimerEvent: {}
+[15.808328] (-) TimerEvent: {}
+[15.910466] (-) TimerEvent: {}
+[16.012595] (-) TimerEvent: {}
+[16.114714] (-) TimerEvent: {}
+[16.217397] (-) TimerEvent: {}
+[16.320090] (-) TimerEvent: {}
+[16.422735] (-) TimerEvent: {}
+[16.523904] (-) TimerEvent: {}
+[16.626607] (-) TimerEvent: {}
+[16.729295] (-) TimerEvent: {}
+[16.832286] (-) TimerEvent: {}
+[16.935014] (-) TimerEvent: {}
+[17.037683] (-) TimerEvent: {}
+[17.140388] (-) TimerEvent: {}
+[17.243076] (-) TimerEvent: {}
+[17.344014] (-) TimerEvent: {}
+[17.446663] (-) TimerEvent: {}
+[17.549341] (-) TimerEvent: {}
+[17.652003] (-) TimerEvent: {}
+[17.754687] (-) TimerEvent: {}
+[17.857376] (-) TimerEvent: {}
+[17.960053] (-) TimerEvent: {}
+[18.062757] (-) TimerEvent: {}
+[18.165457] (-) TimerEvent: {}
+[18.268126] (-) TimerEvent: {}
+[18.370798] (-) TimerEvent: {}
+[18.473416] (-) TimerEvent: {}
+[18.576097] (-) TimerEvent: {}
+[18.678778] (-) TimerEvent: {}
+[18.781447] (-) TimerEvent: {}
+[18.884113] (-) TimerEvent: {}
+[18.986822] (-) TimerEvent: {}
+[19.089559] (-) TimerEvent: {}
+[19.192282] (-) TimerEvent: {}
+[19.294996] (-) TimerEvent: {}
+[19.398370] (-) TimerEvent: {}
+[19.500889] (-) TimerEvent: {}
+[19.603620] (-) TimerEvent: {}
+[19.706345] (-) TimerEvent: {}
+[19.809035] (-) TimerEvent: {}
+[19.911789] (-) TimerEvent: {}
+[20.014988] (-) TimerEvent: {}
+[20.117665] (-) TimerEvent: {}
+[20.220440] (-) TimerEvent: {}
+[20.323109] (-) TimerEvent: {}
+[20.425792] (-) TimerEvent: {}
+[20.528476] (-) TimerEvent: {}
+[20.631222] (-) TimerEvent: {}
+[20.734059] (-) TimerEvent: {}
+[20.836752] (-) TimerEvent: {}
+[20.939422] (-) TimerEvent: {}
+[21.042130] (-) TimerEvent: {}
+[21.144888] (-) TimerEvent: {}
+[21.247631] (-) TimerEvent: {}
+[21.348623] (-) TimerEvent: {}
+[21.451320] (-) TimerEvent: {}
+[21.553982] (-) TimerEvent: {}
+[21.656676] (-) TimerEvent: {}
+[21.759353] (-) TimerEvent: {}
+[21.862033] (-) TimerEvent: {}
+[21.964744] (-) TimerEvent: {}
+[22.067490] (-) TimerEvent: {}
+[22.170223] (-) TimerEvent: {}
+[22.272925] (-) TimerEvent: {}
+[22.375608] (-) TimerEvent: {}
+[22.478304] (-) TimerEvent: {}
+[22.580925] (-) TimerEvent: {}
+[22.683630] (-) TimerEvent: {}
+[22.786314] (-) TimerEvent: {}
+[22.888978] (-) TimerEvent: {}
+[22.991667] (-) TimerEvent: {}
+[23.094338] (-) TimerEvent: {}
+[23.197026] (-) TimerEvent: {}
+[23.299730] (-) TimerEvent: {}
+[23.402419] (-) TimerEvent: {}
+[23.505091] (-) TimerEvent: {}
+[23.607662] (-) TimerEvent: {}
+[23.710353] (-) TimerEvent: {}
+[23.813039] (-) TimerEvent: {}
+[23.915734] (-) TimerEvent: {}
+[24.018423] (-) TimerEvent: {}
+[24.121109] (-) TimerEvent: {}
+[24.223822] (-) TimerEvent: {}
+[24.326193] (-) TimerEvent: {}
+[24.428375] (-) TimerEvent: {}
+[24.530566] (-) TimerEvent: {}
+[24.632732] (-) TimerEvent: {}
+[24.734953] (-) TimerEvent: {}
+[24.837148] (-) TimerEvent: {}
+[24.939344] (-) TimerEvent: {}
+[25.041527] (-) TimerEvent: {}
+[25.060432] (lidar_robot) StdoutLine: {'line': b'[100%] \x1b[1m\x1b[32mLinking CXX executable lidar_depth_node\x1b[0m\n'}
+[25.142774] (-) TimerEvent: {}
+[25.244926] (-) TimerEvent: {}
+[25.345801] (-) TimerEvent: {}
+[25.448072] (-) TimerEvent: {}
+[25.550280] (-) TimerEvent: {}
+[25.652436] (-) TimerEvent: {}
+[25.754619] (-) TimerEvent: {}
+[25.836600] (lidar_robot) StdoutLine: {'line': b'[100%] Built target lidar_depth_node\n'}
+[25.849239] (lidar_robot) CommandEnded: {'returncode': 0}
+[25.850911] (lidar_robot) JobProgress: {'identifier': 'lidar_robot', 'progress': 'install'}
+[25.854852] (-) TimerEvent: {}
+[25.860868] (lidar_robot) Command: {'cmd': ['/usr/bin/cmake', '--install', '/home/feiniao/c3/build/lidar_robot'], 'cwd': '/home/feiniao/c3/build/lidar_robot', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'), ('USER', 'feiniao'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/home/feiniao/github_download/mujoco/bin:/home/feiniao/github_download/mujoco/bin'), ('HOME', '/home/feiniao'), ('OLDPWD', '/home/feiniao'), ('ROS_PYTHON_VERSION', '3'), ('FISHROS_URL', 'http://mirror.fishros.com/install/'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('WSL_DISTRO_NAME', 'Ubuntu-22.04'), ('WAYLAND_DISPLAY', 'wayland-0'), ('ROS_DISTRO', 'humble'), ('GTK_IM_MODULE', 'fcitx5'), ('LOGNAME', 'feiniao'), ('NAME', 'localhost'), ('WSL_INTEROP', '/run/WSL/9777_interop'), ('PULSE_SERVER', 'unix:/mnt/wslg/PulseServer'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('TERM', 'xterm-256color'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/home/feiniao/.local/bin:/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA app/NvDLISR:/mnt/c/Program Files/dotnet/:/mnt/d/QT/5.14.2/mingw73_64/bin:/mnt/d/QT/Tools/mingw730_64/bin:/mnt/c/Program Files/usbipd-win/:/mnt/d/github_download/node.js/:/mnt/d/github_download/git/Git/cmd:/mnt/c/Users/18449/AppData/Local/Microsoft/WindowsApps:/mnt/d/vscode/Microsoft VS Code/bin:/mnt/c/Users/18449/AppData/Roaming/npm:/mnt/c/Users/18449/AppData/Roaming/npm:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000/'), ('MUJOCO_PY_MUJOCO_PATH', '/home/feiniao/github_download/mujoco'), ('DISPLAY', ':0'), ('MUJOCO_GL', 'egl'), ('LANG', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=fcitx5'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('ANDROID_SDK_ROOT', '/home/feiniao/Android/Sdk'), ('QT_IM_MODULE', 'fcitx5'), ('PWD', '/home/feiniao/c3/build/lidar_robot'), ('CUDA_HOME', '/usr/local/cuda-12.8'), ('ANDROID_HOME', '/home/feiniao/Android/Sdk'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('WSL2_GUI_APPS_ENABLED', '1'), ('HOSTTYPE', 'x86_64'), ('WSLENV', ''), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[25.867527] (lidar_robot) StdoutLine: {'line': b'-- Install configuration: ""\n'}
+[25.869285] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/lib/lidar_robot/lidar_depth_node\n'}
+[25.878949] (lidar_robot) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/feiniao/c3/install/lidar_robot/lib/lidar_robot/lidar_depth_node" to ""\n'}
+[25.879811] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf\n'}
+[25.880714] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/robot.urdf.xacro\n'}
+[25.881507] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/plugins\n'}
+[25.882485] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/plugins/gazebo_laser_plugin.xacro\n'}
+[25.882864] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/launch\n'}
+[25.883750] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/launch/sim.launch.py\n'}
+[25.887674] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/package_run_dependencies/lidar_robot\n'}
+[25.888913] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/parent_prefix_path/lidar_robot\n'}
+[25.890155] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/ament_prefix_path.sh\n'}
+[25.891435] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/ament_prefix_path.dsv\n'}
+[25.892030] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/path.sh\n'}
+[25.892417] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/path.dsv\n'}
+[25.892834] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.bash\n'}
+[25.893232] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.sh\n'}
+[25.893742] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.zsh\n'}
+[25.894231] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.dsv\n'}
+[25.894582] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/package.dsv\n'}
+[25.895779] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/packages/lidar_robot\n'}
+[25.896872] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/cmake/lidar_robotConfig.cmake\n'}
+[25.897425] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/cmake/lidar_robotConfig-version.cmake\n'}
+[25.897704] (lidar_robot) StdoutLine: {'line': b'-- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/package.xml\n'}
+[25.901906] (lidar_robot) CommandEnded: {'returncode': 0}
+[25.943859] (lidar_robot) JobEnded: {'identifier': 'lidar_robot', 'rc': 0}
+[25.945788] (-) EventReactorShutdown: {}

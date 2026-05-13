@@ -1,0 +1,189 @@
+[0.000000] (-) TimerEvent: {}
+[0.000361] (lidar_robot) JobQueued: {'identifier': 'lidar_robot', 'dependencies': OrderedDict()}
+[0.000406] (lidar_robot) JobStarted: {'identifier': 'lidar_robot'}
+[0.021157] (lidar_robot) JobProgress: {'identifier': 'lidar_robot', 'progress': 'cmake'}
+[0.022805] (lidar_robot) Command: {'cmd': ['/usr/bin/cmake', '/home/feiniao/c3/src/lidar_robot', '-DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot'], 'cwd': '/home/feiniao/c3/build/lidar_robot', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('MESA_D3D12_DEFAULT_ADAPTER_NAME', 'NVIDIA'), ('USER', 'feiniao'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/usr/local/cuda-12.8/lib64:/usr/local/cuda-12.8/lib64:/usr/lib/x86_64-linux-gnu/gazebo-11/plugins:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib:/home/feiniao/github_download/mujoco/bin:/home/feiniao/github_download/mujoco/bin'), ('HOME', '/home/feiniao'), ('OLDPWD', '/home/feiniao'), ('ROS_PYTHON_VERSION', '3'), ('FISHROS_URL', 'http://mirror.fishros.com/install/'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('WSL_DISTRO_NAME', 'Ubuntu-22.04'), ('WAYLAND_DISPLAY', 'wayland-0'), ('ROS_DISTRO', 'humble'), ('GTK_IM_MODULE', 'fcitx5'), ('LOGNAME', 'feiniao'), ('NAME', 'localhost'), ('WSL_INTEROP', '/run/WSL/9777_interop'), ('PULSE_SERVER', 'unix:/mnt/wslg/PulseServer'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('TERM', 'xterm-256color'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/home/feiniao/.local/bin:/usr/local/cuda-12.8/bin:/home/feiniao/.npm-global/bin:/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0/:/mnt/c/Windows/System32/OpenSSH/:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA app/NvDLISR:/mnt/c/Program Files/dotnet/:/mnt/d/QT/5.14.2/mingw73_64/bin:/mnt/d/QT/Tools/mingw730_64/bin:/mnt/c/Program Files/usbipd-win/:/mnt/d/github_download/node.js/:/mnt/d/github_download/git/Git/cmd:/mnt/c/Users/18449/AppData/Local/Microsoft/WindowsApps:/mnt/d/vscode/Microsoft VS Code/bin:/mnt/c/Users/18449/AppData/Roaming/npm:/mnt/c/Users/18449/AppData/Roaming/npm:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000/'), ('MUJOCO_PY_MUJOCO_PATH', '/home/feiniao/github_download/mujoco'), ('DISPLAY', ':0'), ('MUJOCO_GL', 'egl'), ('LANG', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=fcitx5'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('ANDROID_SDK_ROOT', '/home/feiniao/Android/Sdk'), ('QT_IM_MODULE', 'fcitx5'), ('PWD', '/home/feiniao/c3/build/lidar_robot'), ('CUDA_HOME', '/usr/local/cuda-12.8'), ('ANDROID_HOME', '/home/feiniao/Android/Sdk'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('WSL2_GUI_APPS_ENABLED', '1'), ('HOSTTYPE', 'x86_64'), ('WSLENV', ''), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[0.098985] (-) TimerEvent: {}
+[0.105047] (lidar_robot) StderrLine: {'line': b'\x1b[0mCMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):\n'}
+[0.105292] (lidar_robot) StderrLine: {'line': b'  Compatibility with CMake < 3.10 will be removed from a future version of\n'}
+[0.105378] (lidar_robot) StderrLine: {'line': b'  CMake.\n'}
+[0.105458] (lidar_robot) StderrLine: {'line': b'\n'}
+[0.105767] (lidar_robot) StderrLine: {'line': b'  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax\n'}
+[0.105855] (lidar_robot) StderrLine: {'line': b'  to tell CMake that the project requires at least <min> but has been updated\n'}
+[0.105931] (lidar_robot) StderrLine: {'line': b'  to work with policies introduced by <max> or earlier.\n'}
+[0.105997] (lidar_robot) StderrLine: {'line': b'\n'}
+[0.106058] (lidar_robot) StderrLine: {'line': b'\x1b[0m\n'}
+[0.141158] (lidar_robot) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[0.200118] (-) TimerEvent: {}
+[0.302217] (-) TimerEvent: {}
+[0.404232] (-) TimerEvent: {}
+[0.506344] (-) TimerEvent: {}
+[0.511492] (lidar_robot) StdoutLine: {'line': b'-- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)\n'}
+[0.608405] (-) TimerEvent: {}
+[0.710483] (-) TimerEvent: {}
+[0.812542] (-) TimerEvent: {}
+[0.845540] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)\n'}
+[0.853046] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)\n'}
+[0.871661] (lidar_robot) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)\n'}
+[0.899596] (lidar_robot) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[0.912902] (-) TimerEvent: {}
+[0.933039] (lidar_robot) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[1.014374] (-) TimerEvent: {}
+[1.031011] (lidar_robot) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)\n'}
+[1.036011] (lidar_robot) StdoutLine: {'line': b'-- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)\n'}
+[1.115830] (-) TimerEvent: {}
+[1.217875] (-) TimerEvent: {}
+[1.319931] (-) TimerEvent: {}
+[1.421958] (-) TimerEvent: {}
+[1.524131] (-) TimerEvent: {}
+[1.626191] (-) TimerEvent: {}
+[1.728256] (-) TimerEvent: {}
+[1.830318] (-) TimerEvent: {}
+[1.932394] (-) TimerEvent: {}
+[2.034436] (-) TimerEvent: {}
+[2.136505] (-) TimerEvent: {}
+[2.237581] (-) TimerEvent: {}
+[2.339627] (-) TimerEvent: {}
+[2.441582] (-) TimerEvent: {}
+[2.543646] (-) TimerEvent: {}
+[2.645699] (-) TimerEvent: {}
+[2.747767] (-) TimerEvent: {}
+[2.850049] (-) TimerEvent: {}
+[2.952810] (-) TimerEvent: {}
+[3.055456] (-) TimerEvent: {}
+[3.158076] (-) TimerEvent: {}
+[3.260759] (-) TimerEvent: {}
+[3.363368] (-) TimerEvent: {}
+[3.465931] (-) TimerEvent: {}
+[3.568672] (-) TimerEvent: {}
+[3.671283] (-) TimerEvent: {}
+[3.773884] (-) TimerEvent: {}
+[3.876592] (-) TimerEvent: {}
+[3.979221] (-) TimerEvent: {}
+[4.081327] (-) TimerEvent: {}
+[4.183948] (-) TimerEvent: {}
+[4.286571] (-) TimerEvent: {}
+[4.389162] (-) TimerEvent: {}
+[4.491647] (-) TimerEvent: {}
+[4.594265] (-) TimerEvent: {}
+[4.696923] (-) TimerEvent: {}
+[4.799605] (-) TimerEvent: {}
+[4.902223] (-) TimerEvent: {}
+[5.004893] (-) TimerEvent: {}
+[5.107510] (-) TimerEvent: {}
+[5.210216] (-) TimerEvent: {}
+[5.312840] (-) TimerEvent: {}
+[5.415478] (-) TimerEvent: {}
+[5.518095] (-) TimerEvent: {}
+[5.620835] (-) TimerEvent: {}
+[5.723478] (-) TimerEvent: {}
+[5.826100] (-) TimerEvent: {}
+[5.928938] (-) TimerEvent: {}
+[6.031579] (-) TimerEvent: {}
+[6.134255] (-) TimerEvent: {}
+[6.235530] (-) TimerEvent: {}
+[6.337144] (-) TimerEvent: {}
+[6.439761] (-) TimerEvent: {}
+[6.542341] (-) TimerEvent: {}
+[6.645071] (-) TimerEvent: {}
+[6.747701] (-) TimerEvent: {}
+[6.850354] (-) TimerEvent: {}
+[6.952971] (-) TimerEvent: {}
+[7.055600] (-) TimerEvent: {}
+[7.158225] (-) TimerEvent: {}
+[7.260879] (-) TimerEvent: {}
+[7.363494] (-) TimerEvent: {}
+[7.466071] (-) TimerEvent: {}
+[7.568654] (-) TimerEvent: {}
+[7.671277] (-) TimerEvent: {}
+[7.773907] (-) TimerEvent: {}
+[7.876623] (-) TimerEvent: {}
+[7.979247] (-) TimerEvent: {}
+[8.081922] (-) TimerEvent: {}
+[8.184666] (-) TimerEvent: {}
+[8.287335] (-) TimerEvent: {}
+[8.389963] (-) TimerEvent: {}
+[8.492662] (-) TimerEvent: {}
+[8.595136] (-) TimerEvent: {}
+[8.697766] (-) TimerEvent: {}
+[8.800370] (-) TimerEvent: {}
+[8.903001] (-) TimerEvent: {}
+[9.003630] (-) TimerEvent: {}
+[9.105752] (-) TimerEvent: {}
+[9.208382] (-) TimerEvent: {}
+[9.310966] (-) TimerEvent: {}
+[9.412601] (-) TimerEvent: {}
+[9.515181] (-) TimerEvent: {}
+[9.617743] (-) TimerEvent: {}
+[9.720368] (-) TimerEvent: {}
+[9.823008] (-) TimerEvent: {}
+[9.925722] (-) TimerEvent: {}
+[9.994498] (lidar_robot) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_fastrtps_cpp' as default\n"}
+[10.026564] (-) TimerEvent: {}
+[10.129566] (-) TimerEvent: {}
+[10.154819] (lidar_robot) StdoutLine: {'line': b'-- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)\n'}
+[10.230472] (-) TimerEvent: {}
+[10.244665] (lidar_robot) StdoutLine: {'line': b'-- Found urdf: 2.6.1 (/opt/ros/humble/share/urdf/cmake)\n'}
+[10.332529] (-) TimerEvent: {}
+[10.435143] (-) TimerEvent: {}
+[10.537732] (-) TimerEvent: {}
+[10.640265] (-) TimerEvent: {}
+[10.742986] (-) TimerEvent: {}
+[10.845696] (-) TimerEvent: {}
+[10.947602] (-) TimerEvent: {}
+[11.049226] (-) TimerEvent: {}
+[11.151647] (-) TimerEvent: {}
+[11.253618] (-) TimerEvent: {}
+[11.355627] (-) TimerEvent: {}
+[11.457603] (-) TimerEvent: {}
+[11.559555] (-) TimerEvent: {}
+[11.661442] (-) TimerEvent: {}
+[11.763432] (-) TimerEvent: {}
+[11.865440] (-) TimerEvent: {}
+[11.967404] (-) TimerEvent: {}
+[12.069368] (-) TimerEvent: {}
+[12.171347] (-) TimerEvent: {}
+[12.273364] (-) TimerEvent: {}
+[12.375355] (-) TimerEvent: {}
+[12.477349] (-) TimerEvent: {}
+[12.579344] (-) TimerEvent: {}
+[12.681294] (-) TimerEvent: {}
+[12.783292] (-) TimerEvent: {}
+[12.885292] (-) TimerEvent: {}
+[12.987264] (-) TimerEvent: {}
+[13.089278] (-) TimerEvent: {}
+[13.191317] (-) TimerEvent: {}
+[13.293334] (-) TimerEvent: {}
+[13.395410] (-) TimerEvent: {}
+[13.497421] (-) TimerEvent: {}
+[13.599407] (-) TimerEvent: {}
+[13.701277] (-) TimerEvent: {}
+[13.803268] (-) TimerEvent: {}
+[13.905281] (-) TimerEvent: {}
+[14.007248] (-) TimerEvent: {}
+[14.109226] (-) TimerEvent: {}
+[14.209854] (-) TimerEvent: {}
+[14.311869] (-) TimerEvent: {}
+[14.341371] (lidar_robot) StderrLine: {'line': b'\x1b[31mCMake Error at CMakeLists.txt:14 (find_package):\n'}
+[14.341716] (lidar_robot) StderrLine: {'line': b'  By not providing "Findxacro.cmake" in CMAKE_MODULE_PATH this project has\n'}
+[14.341832] (lidar_robot) StderrLine: {'line': b'  asked CMake to find a package configuration file provided by "xacro", but\n'}
+[14.341924] (lidar_robot) StderrLine: {'line': b'  CMake did not find one.\n'}
+[14.342005] (lidar_robot) StderrLine: {'line': b'\n'}
+[14.342082] (lidar_robot) StderrLine: {'line': b'  Could not find a package configuration file provided by "xacro" with any of\n'}
+[14.342213] (lidar_robot) StderrLine: {'line': b'  the following names:\n'}
+[14.342356] (lidar_robot) StderrLine: {'line': b'\n'}
+[14.342445] (lidar_robot) StderrLine: {'line': b'    xacro.cps\n'}
+[14.342522] (lidar_robot) StderrLine: {'line': b'    xacroConfig.cmake\n'}
+[14.342615] (lidar_robot) StderrLine: {'line': b'    xacro-config.cmake\n'}
+[14.342688] (lidar_robot) StderrLine: {'line': b'\n'}
+[14.342755] (lidar_robot) StderrLine: {'line': b'  Add the installation prefix of "xacro" to CMAKE_PREFIX_PATH or set\n'}
+[14.342823] (lidar_robot) StderrLine: {'line': b'  "xacro_DIR" to a directory containing one of the above files.  If "xacro"\n'}
+[14.342890] (lidar_robot) StderrLine: {'line': b'  provides a separate development package or SDK, be sure it has been\n'}
+[14.342957] (lidar_robot) StderrLine: {'line': b'  installed.\n'}
+[14.343098] (lidar_robot) StderrLine: {'line': b'\n'}
+[14.343206] (lidar_robot) StderrLine: {'line': b'\x1b[0m\n'}
+[14.343288] (lidar_robot) StdoutLine: {'line': b'-- Configuring incomplete, errors occurred!\n'}
+[14.360083] (lidar_robot) CommandEnded: {'returncode': 1}
+[14.402771] (lidar_robot) JobEnded: {'identifier': 'lidar_robot', 'rc': 1}
+[14.412020] (-) TimerEvent: {}
+[14.413643] (-) EventReactorShutdown: {}

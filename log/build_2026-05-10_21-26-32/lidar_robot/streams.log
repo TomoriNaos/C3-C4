@@ -1,0 +1,42 @@
+[0.020s] Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/feiniao/c3/src/lidar_robot -DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot
+[0.053s] [0mCMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):
+[0.053s]   Compatibility with CMake < 3.10 will be removed from a future version of
+[0.053s]   CMake.
+[0.053s] 
+[0.053s]   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+[0.053s]   to tell CMake that the project requires at least <min> but has been updated
+[0.053s]   to work with policies introduced by <max> or earlier.
+[0.053s] 
+[0.053s] [0m
+[0.064s] -- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.397s] -- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)
+[0.675s] -- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.679s] -- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.690s] -- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.708s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.731s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.794s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.797s] -- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[9.912s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[10.018s] -- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)
+[10.089s] -- Found urdf: 2.6.1 (/opt/ros/humble/share/urdf/cmake)
+[14.230s] [31mCMake Error at CMakeLists.txt:14 (find_package):
+[14.230s]   By not providing "Findxacro.cmake" in CMAKE_MODULE_PATH this project has
+[14.231s]   asked CMake to find a package configuration file provided by "xacro", but
+[14.231s]   CMake did not find one.
+[14.231s] 
+[14.231s]   Could not find a package configuration file provided by "xacro" with any of
+[14.231s]   the following names:
+[14.231s] 
+[14.231s]     xacro.cps
+[14.231s]     xacroConfig.cmake
+[14.231s]     xacro-config.cmake
+[14.231s] 
+[14.231s]   Add the installation prefix of "xacro" to CMAKE_PREFIX_PATH or set
+[14.232s]   "xacro_DIR" to a directory containing one of the above files.  If "xacro"
+[14.232s]   provides a separate development package or SDK, be sure it has been
+[14.232s]   installed.
+[14.232s] 
+[14.232s] [0m
+[14.232s] -- Configuring incomplete, errors occurred!
+[14.248s] Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '1': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/feiniao/c3/src/lidar_robot -DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot

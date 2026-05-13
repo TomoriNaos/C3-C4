@@ -1,0 +1,57 @@
+[0.026s] Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/feiniao/c3/src/lidar_robot -DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot
+[0.097s] [0mCMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):
+[0.097s]   Compatibility with CMake < 3.10 will be removed from a future version of
+[0.097s]   CMake.
+[0.097s] 
+[0.097s]   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+[0.097s]   to tell CMake that the project requires at least <min> but has been updated
+[0.097s]   to work with policies introduced by <max> or earlier.
+[0.097s] 
+[0.097s] [0m
+[0.127s] -- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.507s] -- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)
+[0.912s] -- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.921s] -- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.940s] -- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.967s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[1.001s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[1.101s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[1.107s] -- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[10.768s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[10.918s] -- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)
+[11.010s] -- Found gazebo_ros_pkgs: 3.9.0 (/opt/ros/humble/share/gazebo_ros_pkgs/cmake)
+[11.135s] -- Configuring done (11.1s)
+[11.177s] -- Generating done (0.0s)
+[11.245s] -- Build files have been written to: /home/feiniao/c3/build/lidar_robot
+[11.262s] Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/feiniao/c3/src/lidar_robot -DCMAKE_INSTALL_PREFIX=/home/feiniao/c3/install/lidar_robot
+[11.266s] Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/feiniao/c3/build/lidar_robot -- -j32 -l32
+[11.328s] [ 50%] [32mBuilding CXX object CMakeFiles/lidar_depth_node.dir/src/lidar_depth_node.cpp.o[0m
+[25.058s] [100%] [1m[32mLinking CXX executable lidar_depth_node[0m
+[25.835s] [100%] Built target lidar_depth_node
+[25.847s] Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/feiniao/c3/build/lidar_robot -- -j32 -l32
+[25.859s] Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/feiniao/c3/build/lidar_robot
+[25.865s] -- Install configuration: ""
+[25.867s] -- Installing: /home/feiniao/c3/install/lidar_robot/lib/lidar_robot/lidar_depth_node
+[25.877s] -- Set non-toolchain portion of runtime path of "/home/feiniao/c3/install/lidar_robot/lib/lidar_robot/lidar_depth_node" to ""
+[25.878s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf
+[25.879s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/robot.urdf.xacro
+[25.879s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/plugins
+[25.880s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/urdf/plugins/gazebo_laser_plugin.xacro
+[25.881s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/launch
+[25.882s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/launch/sim.launch.py
+[25.886s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/package_run_dependencies/lidar_robot
+[25.887s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/parent_prefix_path/lidar_robot
+[25.888s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/ament_prefix_path.sh
+[25.889s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/ament_prefix_path.dsv
+[25.890s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/path.sh
+[25.890s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/environment/path.dsv
+[25.891s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.bash
+[25.891s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.sh
+[25.892s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.zsh
+[25.892s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/local_setup.dsv
+[25.893s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/package.dsv
+[25.894s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/ament_index/resource_index/packages/lidar_robot
+[25.895s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/cmake/lidar_robotConfig.cmake
+[25.895s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/cmake/lidar_robotConfig-version.cmake
+[25.896s] -- Installing: /home/feiniao/c3/install/lidar_robot/share/lidar_robot/package.xml
+[25.900s] Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/feiniao/c3/build/lidar_robot
