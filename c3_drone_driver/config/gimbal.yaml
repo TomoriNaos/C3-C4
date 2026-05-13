@@ -1,0 +1,11 @@
+gimbal_controller_node:
+  ros__parameters:
+    yaw_min: -2.4
+    yaw_max: 2.4
+    pitch_min: -0.8
+    pitch_max: 0.6
+    yaw_rate_max: 1.2
+    pitch_rate_max: 1.0
+    visual_conf_threshold: 0.55
+    visual_valid_timeout_s: 2.0
+    control_hz: 100.0

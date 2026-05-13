@@ -1,0 +1,10 @@
+std_msgs/Header header
+float32 yaw
+float32 pitch
+float32 yaw_rate
+float32 pitch_rate
+uint8 mode
+uint8 MODE_TRACKING=0
+uint8 MODE_DETECTING=1
+bool yaw_at_limit
+bool pitch_at_limit

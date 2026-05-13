@@ -1,0 +1,9 @@
+std_msgs/Header header
+uint8 command
+uint8 CMD_NOOP=0
+uint8 CMD_START=1
+uint8 CMD_BACK=2
+uint8 CMD_CLOSE=3
+uint8 CMD_HOLD=4
+int32 target_id
+float32 timeout_s

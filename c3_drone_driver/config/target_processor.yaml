@@ -1,0 +1,17 @@
+target_processor_node:
+  ros__parameters:
+    time_sync_threshold_s: 0.1
+    default_confidence: 0.6
+    target_type_default: 0
+    visual_cmd_gain: 1.0
+    roi_margin_px: 16
+    image_width: 1280
+    image_height: 720
+    depth_min: 0.5
+    depth_max: 120.0
+    min_roi_points: 20
+    low_conf_threshold: 0.55
+    tc_noise_std: 0.10
+    gc_noise_std: 0.05
+    smoothing_alpha: 0.35
+    bbox_timeout_s: 0.3

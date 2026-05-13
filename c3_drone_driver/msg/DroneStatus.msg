@@ -1,0 +1,16 @@
+std_msgs/Header header
+uint8 mission_mode
+uint8 MODE_IDLE=0
+uint8 MODE_TRANSIT=1
+uint8 MODE_SEARCH=2
+uint8 MODE_TRACK=3
+uint8 MODE_RETURN=4
+uint8 MODE_ABORT=5
+uint8 gimbal_mode
+uint8 link_state
+uint8 LINK_OK=0
+uint8 LINK_DEGRADED=1
+uint8 LINK_LOST=2
+float32 battery_remain
+uint8 nav_health
+uint8 vision_health
