@@ -2,6 +2,9 @@ std_msgs/Header header
 uint32 obs_id
 uint32 track_id
 uint32 target_id
+uint8 frame
+uint8 FRAME_BODY_DRONE=0
+uint8 FRAME_NED_DRONE=1
 uint8 target_type
 geometry_msgs/Point position
 float32 range

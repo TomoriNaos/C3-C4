@@ -8,6 +8,7 @@
 #include "c3_drone_driver/msg/mission_command.hpp"
 #include "c3_drone_driver/msg/target_hint.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
+#include <rclcpp/logging.hpp>
 
 namespace c3_drone_driver
 {
@@ -25,7 +26,7 @@ public:
     mission_cmd_default_ = declare_parameter<int>("mission_cmd_default", msg::MissionCommand::CMD_NOOP);
 
     obs_sub_ = create_subscription<msg::TargetObservation>(
-      "/target/observation_body", 10,
+      "/mavlink/target_obs", 10,
       std::bind(&MavlinkBridgeNode::onObservation, this, std::placeholders::_1));
     gimbal_state_sub_ = create_subscription<msg::GimbalState>(
       "/gimbal/state", 10,
@@ -56,7 +57,7 @@ public:
 private:
   void onObservation(const msg::TargetObservation::SharedPtr msg)
   {
-    last_obs_time_ = now();
+    last_obs_time_ = rclcpp::Time(msg->header.stamp);
     last_obs_status_ = msg->status;
     if (msg->status == msg::TargetObservation::STATUS_VALID) {
       mission_mode_ = msg::DroneStatus::MODE_TRACK;
@@ -92,6 +93,15 @@ private:
         break;
       case msg::MissionCommand::CMD_HOLD:
         mission_mode_ = msg::DroneStatus::MODE_SEARCH;
+        break;
+      case msg::MissionCommand::CMD_TRACKING:
+        gimbal_mode_ = msg::GimbalState::MODE_TRACKING;
+        break;
+      case msg::MissionCommand::CMD_DETECTING:
+        gimbal_mode_ = msg::GimbalState::MODE_DETECTING;
+        if (mission_mode_ == msg::DroneStatus::MODE_TRANSIT) {
+          mission_mode_ = msg::DroneStatus::MODE_SEARCH;
+        }
         break;
       default:
         break;

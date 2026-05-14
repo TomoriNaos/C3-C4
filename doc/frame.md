@@ -337,3 +337,8 @@ target_detection:
   confidence_weight_stability: 0.3    # c: 跟踪稳定性权重
   stability_threshold: 0.7            # 稳定目标的最小置信度
 ```
+
+---
+```
+version -v1.0.0
+```

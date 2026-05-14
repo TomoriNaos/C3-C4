@@ -59,6 +59,7 @@ install(TARGETS
 install(DIRECTORY
   config
   launch
+  urdf
   DESTINATION share/${PROJECT_NAME}
 )
 

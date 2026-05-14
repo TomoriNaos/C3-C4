@@ -1,11 +1,17 @@
+# 云台参数
 gimbal_controller_node:
   ros__parameters:
-    yaw_min: -2.4
+  # yaw pitch 角度范围（rad）
+    yaw_min: -2.4 
     yaw_max: 2.4
     pitch_min: -0.8
     pitch_max: 0.6
+  
+  # yaw pitch 角速度限制（rad/s）
     yaw_rate_max: 1.2
     pitch_rate_max: 1.0
-    visual_conf_threshold: 0.55
-    visual_valid_timeout_s: 2.0
-    control_hz: 100.0
+
+  # 仲裁参数
+    visual_conf_threshold: 0.55 # 置信度阈值
+    visual_valid_timeout_s: 0.02 # 视觉信息有效时间（秒）
+    control_hz: 100.0           # 控制频率
