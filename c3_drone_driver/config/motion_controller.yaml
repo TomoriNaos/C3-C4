@@ -1,0 +1,10 @@
+motion_controller_node:
+  ros__parameters:
+    control_hz: 50.0
+    cruise_speed_mps: 3.0
+    max_accel_mps2: 1.5
+    arrive_radius_m: 2.0
+    hover_altitude_m: 20.0
+    home_x: 0.0
+    home_y: 0.0
+    home_z: 0.0

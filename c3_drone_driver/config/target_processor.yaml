@@ -1,6 +1,8 @@
 target_processor_node:
   ros__parameters:
     time_sync_threshold_s: 0.1
+    pending_wait_s: 0.06
+    buffer_keep_s: 0.2
     default_confidence: 0.6
     target_type_default: 0
     visual_cmd_gain: 1.0
@@ -14,4 +16,7 @@ target_processor_node:
     tc_noise_std: 0.10
     gc_noise_std: 0.05
     smoothing_alpha: 0.35
-    bbox_timeout_s: 0.3
+    max_tracking_loss_frames: 30
+    confidence_weight_detection: 0.5
+    confidence_weight_cluster: 0.2
+    confidence_weight_stability: 0.3

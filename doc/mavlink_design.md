@@ -42,21 +42,21 @@
 
 - `command = MAV_CMD_USER_1`（映射为：`C3_MISSION_CMD`）
 - 参数定义：
-  - `param1`: `mission_cmd`
+- `param1`: `mission_cmd`
     - `0` = `NOOP`
     - `1` = `START`
     - `2` = `BACK`
     - `3` = `CLOSE`
     - `4` = `HOLD`
-    - `5` = `TRACKING`：关闭视觉节点，云台使用运动前馈/跟踪态
-    - `6` = `DETECTING`：开启视觉节点，允许进入视觉检测/跟踪态
+  - `5` = `TRACKING`：关闭视觉节点，云台使用运动前馈/跟踪态
+  - `6` = `DETECTING`：开启视觉节点，允许进入视觉检测/跟踪态
   - `param2`: `target_id`（可选，无目标填 `-1`）
   - `param3`: `timeout_s`（命令超时）
   - `param4~7`: 预留
 
   - `mission_cmd`：任务控制字。
     - `START/BACK/CLOSE/HOLD` 管任务流程
-    - `TRACKING/DETECTING` 管视觉工作开关。
+    - `TRACKING/DETECTING` 管视觉工作开关（全局使能/禁用）。
   - `target_id`：期望重点关注的目标编号；无特定目标时填 `-1`。
   - `timeout_s`：命令生效超时，超时后可回退到默认策略或请求重发。
 
@@ -129,7 +129,7 @@
 字段解释：
 - `t_usec`：状态打包时间戳，单位微秒；用于说明这份状态对应的采样时刻。
 - `mission_mode`：任务主状态机状态。
-- `gimbal_mode`：视觉/云台工作子状态。`TRACKING` 表示视觉节点关闭，云台按前馈保持；`DETECTING` 表示视觉节点开启，允许视觉接管。
+  - `gimbal_mode`：视觉/云台工作子状态。`TRACKING` 表示视觉节点关闭，云台按前馈保持；`DETECTING` 表示视觉节点开启，允许视觉请求接管。
 - `link_state`：链路健康度，取值为 `OK/DEGRADED/LOST`。
 - `battery_remain`：剩余电量比例。
 
@@ -186,13 +186,14 @@
 
 关键转移：
 1. `IDLE -> TRANSIT`：收到 `START` 且有有效 `C3_TARGET_HINT`。
-2. `TRANSIT -> SEARCH`：到达 hint 半径阈值；通常同时下发 `DETECTING`，开启视觉节点。
+2. `TRANSIT -> SEARCH`：到达 hint 半径阈值；主控可下发 `DETECTING`，开启视觉节点。
 3. `SEARCH -> TRACK`：连续 `N` 帧 `C3_TARGET_OBS.status=VALID`。
 4. `TRACK -> SEARCH`：连续 `T_lost` 丢失目标，但保持 `DETECTING` 继续搜。
-5. 任意状态 -> `RETURN`：收到 `BACK` 或低电量；通常同时下发 `TRACKING`，关闭视觉节点。
+5. 任意状态 -> `RETURN`：收到 `BACK` 或低电量；主控切回 `TRACKING`，关闭视觉节点。
 6. 任意状态 -> `ABORT`：收到 `CLOSE` 或飞控严重故障；视觉节点可直接关闭。
-7. 任意主状态下，收到 `TRACKING` 命令：切换 `gimbal_mode=TRACKING`，关闭视觉节点。
-8. 任意主状态下，收到 `DETECTING` 命令：切换 `gimbal_mode=DETECTING`，开启视觉节点。
+7. 主控下发 `TRACKING`：全局禁用视觉，云台回到前馈/保持。
+8. 主控下发 `DETECTING`：全局使能视觉，云台允许视觉请求接管。
+9. 在 `DETECTING` 下，视觉节点可以通过服务请求云台局部接管；超时则回退前馈，持续超时再回 `TRACKING`。
 
 ---
 
@@ -202,7 +203,7 @@
 
 1. `mavlink_bridge_node`
 - 职责：MAVLink 收发、ACK、重发、心跳、去重。
-- 订阅：`/target/observation_body`、`/mission/state`。
+- 订阅：`/mavlink/target_obs`、`/mission/state`。
 - 发布：`/mission/cmd`、`/mission/target_hint`。
 
 2. `mission_manager_node`
@@ -210,10 +211,11 @@
 - 订阅：`/mission/cmd`、`/mission/target_hint`、`/px4/status`。
 - 发布：`/mission/state`、`/offboard/goal`。
 
-3. `target_report_node`
-- 职责：将 TC/GC 融合结果规范化为 `C3_TARGET_OBS` 输入。
-- 订阅：`/target/observation_body`。
+3. `target_processor_node`
+- 职责：将融合后的观测规范化为 `C3_TARGET_OBS` 输入。
+- 订阅：`/target/observation_body`（融合观测）。
 - 发布：`/mavlink/target_obs`（供 bridge node 打包）。
+- 说明：当前代码侧对应节点名为 `target_processor_node`，其内部调用的融合逻辑见 `doc/target_fusion.md`。
 
 ---
 

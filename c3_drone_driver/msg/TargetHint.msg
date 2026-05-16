@@ -3,6 +3,7 @@ uint32 hint_id
 uint8 frame
 uint8 FRAME_NED_REL_MOTHERSHIP=0
 uint8 FRAME_BODY_MOTHERSHIP=1
+uint64 t_usec
 geometry_msgs/Point position
 geometry_msgs/Vector3 velocity
 float32 radius_m

@@ -1,0 +1,9 @@
+std_msgs/Header header
+uint8 command
+uint8 result
+uint8 RESULT_ACCEPTED=0
+uint8 RESULT_TEMP_REJECTED=1
+uint8 RESULT_DENIED=2
+uint8 RESULT_UNSUPPORTED=3
+uint8 retry_count
+string message

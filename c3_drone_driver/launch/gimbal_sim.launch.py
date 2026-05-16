@@ -8,6 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     use_gui = LaunchConfiguration('use_gui')
+    use_controller = LaunchConfiguration('use_controller')
 
     model_file = PathJoinSubstitution([
         FindPackageShare('c3_drone_driver'),
@@ -24,6 +25,11 @@ def generate_launch_description():
             'use_gui',
             default_value='true',
             description='Use joint_state_publisher_gui for manual joint control'
+        ),
+        DeclareLaunchArgument(
+            'use_controller',
+            default_value='false',
+            description='Run gimbal controller + bridge to drive joints from /gimbal/state'
         ),
         Node(
             package='robot_state_publisher',
@@ -45,5 +51,24 @@ def generate_launch_description():
             name='joint_state_publisher',
             output='screen',
             condition=UnlessCondition(use_gui)
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='gimbal_controller_node',
+            name='gimbal_controller_node',
+            output='screen',
+            parameters=[PathJoinSubstitution([
+                FindPackageShare('c3_drone_driver'),
+                'config',
+                'gimbal.yaml'
+            ])],
+            condition=IfCondition(use_controller)
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='gimbal_joint_state_bridge_node',
+            name='gimbal_joint_state_bridge_node',
+            output='screen',
+            condition=IfCondition(use_controller)
         )
     ])

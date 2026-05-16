@@ -29,4 +29,18 @@ def generate_launch_description():
             output='screen',
             parameters=[os.path.join(pkg, 'config', 'mavlink_bridge.yaml')],
         ),
+        Node(
+            package='c3_drone_driver',
+            executable='drone_main_controller_node',
+            name='drone_main_controller_node',
+            output='screen',
+            parameters=[os.path.join(pkg, 'config', 'drone_main_controller.yaml')],
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='motion_controller_node',
+            name='motion_controller_node',
+            output='screen',
+            parameters=[os.path.join(pkg, 'config', 'motion_controller.yaml')],
+        ),
     ])

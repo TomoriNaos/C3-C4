@@ -1,7 +1,10 @@
 mavlink_bridge_node:
   ros__parameters:
+    heartbeat_hz: 1.0
     link_degraded_s: 3.0
     link_lost_s: 8.0
     status_hz: 1.0
     target_obs_valid_timeout_s: 2.0
     mission_cmd_default: 0
+    cmd_ack_timeout_ms: 300
+    cmd_max_retry: 5

@@ -1,4 +1,5 @@
 std_msgs/Header header
+uint64 t_usec
 uint8 mission_mode
 uint8 MODE_IDLE=0
 uint8 MODE_TRANSIT=1

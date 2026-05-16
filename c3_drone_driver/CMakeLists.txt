@@ -15,6 +15,7 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
 
 set(msg_files
+  "msg/CommandAck.msg"
   "msg/GimbalMotionCommand.msg"
   "msg/GimbalVisualCommand.msg"
   "msg/GimbalState.msg"
@@ -39,21 +40,69 @@ ament_target_dependencies(gimbal_controller_node rclcpp)
 
 add_executable(target_processor_node src/target_processor_node.cpp)
 ament_target_dependencies(target_processor_node rclcpp std_msgs sensor_msgs geometry_msgs)
+target_include_directories(target_processor_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+add_library(target_fusion_processor_lib src/target_fusion_processor.cpp)
+ament_target_dependencies(target_fusion_processor_lib rclcpp std_msgs sensor_msgs geometry_msgs)
+target_include_directories(target_fusion_processor_lib PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+add_library(pose_estimator_lib src/pose_estimator.cpp)
+ament_target_dependencies(pose_estimator_lib rclcpp geometry_msgs)
+target_include_directories(pose_estimator_lib PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
 
 add_executable(mavlink_bridge_node src/mavlink_bridge_node.cpp)
 ament_target_dependencies(mavlink_bridge_node rclcpp)
 
+add_executable(drone_main_controller_node src/drone_main_controller_node.cpp)
+ament_target_dependencies(drone_main_controller_node rclcpp geometry_msgs)
+target_include_directories(drone_main_controller_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+add_executable(motion_controller_node src/motion_controller_node.cpp)
+ament_target_dependencies(motion_controller_node rclcpp geometry_msgs)
+
+add_executable(sensor_mock_node src/sensor_mock_node.cpp)
+ament_target_dependencies(sensor_mock_node rclcpp std_msgs sensor_msgs)
+
+add_executable(gimbal_joint_state_bridge_node src/gimbal_joint_state_bridge_node.cpp)
+ament_target_dependencies(gimbal_joint_state_bridge_node rclcpp sensor_msgs)
+
 rosidl_get_typesupport_target(c3_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 target_link_libraries(gimbal_controller_node ${c3_typesupport_target})
+target_link_libraries(target_fusion_processor_lib ${c3_typesupport_target})
+target_link_libraries(pose_estimator_lib ${c3_typesupport_target})
 target_link_libraries(target_processor_node ${c3_typesupport_target})
 target_link_libraries(mavlink_bridge_node ${c3_typesupport_target})
+target_link_libraries(drone_main_controller_node ${c3_typesupport_target})
+target_link_libraries(motion_controller_node ${c3_typesupport_target})
+target_link_libraries(sensor_mock_node ${c3_typesupport_target})
+target_link_libraries(gimbal_joint_state_bridge_node ${c3_typesupport_target})
+target_link_libraries(target_processor_node target_fusion_processor_lib)
+target_link_libraries(drone_main_controller_node pose_estimator_lib)
 
 install(TARGETS
   gimbal_controller_node
   target_processor_node
   mavlink_bridge_node
+  drone_main_controller_node
+  motion_controller_node
+  sensor_mock_node
+  gimbal_joint_state_bridge_node
+  target_fusion_processor_lib
+  pose_estimator_lib
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include
 )
 
 install(DIRECTORY
