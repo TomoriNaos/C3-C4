@@ -1,4 +1,0 @@
-Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/feiniao/c3/build/lidar_robot -- -j32 -l32
-Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/feiniao/c3/build/lidar_robot -- -j32 -l32
-Invoking command in '/home/feiniao/c3/build/lidar_robot': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/feiniao/c3/build/lidar_robot
-Invoked command in '/home/feiniao/c3/build/lidar_robot' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/feiniao/c3/build/lidar_robot

@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/feiniao/c3/build/lidar_robot/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
