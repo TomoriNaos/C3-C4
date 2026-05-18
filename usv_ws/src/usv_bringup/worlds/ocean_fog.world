@@ -1,6 +1,10 @@
 <?xml version="1.0" ?>
 <sdf version="1.7">
   <world name="ocean_fog">
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <update_rate>20.0</update_rate>
+    </plugin>
+
     <scene>
       <ambient>0.18 0.20 0.22 1</ambient>
       <background>0.58 0.64 0.68 1</background>
@@ -8,19 +12,19 @@
       <fog>
         <type>linear</type>
         <color>0.62 0.68 0.70 1</color>
-        <start>3.0</start>
-        <end>38.0</end>
-        <density>0.08</density>
+        <start>8.0</start>
+        <end>95.0</end>
+        <density>0.025</density>
       </fog>
     </scene>
 
     <physics name="default_physics" type="ode">
-      <max_step_size>0.002</max_step_size>
-      <real_time_update_rate>500</real_time_update_rate>
+      <max_step_size>0.004</max_step_size>
+      <real_time_update_rate>250</real_time_update_rate>
       <ode>
         <solver>
           <type>quick</type>
-          <iters>80</iters>
+          <iters>45</iters>
           <sor>1.2</sor>
         </solver>
         <constraints>
@@ -46,15 +50,548 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>600 600</size>
+              <size>800 800</size>
             </plane>
           </geometry>
           <material>
-            <ambient>0.05 0.18 0.22 0.82</ambient>
-            <diffuse>0.08 0.30 0.36 0.82</diffuse>
-            <specular>0.10 0.12 0.12 1</specular>
+            <ambient>0.03 0.16 0.22 0.92</ambient>
+            <diffuse>0.04 0.28 0.36 0.92</diffuse>
+            <specular>0.18 0.22 0.24 1</specular>
           </material>
         </visual>
+      </link>
+    </model>
+
+    <model name="fog_wave_crests">
+      <static>true</static>
+      <link name="wave_visuals">
+        <visual name="crest_0">
+          <pose>12 -12 0.006 0 0 0.18</pose>
+          <geometry><box><size>18 0.04 0.010</size></box></geometry>
+          <material>
+            <ambient>0.55 0.72 0.76 0.16</ambient>
+            <diffuse>0.55 0.72 0.76 0.16</diffuse>
+          </material>
+        </visual>
+        <visual name="crest_1">
+          <pose>8 -7 0.007 0 0 -0.12</pose>
+          <geometry><box><size>20 0.035 0.010</size></box></geometry>
+          <material>
+            <ambient>0.62 0.78 0.80 0.14</ambient>
+            <diffuse>0.62 0.78 0.80 0.14</diffuse>
+          </material>
+        </visual>
+        <visual name="crest_2">
+          <pose>16 -2 0.008 0 0 0.09</pose>
+          <geometry><box><size>22 0.04 0.010</size></box></geometry>
+          <material>
+            <ambient>0.54 0.72 0.78 0.14</ambient>
+            <diffuse>0.54 0.72 0.78 0.14</diffuse>
+          </material>
+        </visual>
+        <visual name="crest_3">
+          <pose>10 4 0.007 0 0 -0.20</pose>
+          <geometry><box><size>19 0.035 0.010</size></box></geometry>
+          <material>
+            <ambient>0.60 0.78 0.82 0.13</ambient>
+            <diffuse>0.60 0.78 0.82 0.13</diffuse>
+          </material>
+        </visual>
+        <visual name="crest_4">
+          <pose>18 10 0.006 0 0 0.14</pose>
+          <geometry><box><size>20 0.035 0.010</size></box></geometry>
+          <material>
+            <ambient>0.58 0.75 0.78 0.12</ambient>
+            <diffuse>0.58 0.75 0.78 0.12</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="moving_vessel">
+      <static>false</static>
+      <pose>20 0 0.42 0 0 0</pose>
+      <link name="hull">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.22</linear>
+          <angular>0.35</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>80</mass>
+          <inertia>
+            <ixx>18</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>55</iyy><iyz>0</iyz><izz>60</izz>
+          </inertia>
+        </inertial>
+        <visual name="hull_visual">
+          <pose>-0.12 0 0.02 0 0 0</pose>
+          <geometry><box><size>2.75 0.62 0.34</size></box></geometry>
+          <material>
+            <ambient>0.78 0.54 0.09 1</ambient>
+            <diffuse>0.95 0.70 0.10 1</diffuse>
+          </material>
+        </visual>
+        <visual name="bow_port_visual">
+          <pose>1.30 0.24 0.03 0 0 0.42</pose>
+          <geometry><box><size>0.92 0.20 0.32</size></box></geometry>
+          <material>
+            <ambient>0.78 0.54 0.09 1</ambient>
+            <diffuse>0.95 0.70 0.10 1</diffuse>
+          </material>
+        </visual>
+        <visual name="bow_starboard_visual">
+          <pose>1.30 -0.24 0.03 0 0 -0.42</pose>
+          <geometry><box><size>0.92 0.20 0.32</size></box></geometry>
+          <material>
+            <ambient>0.78 0.54 0.09 1</ambient>
+            <diffuse>0.95 0.70 0.10 1</diffuse>
+          </material>
+        </visual>
+        <visual name="rub_rail_visual">
+          <pose>0.05 0 0.25 0 0 0</pose>
+          <geometry><box><size>2.90 0.70 0.06</size></box></geometry>
+          <material>
+            <ambient>0.06 0.08 0.08 1</ambient>
+            <diffuse>0.06 0.08 0.08 1</diffuse>
+          </material>
+        </visual>
+        <visual name="cabin_visual">
+          <pose>-0.42 0 0.48 0 0 0</pose>
+          <geometry><box><size>0.95 0.52 0.40</size></box></geometry>
+          <material>
+            <ambient>0.86 0.16 0.10 1</ambient>
+            <diffuse>0.92 0.20 0.12 1</diffuse>
+          </material>
+        </visual>
+        <visual name="window_front_visual">
+          <pose>0.07 0 0.56 0 0 0</pose>
+          <geometry><box><size>0.035 0.44 0.16</size></box></geometry>
+          <material>
+            <ambient>0.03 0.12 0.18 1</ambient>
+            <diffuse>0.05 0.26 0.34 1</diffuse>
+          </material>
+        </visual>
+        <visual name="window_port_visual">
+          <pose>-0.42 0.275 0.56 0 0 0</pose>
+          <geometry><box><size>0.42 0.035 0.15</size></box></geometry>
+          <material>
+            <ambient>0.03 0.12 0.18 1</ambient>
+            <diffuse>0.05 0.26 0.34 1</diffuse>
+          </material>
+        </visual>
+        <visual name="window_starboard_visual">
+          <pose>-0.42 -0.275 0.56 0 0 0</pose>
+          <geometry><box><size>0.42 0.035 0.15</size></box></geometry>
+          <material>
+            <ambient>0.03 0.12 0.18 1</ambient>
+            <diffuse>0.05 0.26 0.34 1</diffuse>
+          </material>
+        </visual>
+        <visual name="cabin_roof_visual">
+          <pose>-0.44 0 0.72 0 0 0</pose>
+          <geometry><box><size>1.05 0.60 0.08</size></box></geometry>
+          <material>
+            <ambient>0.12 0.12 0.12 1</ambient>
+            <diffuse>0.16 0.16 0.16 1</diffuse>
+          </material>
+        </visual>
+        <visual name="radar_reflector_visual">
+          <pose>0.4 0 1.05 0 0 0</pose>
+          <geometry><cylinder><radius>0.055</radius><length>1.4</length></cylinder></geometry>
+          <material>
+            <ambient>0.92 0.92 0.86 1</ambient>
+            <diffuse>0.92 0.92 0.86 1</diffuse>
+          </material>
+        </visual>
+        <collision name="hull_collision">
+          <geometry><box><size>2.4 0.75 0.65</size></box></geometry>
+        </collision>
+        <collision name="radar_reflector_collision">
+          <pose>0.4 0 1.05 0 0 0</pose>
+          <geometry><box><size>0.28 0.28 1.8</size></box></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="small_fishing_boat">
+      <static>false</static>
+      <pose>16 7 0.34 0 0 -0.25</pose>
+      <link name="hull">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.28</linear>
+          <angular>0.40</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>42</mass>
+          <inertia>
+            <ixx>8</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>25</iyy><iyz>0</iyz><izz>28</izz>
+          </inertia>
+        </inertial>
+        <visual name="hull_visual">
+          <pose>-0.05 0 0.00 0 0 0</pose>
+          <geometry><box><size>1.55 0.42 0.28</size></box></geometry>
+          <material>
+            <ambient>0.08 0.42 0.72 1</ambient>
+            <diffuse>0.08 0.42 0.72 1</diffuse>
+          </material>
+        </visual>
+        <visual name="bow_port_visual">
+          <pose>0.72 0.17 0.02 0 0 0.48</pose>
+          <geometry><box><size>0.56 0.14 0.27</size></box></geometry>
+          <material>
+            <ambient>0.08 0.42 0.72 1</ambient>
+            <diffuse>0.08 0.42 0.72 1</diffuse>
+          </material>
+        </visual>
+        <visual name="bow_starboard_visual">
+          <pose>0.72 -0.17 0.02 0 0 -0.48</pose>
+          <geometry><box><size>0.56 0.14 0.27</size></box></geometry>
+          <material>
+            <ambient>0.08 0.42 0.72 1</ambient>
+            <diffuse>0.08 0.42 0.72 1</diffuse>
+          </material>
+        </visual>
+        <visual name="gunwale_visual">
+          <pose>-0.02 0 0.18 0 0 0</pose>
+          <geometry><box><size>1.62 0.50 0.05</size></box></geometry>
+          <material>
+            <ambient>0.90 0.90 0.78 1</ambient>
+            <diffuse>0.90 0.90 0.78 1</diffuse>
+          </material>
+        </visual>
+        <visual name="cabin_visual">
+          <pose>-0.18 0 0.34 0 0 0</pose>
+          <geometry><box><size>0.48 0.34 0.30</size></box></geometry>
+          <material>
+            <ambient>0.86 0.88 0.78 1</ambient>
+            <diffuse>0.86 0.88 0.78 1</diffuse>
+          </material>
+        </visual>
+        <visual name="net_frame_port_visual">
+          <pose>-0.40 0.42 0.16 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.025</radius><length>1.25</length></cylinder></geometry>
+          <material>
+            <ambient>0.90 0.86 0.68 1</ambient>
+            <diffuse>0.90 0.86 0.68 1</diffuse>
+          </material>
+        </visual>
+        <visual name="net_frame_starboard_visual">
+          <pose>-0.40 -0.42 0.16 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.025</radius><length>1.25</length></cylinder></geometry>
+          <material>
+            <ambient>0.90 0.86 0.68 1</ambient>
+            <diffuse>0.90 0.86 0.68 1</diffuse>
+          </material>
+        </visual>
+        <visual name="reflector_visual">
+          <pose>0.30 0 0.78 0 0 0</pose>
+          <geometry><cylinder><radius>0.055</radius><length>0.85</length></cylinder></geometry>
+          <material>
+            <ambient>0.93 0.92 0.86 1</ambient>
+            <diffuse>0.93 0.92 0.86 1</diffuse>
+          </material>
+        </visual>
+        <collision name="hull_collision">
+          <geometry><box><size>1.55 0.48 0.48</size></box></geometry>
+        </collision>
+        <collision name="reflector_collision">
+          <pose>0.30 0 0.78 0 0 0</pose>
+          <geometry><cylinder><radius>0.09</radius><length>1.05</length></cylinder></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="fishnet_buoy">
+      <static>false</static>
+      <pose>14.5 -7 0.30 0 0 0</pose>
+      <link name="body">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.40</linear>
+          <angular>0.50</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>10</mass>
+          <inertia>
+            <ixx>1.2</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1.2</iyy><iyz>0</iyz><izz>1.2</izz>
+          </inertia>
+        </inertial>
+        <visual name="body_visual">
+          <geometry><cylinder><radius>0.24</radius><length>0.42</length></cylinder></geometry>
+          <material>
+            <ambient>0.95 0.40 0.02 1</ambient>
+            <diffuse>0.95 0.40 0.02 1</diffuse>
+          </material>
+        </visual>
+        <visual name="flag_visual">
+          <pose>0 0 0.62 0 0 0</pose>
+          <geometry><box><size>0.10 0.38 0.18</size></box></geometry>
+          <material>
+            <ambient>0.98 0.94 0.05 1</ambient>
+            <diffuse>0.98 0.94 0.05 1</diffuse>
+          </material>
+        </visual>
+        <collision name="body_collision">
+          <geometry><cylinder><radius>0.24</radius><length>0.42</length></cylinder></geometry>
+        </collision>
+        <collision name="flag_collision">
+          <pose>0 0 0.62 0 0 0</pose>
+          <geometry><box><size>0.14 0.42 0.22</size></box></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="floating_obstacle">
+      <static>false</static>
+      <pose>12 -3 0.24 0 0 0</pose>
+      <link name="body">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.35</linear>
+          <angular>0.45</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>15</mass>
+          <inertia>
+            <ixx>2</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>2</iyy><iyz>0</iyz><izz>2</izz>
+          </inertia>
+        </inertial>
+        <visual name="body_visual">
+          <geometry>
+            <cylinder>
+              <radius>0.35</radius>
+              <length>0.55</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9 0.18 0.04 1</ambient>
+            <diffuse>0.9 0.18 0.04 1</diffuse>
+          </material>
+        </visual>
+        <visual name="reflector_visual">
+          <pose>0 0 0.82 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.08</radius>
+              <length>1.45</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.94 0.94 0.86 1</ambient>
+            <diffuse>0.94 0.94 0.86 1</diffuse>
+          </material>
+        </visual>
+        <collision name="body_collision">
+          <geometry>
+            <cylinder>
+              <radius>0.35</radius>
+              <length>0.55</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <collision name="reflector_collision">
+          <pose>0 0 0.82 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.12</radius>
+              <length>1.75</length>
+            </cylinder>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="drift_debris">
+      <static>false</static>
+      <pose>9 3.5 0.16 0.04 0.10 0.4</pose>
+      <link name="body">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.48</linear>
+          <angular>0.55</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>8</mass>
+          <inertia>
+            <ixx>1.0</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>2.4</iyy><iyz>0</iyz><izz>2.8</izz>
+          </inertia>
+        </inertial>
+        <visual name="debris_visual">
+          <geometry><box><size>1.15 0.26 0.20</size></box></geometry>
+          <material>
+            <ambient>0.42 0.28 0.10 1</ambient>
+            <diffuse>0.42 0.28 0.10 1</diffuse>
+          </material>
+        </visual>
+        <collision name="debris_collision">
+          <geometry><box><size>1.15 0.26 0.22</size></box></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="als_uav">
+      <static>false</static>
+      <pose>29 0 12 0 0 3.1416</pose>
+      <link name="base_link">
+        <gravity>false</gravity>
+        <velocity_decay>
+          <linear>0.10</linear>
+          <angular>0.20</angular>
+        </velocity_decay>
+        <inertial>
+          <mass>6.0</mass>
+          <inertia>
+            <ixx>0.55</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>0.55</iyy><iyz>0</iyz><izz>0.90</izz>
+          </inertia>
+        </inertial>
+        <visual name="body_visual">
+          <geometry><box><size>0.90 0.42 0.20</size></box></geometry>
+          <material>
+            <ambient>0.05 0.15 0.40 1</ambient>
+            <diffuse>0.05 0.28 0.82 1</diffuse>
+          </material>
+        </visual>
+        <visual name="nose_visual">
+          <pose>0.52 0 -0.01 0 0 0</pose>
+          <geometry><box><size>0.34 0.30 0.16</size></box></geometry>
+          <material>
+            <ambient>0.02 0.08 0.12 1</ambient>
+            <diffuse>0.04 0.18 0.24 1</diffuse>
+          </material>
+        </visual>
+        <visual name="arm_x_visual">
+          <pose>0 0 0.02 0 0 0.7854</pose>
+          <geometry><box><size>1.95 0.08 0.06</size></box></geometry>
+          <material>
+            <ambient>0.08 0.08 0.08 1</ambient>
+            <diffuse>0.10 0.10 0.10 1</diffuse>
+          </material>
+        </visual>
+        <visual name="arm_y_visual">
+          <pose>0 0 0.02 0 0 -0.7854</pose>
+          <geometry><box><size>1.95 0.08 0.06</size></box></geometry>
+          <material>
+            <ambient>0.08 0.08 0.08 1</ambient>
+            <diffuse>0.10 0.10 0.10 1</diffuse>
+          </material>
+        </visual>
+        <visual name="rotor_front_left">
+          <pose>0.72 0.72 0.08 0 0 0</pose>
+          <geometry><cylinder><radius>0.26</radius><length>0.025</length></cylinder></geometry>
+          <material>
+            <ambient>0.03 0.03 0.03 0.85</ambient>
+            <diffuse>0.03 0.03 0.03 0.85</diffuse>
+          </material>
+        </visual>
+        <visual name="rotor_front_right">
+          <pose>0.72 -0.72 0.08 0 0 0</pose>
+          <geometry><cylinder><radius>0.26</radius><length>0.025</length></cylinder></geometry>
+          <material>
+            <ambient>0.03 0.03 0.03 0.85</ambient>
+            <diffuse>0.03 0.03 0.03 0.85</diffuse>
+          </material>
+        </visual>
+        <visual name="rotor_rear_left">
+          <pose>-0.72 0.72 0.08 0 0 0</pose>
+          <geometry><cylinder><radius>0.26</radius><length>0.025</length></cylinder></geometry>
+          <material>
+            <ambient>0.03 0.03 0.03 0.85</ambient>
+            <diffuse>0.03 0.03 0.03 0.85</diffuse>
+          </material>
+        </visual>
+        <visual name="rotor_rear_right">
+          <pose>-0.72 -0.72 0.08 0 0 0</pose>
+          <geometry><cylinder><radius>0.26</radius><length>0.025</length></cylinder></geometry>
+          <material>
+            <ambient>0.03 0.03 0.03 0.85</ambient>
+            <diffuse>0.03 0.03 0.03 0.85</diffuse>
+          </material>
+        </visual>
+        <visual name="als_pod_visual">
+          <pose>0.16 0 -0.20 0 0 0</pose>
+          <geometry><box><size>0.32 0.24 0.18</size></box></geometry>
+          <material>
+            <ambient>0.08 0.08 0.08 1</ambient>
+            <diffuse>0.12 0.12 0.12 1</diffuse>
+          </material>
+        </visual>
+        <collision name="body_collision">
+          <geometry><box><size>1.05 0.52 0.28</size></box></geometry>
+        </collision>
+
+        <sensor type="camera" name="uav_long_range_camera">
+          <pose>0.45 0 -0.10 0 0.22 0</pose>
+          <visualize>false</visualize>
+          <always_on>true</always_on>
+          <update_rate>6.0</update_rate>
+          <camera>
+            <horizontal_fov>0.82</horizontal_fov>
+            <image>
+              <width>960</width>
+              <height>540</height>
+              <format>R8G8B8</format>
+            </image>
+            <clip>
+              <near>0.2</near>
+              <far>260.0</far>
+            </clip>
+          </camera>
+          <plugin name="gazebo_ros_uav_long_range_camera" filename="libgazebo_ros_camera.so">
+            <ros>
+              <remapping>~/image_raw:=uav/front_camera/image_raw</remapping>
+              <remapping>~/camera_info:=uav/front_camera/camera_info</remapping>
+            </ros>
+            <camera_name>uav_front_camera</camera_name>
+            <frame_name>uav_front_camera_link</frame_name>
+          </plugin>
+        </sensor>
+
+        <sensor type="ray" name="uav_als_lidar">
+          <pose>0.12 0 -0.22 0 0.58 0</pose>
+          <visualize>false</visualize>
+          <always_on>true</always_on>
+          <update_rate>4.0</update_rate>
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>240</samples>
+                <resolution>1</resolution>
+                <min_angle>-0.70</min_angle>
+                <max_angle>0.70</max_angle>
+              </horizontal>
+              <vertical>
+                <samples>16</samples>
+                <resolution>1</resolution>
+                <min_angle>-0.34</min_angle>
+                <max_angle>0.18</max_angle>
+              </vertical>
+            </scan>
+            <range>
+              <min>2.0</min>
+              <max>260.0</max>
+              <resolution>0.08</resolution>
+            </range>
+            <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.04</stddev>
+            </noise>
+          </ray>
+          <plugin name="gazebo_ros_uav_als" filename="libgazebo_ros_ray_sensor.so">
+            <ros>
+              <remapping>~/out:=uav/als/points</remapping>
+            </ros>
+            <output_type>sensor_msgs/PointCloud2</output_type>
+            <frame_name>uav_als_link</frame_name>
+          </plugin>
+        </sensor>
       </link>
     </model>
 

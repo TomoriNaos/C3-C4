@@ -85,10 +85,14 @@
 
   <gazebo reference="base_link">
     <gravity>false</gravity>
+    <velocity_decay>
+      <linear>0.25</linear>
+      <angular>0.35</angular>
+    </velocity_decay>
     <material>Gazebo/Orange</material>
   </gazebo>
 
-  <link name="radar_link">
+  <link name="mmwave_radar_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
@@ -97,21 +101,21 @@
       <material name="sensor_black"/>
     </visual>
   </link>
-  <joint name="radar_joint" type="fixed">
+  <joint name="mmwave_radar_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="radar_link"/>
+    <child link="mmwave_radar_link"/>
     <origin xyz="-0.35 0 1.86" rpy="0 0 0"/>
   </joint>
 
-  <gazebo reference="radar_link">
-    <sensor type="ray" name="radar_sensor">
+  <gazebo reference="mmwave_radar_link">
+    <sensor type="ray" name="mmwave_radar_sensor">
       <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>12</update_rate>
+      <visualize>false</visualize>
+      <update_rate>8</update_rate>
       <ray>
         <scan>
           <horizontal>
-            <samples>720</samples>
+            <samples>360</samples>
             <resolution>1</resolution>
             <min_angle>-${pi}</min_angle>
             <max_angle>${pi}</max_angle>
@@ -128,12 +132,12 @@
           <stddev>0.01</stddev>
         </noise>
       </ray>
-      <plugin name="gazebo_ros_radar" filename="libgazebo_ros_ray_sensor.so">
+      <plugin name="gazebo_ros_mmwave_radar" filename="libgazebo_ros_ray_sensor.so">
         <ros>
-          <remapping>~/out:=radar/scan</remapping>
+          <remapping>~/out:=mmwave_radar/scan</remapping>
         </ros>
         <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_link</frame_name>
+        <frame_name>mmwave_radar_link</frame_name>
       </plugin>
     </sensor>
   </gazebo>
@@ -155,13 +159,13 @@
   <gazebo reference="depth_camera_link">
     <sensor type="depth" name="depth_camera">
       <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>30.0</update_rate>
+      <visualize>false</visualize>
+      <update_rate>10.0</update_rate>
       <camera>
         <horizontal_fov>1.3962634</horizontal_fov>
         <image>
-          <width>800</width>
-          <height>600</height>
+          <width>640</width>
+          <height>480</height>
           <format>R8G8B8</format>
         </image>
         <clip>
@@ -179,6 +183,104 @@
         <frame_name>depth_camera_link</frame_name>
         <min_depth>0.1</min_depth>
         <max_depth>80.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <link name="gated_camera_link">
+    <visual>
+      <geometry>
+        <box size="0.20 0.18 0.14"/>
+      </geometry>
+      <material name="camera_blue"/>
+    </visual>
+  </link>
+  <joint name="gated_camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gated_camera_link"/>
+    <origin xyz="1.55 0 1.20" rpy="0 0 0"/>
+  </joint>
+
+  <gazebo reference="gated_camera_link">
+    <sensor type="camera" name="gated_camera">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>true</visualize>
+      <update_rate>15.0</update_rate>
+      <camera>
+        <horizontal_fov>1.20</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.05</near>
+          <far>120.0</far>
+        </clip>
+      </camera>
+      <plugin name="gazebo_ros_gated_camera" filename="libgazebo_ros_camera.so">
+        <ros>
+          <remapping>~/image_raw:=gated_camera/image_raw</remapping>
+          <remapping>~/camera_info:=gated_camera/camera_info</remapping>
+        </ros>
+        <camera_name>gated_camera</camera_name>
+        <frame_name>gated_camera_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <link name="als_lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.12" length="0.12"/>
+      </geometry>
+      <material name="sensor_black"/>
+    </visual>
+  </link>
+  <joint name="als_lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="als_lidar_link"/>
+    <origin xyz="0.15 0 1.72" rpy="0 0 0"/>
+  </joint>
+
+  <gazebo reference="als_lidar_link">
+    <sensor type="ray" name="als_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>5</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>240</samples>
+            <resolution>1</resolution>
+            <min_angle>-${pi}</min_angle>
+            <max_angle>${pi}</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>8</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.28</min_angle>
+            <max_angle>0.12</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.3</min>
+          <max>90.0</max>
+          <resolution>0.03</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.015</stddev>
+        </noise>
+      </ray>
+      <plugin name="gazebo_ros_als_lidar" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <remapping>~/out:=als/points</remapping>
+        </ros>
+        <output_type>sensor_msgs/PointCloud2</output_type>
+        <frame_name>als_lidar_link</frame_name>
       </plugin>
     </sensor>
   </gazebo>
@@ -201,8 +303,8 @@
   <gazebo reference="sonar_link">
     <sensor type="ray" name="sonar_sensor">
       <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>8</update_rate>
+      <visualize>false</visualize>
+      <update_rate>6</update_rate>
       <ray>
         <scan>
           <horizontal>
@@ -220,11 +322,10 @@
       </ray>
       <plugin name="gazebo_ros_sonar" filename="libgazebo_ros_ray_sensor.so">
         <ros>
-          <remapping>~/out:=sonar/range</remapping>
+          <remapping>~/out:=sonar/scan</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sonar_link</frame_name>
-        <radiation_type>ultrasound</radiation_type>
       </plugin>
     </sensor>
   </gazebo>

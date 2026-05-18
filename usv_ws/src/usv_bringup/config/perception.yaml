@@ -1,0 +1,85 @@
+radar_sonar_tracker:
+  ros__parameters:
+    radar_topic: /mmwave_radar/scan
+    sonar_topic: /sonar/scan
+    base_frame: base_link
+    radar_x_offset: -0.35
+    radar_y_offset: 0.0
+    sonar_x_offset: 0.65
+    cluster_gap: 0.75
+    min_cluster_points: 2
+    max_tracking_range: 80.0
+    association_gate: 2.8
+    track_timeout: 2.0
+
+gated_camera_recognizer:
+  ros__parameters:
+    image_topic: /gated_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    output_prefix: gated_camera
+    frame_id: gated_camera_link
+    yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
+    yolo_device: auto
+    half_precision: true
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [vessel, fishing_boat, buoy, fishnet_buoy, floating_obstacle, maritime_obstacle]
+    confidence_threshold: 0.35
+    min_contour_area: 450.0
+    process_stride: 1
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 85.0]
+
+uav_long_range_recognizer:
+  ros__parameters:
+    image_topic: /uav/front_camera/image_raw
+    depth_topic: ""
+    output_prefix: uav/long_range
+    frame_id: uav_front_camera_link
+    yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
+    yolo_device: auto
+    half_precision: true
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [vessel, fishing_boat, buoy, fishnet_buoy, floating_obstacle, maritime_obstacle]
+    confidence_threshold: 0.32
+    min_contour_area: 650.0
+    process_stride: 3
+    gate_near: [10.0, 45.0]
+    gate_mid: [35.0, 110.0]
+    gate_far: [90.0, 230.0]
+
+dynamic_target_controller:
+  ros__parameters:
+    update_rate: 12.0
+    wave_amplitude: 0.10
+    motion_time_scale: 4.0
+    vessel_name: moving_vessel
+    fishing_boat_name: small_fishing_boat
+    fishnet_buoy_name: fishnet_buoy
+    obstacle_name: floating_obstacle
+    debris_name: drift_debris
+
+uav_patrol_controller:
+  ros__parameters:
+    model_name: als_uav
+    update_rate: 4.0
+    center_x: 14.0
+    center_y: 0.0
+    altitude: 12.0
+    radius_x: 12.0
+    radius_y: 8.0
+    angular_speed: 0.060
+    camera_pitch: 0.18
+
+wave_buoyancy_node:
+  ros__parameters:
+    link_name: wamv::base_footprint
+    water_level: 0.32
+    wave_amplitude: 0.10
+    update_rate: 0.5
+    vertical_force_scale: 18.0
+    torque_scale: 5.0
