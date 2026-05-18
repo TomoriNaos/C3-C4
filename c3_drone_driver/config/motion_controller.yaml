@@ -1,10 +1,19 @@
+# 运动控制参数
 motion_controller_node:
   ros__parameters:
-    control_hz: 50.0
-    cruise_speed_mps: 3.0
-    max_accel_mps2: 1.5
-    arrive_radius_m: 2.0
-    hover_altitude_m: 20.0
+    # 控制循环参数
+    control_hz: 50.0              # 控制频率（Hz）
+
+    # 速度与加速度限制
+    cruise_speed_mps: 3.0         # 巡航速度（m/s）
+    max_accel_mps2: 1.5           # 最大加速度（m/s^2）
+
+    # 任务与到点判定参数
+    arrive_radius_m: 2.0          # 到达半径（m）
+    hover_altitude_m: 20.0        # 默认悬停高度,无人机不会低于此高度飞行（m）
+
+    # 起始/Home点（NED/局部坐标）
+    # 说明：当前版本CMD_BACK由主控发布回船目标，本参数仅作初始化与调试保留
     home_x: 0.0
     home_y: 0.0
     home_z: 0.0

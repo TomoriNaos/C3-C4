@@ -6,7 +6,6 @@ uint8 MODE_TRANSIT=1
 uint8 MODE_SEARCH=2
 uint8 MODE_TRACK=3
 uint8 MODE_RETURN=4
-uint8 MODE_ABORT=5
 uint8 gimbal_mode
 uint8 link_state
 uint8 LINK_OK=0

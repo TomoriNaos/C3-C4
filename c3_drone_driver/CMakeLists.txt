@@ -7,10 +7,13 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
 
@@ -21,7 +24,7 @@ set(msg_files
   "msg/GimbalState.msg"
   "msg/TargetObservation.msg"
   "msg/MissionCommand.msg"
-  "msg/TargetHint.msg"
+  "msg/TcDetection.msg"
   "msg/DroneStatus.msg"
 )
 
@@ -39,9 +42,10 @@ add_executable(gimbal_controller_node src/gimbal_controller_node.cpp)
 ament_target_dependencies(gimbal_controller_node rclcpp)
 
 add_executable(target_processor_node src/target_processor_node.cpp)
-ament_target_dependencies(target_processor_node rclcpp std_msgs sensor_msgs geometry_msgs)
+ament_target_dependencies(target_processor_node rclcpp std_msgs sensor_msgs geometry_msgs ament_index_cpp)
 target_include_directories(target_processor_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_library(target_fusion_processor_lib src/target_fusion_processor.cpp)
@@ -55,18 +59,21 @@ ament_target_dependencies(pose_estimator_lib rclcpp geometry_msgs)
 target_include_directories(pose_estimator_lib PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+target_link_libraries(pose_estimator_lib Eigen3::Eigen)
 
 add_executable(mavlink_bridge_node src/mavlink_bridge_node.cpp)
 ament_target_dependencies(mavlink_bridge_node rclcpp)
 
 add_executable(drone_main_controller_node src/drone_main_controller_node.cpp)
-ament_target_dependencies(drone_main_controller_node rclcpp geometry_msgs)
+ament_target_dependencies(drone_main_controller_node rclcpp geometry_msgs ament_index_cpp)
 target_include_directories(drone_main_controller_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 add_executable(motion_controller_node src/motion_controller_node.cpp)
 ament_target_dependencies(motion_controller_node rclcpp geometry_msgs)
+target_link_libraries(motion_controller_node Eigen3::Eigen)
 
 add_executable(sensor_mock_node src/sensor_mock_node.cpp)
 ament_target_dependencies(sensor_mock_node rclcpp std_msgs sensor_msgs)
@@ -80,8 +87,10 @@ target_link_libraries(gimbal_controller_node ${c3_typesupport_target})
 target_link_libraries(target_fusion_processor_lib ${c3_typesupport_target})
 target_link_libraries(pose_estimator_lib ${c3_typesupport_target})
 target_link_libraries(target_processor_node ${c3_typesupport_target})
+target_link_libraries(target_processor_node ${OpenCV_LIBS})
 target_link_libraries(mavlink_bridge_node ${c3_typesupport_target})
 target_link_libraries(drone_main_controller_node ${c3_typesupport_target})
+target_link_libraries(drone_main_controller_node ${OpenCV_LIBS})
 target_link_libraries(motion_controller_node ${c3_typesupport_target})
 target_link_libraries(sensor_mock_node ${c3_typesupport_target})
 target_link_libraries(gimbal_joint_state_bridge_node ${c3_typesupport_target})

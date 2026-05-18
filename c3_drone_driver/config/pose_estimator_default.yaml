@@ -1,0 +1,7 @@
+# 位姿解算参数
+%YAML:1.0
+---
+# 机体到云台坐标外参（米）
+body_to_gimbal_x: 0.15
+body_to_gimbal_y: 0.0
+body_to_gimbal_z: -0.05

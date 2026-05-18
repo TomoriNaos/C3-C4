@@ -9,10 +9,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/point_cloud2_iterator.hpp"
-#include "std_msgs/msg/float32_multi_array.hpp"
 
 #include "c3_drone_driver/msg/mission_command.hpp"
-#include "c3_drone_driver/msg/target_hint.hpp"
+#include "c3_drone_driver/msg/tc_detection.hpp"
 
 namespace c3_drone_driver
 {
@@ -38,10 +37,8 @@ public:
     noise_xy_m_ = declare_parameter<double>("noise_xy_m", 0.04);
     noise_z_m_ = declare_parameter<double>("noise_z_m", 0.08);
 
-    tc_bbox_pub_ = create_publisher<std_msgs::msg::Float32MultiArray>("/tc/bbox", 10);
-    tc_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/tc/points", rclcpp::SensorDataQoS());
+    tc_detection_pub_ = create_publisher<msg::TcDetection>("/tc/detection", rclcpp::SensorDataQoS());
     gc_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/gc/points", rclcpp::SensorDataQoS());
-    target_hint_pub_ = create_publisher<msg::TargetHint>("/mission/target_hint", 10);
     mission_cmd_pub_ = create_publisher<msg::MissionCommand>("/mission/cmd", 10);
 
     const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, pub_hz_));
@@ -60,11 +57,8 @@ private:
     const double t = (stamp - start_time_).seconds();
 
     publishMission(stamp);
-    publishHint(stamp);
-
     const auto target = targetPositionAt(t);
-    publishBbox(stamp, target);
-    publishCloud(stamp, target, "tc_camera_optical_frame", tc_pc_pub_, 0.9);
+    publishTcDetection(stamp, target);
     publishCloud(stamp, target, "gated_camera_optical_frame", gc_pc_pub_, 1.0);
   }
 
@@ -87,33 +81,17 @@ private:
     mission_cmd_pub_->publish(cmd);
   }
 
-  void publishHint(const rclcpp::Time &stamp)
-  {
-    msg::TargetHint hint;
-    hint.header.stamp = stamp;
-    hint.hint_id = static_cast<uint32_t>(target_id_);
-    hint.frame = msg::TargetHint::FRAME_BODY_MOTHERSHIP;
-    hint.t_usec = static_cast<uint64_t>(stamp.nanoseconds() / 1000ULL);
-    hint.position.x = target_x_m_;
-    hint.position.y = target_y_m_;
-    hint.position.z = target_z_m_;
-    hint.velocity.x = 0.0;
-    hint.velocity.y = 0.0;
-    hint.velocity.z = 0.0;
-    hint.radius_m = 8.0F;
-    hint.target_type_hint = static_cast<uint8_t>(target_type_);
-    target_hint_pub_->publish(hint);
-  }
-
-  void publishBbox(const rclcpp::Time &, const geometry_msgs::msg::Point &target)
+  void publishTcDetection(const rclcpp::Time &stamp, const geometry_msgs::msg::Point &target)
   {
     const double yaw = std::atan2(target.y, std::max(1e-4, target.x));
     const double pitch = std::atan2(target.z, std::sqrt(target.x * target.x + target.y * target.y));
     const double cx = static_cast<double>(cloud_width_) * 0.5 + (yaw / yaw_amp_rad_) * 120.0;
     const double cy = static_cast<double>(cloud_height_) * 0.5 - (pitch / yaw_amp_rad_) * 80.0;
 
-    std_msgs::msg::Float32MultiArray bbox;
-    bbox.data = {
+    msg::TcDetection detection;
+    detection.header.stamp = stamp;
+    detection.header.frame_id = "tc_camera_optical_frame";
+    detection.bbox.data = {
       static_cast<float>(std::clamp(cx - bbox_w_px_ * 0.5, 0.0, static_cast<double>(cloud_width_ - 1))),
       static_cast<float>(std::clamp(cy - bbox_h_px_ * 0.5, 0.0, static_cast<double>(cloud_height_ - 1))),
       static_cast<float>(bbox_w_px_),
@@ -122,14 +100,14 @@ private:
       static_cast<float>(target_id_),
       static_cast<float>(target_type_)
     };
-    tc_bbox_pub_->publish(bbox);
+    detection.cloud = buildCloud(stamp, target, "tc_camera_optical_frame", 0.9);
+    tc_detection_pub_->publish(detection);
   }
 
-  void publishCloud(
+  sensor_msgs::msg::PointCloud2 buildCloud(
     const rclcpp::Time &stamp,
     const geometry_msgs::msg::Point &target,
     const std::string &frame_id,
-    const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pub,
     double confidence_scale)
   {
     sensor_msgs::msg::PointCloud2 cloud;
@@ -175,13 +153,21 @@ private:
         }
       }
     }
-    pub->publish(cloud);
+    return cloud;
   }
 
-  rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr tc_bbox_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tc_pc_pub_;
+  void publishCloud(
+    const rclcpp::Time &stamp,
+    const geometry_msgs::msg::Point &target,
+    const std::string &frame_id,
+    const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pub,
+    double confidence_scale)
+  {
+    pub->publish(buildCloud(stamp, target, frame_id, confidence_scale));
+  }
+
+  rclcpp::Publisher<msg::TcDetection>::SharedPtr tc_detection_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr gc_pc_pub_;
-  rclcpp::Publisher<msg::TargetHint>::SharedPtr target_hint_pub_;
   rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 

@@ -1,7 +1,11 @@
+# 主控节点参数
 drone_main_controller_node:
   ros__parameters:
+    # 机体到云台外参（米）
     body_to_gimbal_x: 0.15
     body_to_gimbal_y: 0.0
     body_to_gimbal_z: -0.05
-    motion_command_hz: 100.0
-    observation_valid_timeout_s: 2.0
+
+    # 主控下发与状态时序参数
+    motion_command_hz: 100.0      # 运动指令频率（Hz）
+    observation_valid_timeout_s: 2.0 # 观测有效超时（秒）

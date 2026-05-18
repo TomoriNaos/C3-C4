@@ -3,9 +3,8 @@ uint8 command
 uint8 CMD_NOOP=0
 uint8 CMD_START=1
 uint8 CMD_BACK=2
-uint8 CMD_CLOSE=3
-uint8 CMD_HOLD=4
-uint8 CMD_TRACKING=5
-uint8 CMD_DETECTING=6
+uint8 CMD_HOLD=3
+uint8 CMD_TRACKING=4
+uint8 CMD_DETECTING=5
 int32 target_id
 float32 timeout_s

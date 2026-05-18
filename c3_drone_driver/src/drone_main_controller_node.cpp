@@ -1,17 +1,19 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <optional>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 
+#include "c3_drone_driver/config.h"
 #include "c3_drone_driver/msg/drone_status.hpp"
 #include "c3_drone_driver/msg/gimbal_motion_command.hpp"
 #include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/mission_command.hpp"
-#include "c3_drone_driver/msg/target_hint.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
 #include "c3_drone_driver/pose_estimator.h"
 
@@ -24,10 +26,18 @@ public:
   DroneMainControllerNode()
   : Node("drone_main_controller_node")
   {
+    const std::string default_cfg =
+      ament_index_cpp::get_package_share_directory("c3_drone_driver") +
+      "/config/pose_estimator_default.yaml";
+    const std::string config_file = declare_parameter<std::string>("pose_config_file", default_cfg);
+    if (!Config::SetParameterFile(config_file)) {
+      RCLCPP_WARN(get_logger(), "Failed to load %s, fallback to built-in defaults", config_file.c_str());
+    }
+
     PoseEstimator::Config pose_cfg;
-    pose_cfg.body_to_gimbal_x = declare_parameter<double>("body_to_gimbal_x", 0.15);
-    pose_cfg.body_to_gimbal_y = declare_parameter<double>("body_to_gimbal_y", 0.0);
-    pose_cfg.body_to_gimbal_z = declare_parameter<double>("body_to_gimbal_z", -0.05);
+    pose_cfg.body_to_gimbal_x = Config::GetOr<double>("body_to_gimbal_x", 0.15);
+    pose_cfg.body_to_gimbal_y = Config::GetOr<double>("body_to_gimbal_y", 0.0);
+    pose_cfg.body_to_gimbal_z = Config::GetOr<double>("body_to_gimbal_z", -0.05);
     motion_command_hz_ = declare_parameter<double>("motion_command_hz", 100.0);
     observation_valid_timeout_s_ = declare_parameter<double>("observation_valid_timeout_s", 2.0);
 
@@ -35,8 +45,10 @@ public:
 
     mission_cmd_sub_ = create_subscription<msg::MissionCommand>(
       "/mission/cmd", 10, std::bind(&DroneMainControllerNode::onMissionCmd, this, std::placeholders::_1));
-    target_hint_sub_ = create_subscription<msg::TargetHint>(
-      "/mission/target_hint", 10, std::bind(&DroneMainControllerNode::onTargetHint, this, std::placeholders::_1));
+    ship_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+      "/ship/pose_world", 10, std::bind(&DroneMainControllerNode::onShipPose, this, std::placeholders::_1));
+    ship_target_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+      "/ship/target_point", 10, std::bind(&DroneMainControllerNode::onShipTarget, this, std::placeholders::_1));
     observation_sub_ = create_subscription<msg::TargetObservation>(
       "/target/observation_body", 10, std::bind(&DroneMainControllerNode::onObservation, this, std::placeholders::_1));
     gimbal_state_sub_ = create_subscription<msg::GimbalState>(
@@ -64,25 +76,22 @@ private:
     has_mission_cmd_ = true;
   }
 
-  void onTargetHint(const msg::TargetHint::SharedPtr msg)
+  void onShipPose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
   {
-    last_target_hint_ = *msg;
-    has_target_hint_ = true;
-    geometry_msgs::msg::PoseStamped goal;
-    goal.header = msg->header;
-    // Preserve hint source timestamp for downstream temporal alignment.
-    if (msg->t_usec != 0ULL) {
-      const int64_t sec = static_cast<int64_t>(msg->t_usec / 1000000ULL);
-      const int64_t nsec = static_cast<int64_t>((msg->t_usec % 1000000ULL) * 1000ULL);
-      goal.header.stamp.sec = static_cast<int32_t>(sec);
-      goal.header.stamp.nanosec = static_cast<uint32_t>(nsec);
+    ship_pose_world_ = *msg;
+    has_ship_pose_ = true;
+  }
+
+  void onShipTarget(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  {
+    // 约定：输入为船坐标系相对目标点（frame_id=ship）
+    if (msg->header.frame_id != "ship") {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 1000, "Ship target frame_id should be 'ship'");
+      return;
     }
-    // Carry frame semantics forward for mission/trajectory modules.
-    goal.header.frame_id =
-      (msg->frame == msg::TargetHint::FRAME_NED_REL_MOTHERSHIP) ? "mother_ned" : "mother_body";
-    goal.pose.position = msg->position;
-    goal.pose.orientation.w = 1.0;
-    mission_goal_pub_->publish(goal);
+    ship_target_rel_ = *msg;
+    has_ship_target_ = true;
   }
 
   void onObservation(const msg::TargetObservation::SharedPtr msg)
@@ -122,8 +131,60 @@ private:
 
   void onTick()
   {
+    publishMissionGoal();
     publishMotionCommand();
     publishStatus();
+  }
+
+  void publishMissionGoal()
+  {
+    if (!has_ship_pose_) {
+      return;
+    }
+    if (!has_mission_cmd_) {
+      return;
+    }
+
+    geometry_msgs::msg::PoseStamped goal;
+    goal.header.stamp = now();
+    goal.header.frame_id = "ned";
+    goal.pose.orientation.w = 1.0;
+
+    if (last_mission_cmd_.command == msg::MissionCommand::CMD_BACK) {
+      // 回船：直接跟随母船当前世界系位置
+      goal.pose.position = ship_pose_world_.pose.position;
+      mission_goal_pub_->publish(goal);
+      return;
+    }
+
+    if (last_mission_cmd_.command != msg::MissionCommand::CMD_START) {
+      return;
+    }
+    if (!has_ship_target_) {
+      return;
+    }
+
+    const auto &sp = ship_pose_world_.pose.position;
+    const auto &sq = ship_pose_world_.pose.orientation;
+    const double ship_yaw = quatYaw(sq.x, sq.y, sq.z, sq.w);
+    const double c = std::cos(ship_yaw);
+    const double s = std::sin(ship_yaw);
+
+    const double rx = ship_target_rel_.pose.position.x;
+    const double ry = ship_target_rel_.pose.position.y;
+    const double rz = ship_target_rel_.pose.position.z;
+
+    goal.pose.position.x = sp.x + c * rx - s * ry;
+    goal.pose.position.y = sp.y + s * rx + c * ry;
+    goal.pose.position.z = sp.z + rz;
+    mission_goal_pub_->publish(goal);
+  }
+
+  static double quatYaw(double x, double y, double z, double w)
+  {
+    const double siny_cosp = 2.0 * (w * z + x * y);
+    const double cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
+    return std::atan2(siny_cosp, cosy_cosp);
   }
 
   void publishMotionCommand()
@@ -152,12 +213,8 @@ private:
     if (has_mission_cmd_) {
       if (last_mission_cmd_.command == msg::MissionCommand::CMD_BACK) {
         s.mission_mode = msg::DroneStatus::MODE_RETURN;
-      } else if (last_mission_cmd_.command == msg::MissionCommand::CMD_CLOSE) {
-        s.mission_mode = msg::DroneStatus::MODE_ABORT;
       } else if (has_target_body_) {
         s.mission_mode = msg::DroneStatus::MODE_TRACK;
-      } else if (has_target_hint_) {
-        s.mission_mode = msg::DroneStatus::MODE_SEARCH;
       } else if (last_mission_cmd_.command == msg::MissionCommand::CMD_START) {
         s.mission_mode = msg::DroneStatus::MODE_TRANSIT;
       }
@@ -178,7 +235,8 @@ private:
   std::unique_ptr<PoseEstimator> pose_estimator_;
 
   rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_sub_;
-  rclcpp::Subscription<msg::TargetHint>::SharedPtr target_hint_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_sub_;
   rclcpp::Subscription<msg::TargetObservation>::SharedPtr observation_sub_;
   rclcpp::Subscription<msg::GimbalState>::SharedPtr gimbal_state_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_sub_;
@@ -193,11 +251,13 @@ private:
   double observation_valid_timeout_s_{2.0};
 
   bool has_mission_cmd_{false};
-  bool has_target_hint_{false};
+  bool has_ship_pose_{false};
+  bool has_ship_target_{false};
   bool has_target_body_{false};
   bool has_vehicle_pose_{false};
   msg::MissionCommand last_mission_cmd_{};
-  msg::TargetHint last_target_hint_{};
+  geometry_msgs::msg::PoseStamped ship_pose_world_{};
+  geometry_msgs::msg::PoseStamped ship_target_rel_{};
   geometry_msgs::msg::PoseStamped last_vehicle_pose_{};
   std::array<double, 3> last_target_body_{0.0, 0.0, 0.0};
   rclcpp::Time last_obs_time_{0, 0, RCL_ROS_TIME};

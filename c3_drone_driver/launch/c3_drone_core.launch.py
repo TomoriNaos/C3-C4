@@ -20,7 +20,6 @@ def generate_launch_description():
             executable='target_processor_node',
             name='target_processor_node',
             output='screen',
-            parameters=[os.path.join(pkg, 'config', 'target_processor.yaml')],
         ),
         Node(
             package='c3_drone_driver',
@@ -34,7 +33,12 @@ def generate_launch_description():
             executable='drone_main_controller_node',
             name='drone_main_controller_node',
             output='screen',
-            parameters=[os.path.join(pkg, 'config', 'drone_main_controller.yaml')],
+            parameters=[
+                os.path.join(pkg, 'config', 'drone_main_controller.yaml'),
+                {
+                    'pose_config_file': os.path.join(pkg, 'config', 'pose_estimator_default.yaml'),
+                },
+            ],
         ),
         Node(
             package='c3_drone_driver',

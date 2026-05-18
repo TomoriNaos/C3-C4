@@ -1,17 +1,28 @@
+# 传感器模拟参数
 sensor_mock_node:
   ros__parameters:
-    pub_hz: 10.0
-    cloud_width: 320
-    cloud_height: 180
+    # 发布与点云尺寸参数
+    pub_hz: 10.0                  # 模拟数据发布频率（Hz）
+    cloud_width: 320              # 点云宽度（像素）
+    cloud_height: 180             # 点云高度（像素）
+
+    # 目标真值位置参数（机体系，米）
     target_x_m: 18.0
     target_y_m: 2.0
     target_z_m: 0.5
-    target_type: 2
-    target_id: 101
+
+    # 目标语义参数
+    target_type: 2                # 目标类型ID
+    target_id: 101                # 目标ID
+
+    # 检测框尺寸参数（像素）
     bbox_w_px: 120.0
     bbox_h_px: 100.0
-    yaw_amp_rad: 0.18
-    yaw_freq_hz: 0.08
-    noise_xy_m: 0.04
-    noise_z_m: 0.08
 
+    # 目标角度扰动参数
+    yaw_amp_rad: 0.18             # 偏航扰动幅值（rad）
+    yaw_freq_hz: 0.08             # 偏航扰动频率（Hz）
+
+    # 测量噪声参数
+    noise_xy_m: 0.04              # XY平面噪声标准差（m）
+    noise_z_m: 0.08               # Z轴噪声标准差（m）

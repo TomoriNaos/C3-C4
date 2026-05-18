@@ -5,12 +5,12 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 #include "c3_drone_driver/msg/drone_status.hpp"
 #include "c3_drone_driver/msg/command_ack.hpp"
 #include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/mission_command.hpp"
-#include "c3_drone_driver/msg/target_hint.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
 
 namespace c3_drone_driver
@@ -42,15 +42,19 @@ public:
 		mission_cmd_rx_sub_ = create_subscription<msg::MissionCommand>(
 			"/mavlink/mission_cmd_rx", 10,
 			std::bind(&MavlinkBridgeNode::onMissionCmdRx, this, std::placeholders::_1));
-		target_hint_rx_sub_ = create_subscription<msg::TargetHint>(
-			"/mavlink/target_hint_rx", 10,
-			std::bind(&MavlinkBridgeNode::onTargetHintRx, this, std::placeholders::_1));
+		ship_pose_rx_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+			"/mavlink/ship_pose_world_rx", 10,
+			std::bind(&MavlinkBridgeNode::onShipPoseRx, this, std::placeholders::_1));
+		ship_target_rx_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+			"/mavlink/ship_target_point_rx", 10,
+			std::bind(&MavlinkBridgeNode::onShipTargetRx, this, std::placeholders::_1));
 
 			mission_cmd_pub_ = create_publisher<msg::MissionCommand>("/mission/cmd", 10);
-			target_hint_pub_ = create_publisher<msg::TargetHint>("/mission/target_hint", 10);
 			drone_status_pub_ = create_publisher<msg::DroneStatus>("/mission/state", 10);
 			command_ack_pub_ = create_publisher<msg::CommandAck>("/mavlink/mission_cmd_ack", 10);
 			heartbeat_tx_pub_ = create_publisher<std_msgs::msg::Bool>("/mavlink/heartbeat_tx", 10);
+			ship_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/ship/pose_world", 10);
+			ship_target_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/ship/target_point", 10);
 
 		const auto status_period = std::chrono::duration<double>(1.0 / std::max(status_hz_, 0.2));
 		timer_ = create_wall_timer(
@@ -109,9 +113,6 @@ private:
 		case msg::MissionCommand::CMD_BACK:
 			mission_mode_ = msg::DroneStatus::MODE_RETURN;
 			break;
-		case msg::MissionCommand::CMD_CLOSE:
-			mission_mode_ = msg::DroneStatus::MODE_ABORT;
-			break;
 		case msg::MissionCommand::CMD_HOLD:
 			mission_mode_ = msg::DroneStatus::MODE_SEARCH;
 			break;
@@ -127,6 +128,16 @@ private:
 			last_cmd_rx_time_ = now();
 		}
 
+	void onShipPoseRx(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+	{
+		ship_pose_pub_->publish(*msg);
+	}
+
+	void onShipTargetRx(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+	{
+		ship_target_pub_->publish(*msg);
+	}
+
 		void publishCommandAck(uint8_t command, uint8_t result, uint8_t retry_count, const std::string &text)
 		{
 			msg::CommandAck ack;
@@ -137,16 +148,6 @@ private:
 			ack.message = text;
 			command_ack_pub_->publish(ack);
 		}
-
-	void onTargetHintRx(const msg::TargetHint::SharedPtr msg)
-	{
-		target_hint_pub_->publish(*msg);
-		last_target_hint_time_ = rclcpp::Time(msg->header.stamp);
-		if (mission_mode_ == msg::DroneStatus::MODE_IDLE)
-		{
-			mission_mode_ = msg::DroneStatus::MODE_TRANSIT;
-		}
-	}
 
 	void onHeartbeatTimer()
 	{
@@ -173,10 +174,7 @@ private:
 		if (since_rx >= link_lost_s_)
 		{
 			status.link_state = msg::DroneStatus::LINK_LOST;
-			if (mission_mode_ != msg::DroneStatus::MODE_ABORT)
-			{
-				mission_mode_ = msg::DroneStatus::MODE_RETURN;
-			}
+			mission_mode_ = msg::DroneStatus::MODE_RETURN;
 		}
 		else if (since_rx >= link_degraded_s_)
 		{
@@ -194,12 +192,14 @@ private:
 	rclcpp::Subscription<msg::GimbalState>::SharedPtr gimbal_state_sub_;
 	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr heartbeat_rx_sub_;
 	rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_rx_sub_;
-	rclcpp::Subscription<msg::TargetHint>::SharedPtr target_hint_rx_sub_;
+	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_rx_sub_;
+	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_rx_sub_;
 		rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
-		rclcpp::Publisher<msg::TargetHint>::SharedPtr target_hint_pub_;
 		rclcpp::Publisher<msg::DroneStatus>::SharedPtr drone_status_pub_;
 		rclcpp::Publisher<msg::CommandAck>::SharedPtr command_ack_pub_;
 		rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr heartbeat_tx_pub_;
+		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_pub_;
+		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_pub_;
 	rclcpp::TimerBase::SharedPtr timer_;
 	rclcpp::TimerBase::SharedPtr hb_timer_;
 
@@ -215,7 +215,6 @@ private:
 	rclcpp::Time last_obs_time_{0, 0, RCL_ROS_TIME};
 	rclcpp::Time last_gimbal_state_time_{0, 0, RCL_ROS_TIME};
 	rclcpp::Time last_cmd_rx_time_{0, 0, RCL_ROS_TIME};
-	rclcpp::Time last_target_hint_time_{0, 0, RCL_ROS_TIME};
 
 	msg::MissionCommand last_mission_cmd_;
 	uint32_t last_obs_id_{0};
