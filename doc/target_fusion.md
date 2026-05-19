@@ -1,88 +1,138 @@
 # Target Fusion
 
+> 版本：v1.2.0  
+> 更新日期：2026-05-19
+
 ## 1. 目标
 
-`TargetFusionProcessor` 负责将 TC 和 GC 的原始感知数据融合为统一目标观测，供 `target_processor_node` 调用。
+`TargetFusionProcessor` 负责把 TC 和 GC 的原始数据融合成统一的目标观测，供 `target_processor_node` 使用。
 
-## 2. 输入输出
+---
+
+## 2. 节点接口
 
 ### 输入
 
-- TC bbox：`[x, y, w, h]`
-- TC 点云：`PointCloud2`
-- GC 点云：`PointCloud2`
-- 时间戳
-- 目标类型先验 `target_type_hint`
+- `/tc/detection` -> `c3_drone_driver/msg/TcDetection`
+- `/gc/points` -> `sensor_msgs/msg/PointCloud2`
 
 ### 输出
 
-- `TargetObservation`
-- `GimbalVisualCommand`
-- 丢失状态
+- `/target/observation_body` -> `c3_drone_driver/msg/TargetObservation`
+- `/gimbal/visual_command` -> `c3_drone_driver/msg/GimbalVisualCommand`
 
-## 3. 类职责
+---
 
-### `TargetFusionProcessor`
+## 3. 输入消息格式
 
-职责：
-- 时间同步
-- ROI 裁剪
-- 点云降噪
-- 双传感器融合
-- 目标中心估计
-- 跟踪与丢失判定
-- 生成观测输出
+### `TcDetection`
 
-### 核心接口
+当前代码中，`bbox.data` 的约定是：
 
 ```text
-updateTcBbox()
-updateTcPointCloud()
-updateGcPointCloud()
-process()
-buildObservation()
+[x, y, w, h, confidence, target_id, target_type]
 ```
 
-## 4. 处理链路
+同时还携带：
+- `header.stamp`
+- `header.frame_id`
+- `cloud`（TC 的点云）
 
-### 时间同步策略
+### `GC PointCloud2`
 
-```text
-1. 为 TC 和 GC 各维护一个时间戳有序缓冲区，保留最近 200 ms 数据。
-2. 任一新消息到达时，触发最近邻匹配：
-   - 在另一传感器缓冲区中查找 |Δt| <= 100 ms 的最近帧。
-   - 匹配成功则进入融合流程。
-3. 若 TC 先到、GC 未到：
-   - 最多额外等待 50~70 ms。
-   - 超时后不再阻塞，直接降级输出。
-4. 若缓冲区数据超过 200 ms，直接丢弃。
-```
+- 只需要有效的 `header.stamp`
+- 点云宽高和 xyz 数据必须有效
 
-### 处理链路
+---
 
-```text
-1. bbox 引导 ROI 提取
-   将 bbox 投影到 TC 点云，裁剪出 ROI 点云。
+## 4. 配置参数
 
-2. ROI 预处理
-   去无效点、深度限幅、体素降采样。
+来自 `config/target_fusion_default.yaml`，核心参数包括：
+- 时间同步：`time_sync_threshold_s`、`pending_wait_s`、`buffer_keep_s`
+- ROI：`roi_margin_px`、`image_width`、`image_height`
+- 深度：`depth_min`、`depth_max`
+- 跟踪：`smoothing_alpha`、`max_tracking_loss_frames`
+- 置信度融合：`confidence_weight_detection`、`confidence_weight_cluster`、`confidence_weight_stability`
 
-3. TC/GC 融合
-   对齐后的 TC 与 GC 做最近邻/方差加权融合。
+---
 
-4. 目标估计
-   聚类得到主簇，计算目标中心、距离和质量指标。
+## 5. 处理流程
 
-5. 跨帧跟踪
-   用 CV 模型做 EKF/Predict-Update，维护轨迹和丢失计数。
+### 5.1 缓冲与同步
 
-6. 输出
-   生成 `TargetObservation` 和 `GimbalVisualCommand`。
-```
+- TC 检测和 GC 点云分别进入缓冲区
+- 只保留最近 `buffer_keep_s` 时间窗的数据
+- `process(now)` 里先清理过期数据，再找最近的 TC / GC 组合
+- 若 GC 未在同步窗口内到达：
+  - 在 `pending_wait_s` 内继续等
+  - 超时后返回丢失结果
 
-## 5. 节点关系
+### 5.2 ROI 提取
 
-- `target_processor_node` 负责调用本类
+- 根据 bbox 构建 ROI
+- 使用 `roi_margin_px` 扩展边界
+- 从 TC 点云中遍历 ROI 像素对应点
+- 去除无效点和越界深度点
+- 点数不足则认为 ROI 无效
 
+### 5.3 融合
 
+- 若 TC 和 GC 都有 ROI 结果，则按噪声方差加权融合质心
+- 若只有一路有效，则直接使用该路结果
+- 结果会给出 `cluster_quality`
 
+### 5.4 跟踪
+
+- 内部维护一个单目标匀速跟踪器
+- 有观测时更新位置、速度和稳定度
+- 无观测时只做外推并降低稳定度
+
+### 5.5 输出
+
+- 构造 `TargetObservation`
+- 构造 `GimbalVisualCommand`
+- 若目标丢失，则只保留观测结果，视觉命令不再下发
+
+---
+
+## 6. 输出消息说明
+
+### `TargetObservation`
+
+当前实现写入的关键字段：
+- `header.stamp`
+- `t_usec`
+- `obs_id`
+- `track_id`
+- `target_id`
+- `frame = FRAME_BODY_DRONE`
+- `target_type`
+- `position`
+- `range`
+- `yaw`
+- `pitch`
+- `confidence`
+- `source`（`SOURCE_TC_ONLY` / `SOURCE_GC_ONLY` / `SOURCE_FUSED`）
+- `status`（`STATUS_VALID` / `STATUS_LOW_CONF` / `STATUS_LOST`）
+
+### `GimbalVisualCommand`
+
+- `yaw`
+- `pitch`
+- `confidence`
+
+视觉命令的 yaw/pitch 直接来自观测方位，并乘以 `visual_cmd_gain`。
+
+---
+
+## 7. 处理边界
+
+- 目前是单目标处理，不做多目标跟踪
+- `track_id` 在当前实现中是单轨迹语义
+- 如果 TC 和 GC 都不可用，`process()` 会返回空
+
+---
+
+## 8. 节点关系
+
+`target_processor_node` 只负责调用 `TargetFusionProcessor`，并把结果发布出去；具体融合逻辑都在 `src/target_fusion_processor.cpp` 中。

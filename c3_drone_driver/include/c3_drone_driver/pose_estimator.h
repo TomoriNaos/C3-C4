@@ -81,6 +81,16 @@ namespace c3_drone_driver
 		std::optional<std::pair<double, double>> bodyPointToGimbalYawPitch(
 			const std::array<double, 3> &point_body) const;
 
+		/**
+		 * @brief 将船体系下相对点转换到NED世界系
+		 * @param ship_pose_world 船在NED中的位姿
+		 * @param target_rel_ship 目标在船体系中的相对点
+		 * @return 目标在NED中的坐标
+		 */
+		static std::array<double, 3> shipRelativePointToNed(
+			const geometry_msgs::msg::PoseStamped &ship_pose_world,
+			const std::array<double, 3> &target_rel_ship);
+
 	private:
 		using Mat3 = Eigen::Matrix3d;
 		using Vec3 = Eigen::Vector3d;
@@ -93,6 +103,7 @@ namespace c3_drone_driver
 		Mat3 buildRBodyGimbal(double yaw, double pitch) const;
 		static std::array<double, 3> toArray3(const Vec3 &v);
 		static Vec3 fromArray3(const std::array<double, 3> &v);
+		static double quatYaw(double x, double y, double z, double w);
 
 		Config config_{};
 		bool has_vehicle_pose_{false};

@@ -9,8 +9,8 @@
 namespace c3_drone_driver
 {
 
-TargetFusionProcessor::TargetFusionProcessor(const Config &config, const rclcpp::Logger &logger)
-: config_(config), logger_(logger)
+TargetFusionProcessor::TargetFusionProcessor(const Config &config)
+: config_(config)
 {
 }
 
@@ -39,7 +39,7 @@ std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::process(cons
 	uint32_t target_id = 0;
 	float detection_conf = static_cast<float>(config_.default_confidence);
 	uint8_t target_type = config_.target_type_default;
-	parseBboxMeta(bbox_data, target_id, detection_conf, target_type);
+	parseDetectionMeta(bbox_data, target_id, detection_conf, target_type);
 
 	//4. 构建ROI并提取质心
 	const auto roi = buildRoi(bbox_data);
@@ -143,14 +143,6 @@ bool TargetFusionProcessor::withinSyncThreshold(const rclcpp::Time &lhs, const r
 	return std::abs((lhs - rhs).seconds()) <= config_.time_sync_threshold_s;
 }
 
-void TargetFusionProcessor::parseBboxMeta(
-	const std::vector<float> &data, uint32_t &target_id, float &detection_conf, uint8_t &target_type) const
-{
-	if (data.size() >= 5) detection_conf = static_cast<float>(std::clamp<double>(data[4], 0.0, 1.0));
-	if (data.size() >= 6) target_id = static_cast<uint32_t>(std::max(0.0f, data[5]));
-	if (data.size() >= 7) target_type = static_cast<uint8_t>(std::max(0.0f, data[6]));
-}
-
 std::optional<TargetFusionProcessor::RoiBounds> TargetFusionProcessor::buildRoi(const std::vector<float> &data) const
 {
 	if (data.size() < 4) return std::nullopt;
@@ -241,7 +233,6 @@ void TargetFusionProcessor::updateTrack(const geometry_msgs::msg::Point &observe
 		track_position_ = observed;
 		track_velocity_ = geometry_msgs::msg::Point();
 		track_initialized_ = true;
-		loss_frames_ = 0;
 		stability_ = 0.5;
 		last_track_time_ = now;
 		return;
@@ -260,14 +251,12 @@ void TargetFusionProcessor::updateTrack(const geometry_msgs::msg::Point &observe
 		track_velocity_.x = static_cast<float>(0.7 * track_velocity_.x + 0.3 * vx);
 		track_velocity_.y = static_cast<float>(0.7 * track_velocity_.y + 0.3 * vy);
 		track_velocity_.z = static_cast<float>(0.7 * track_velocity_.z + 0.3 * vz);
-		loss_frames_ = 0;
 		stability_ = std::min(1.0, stability_ + 0.08);
 	}
 	else
 	{
 		//4. 无观测时：仅按运动模型外推并降低稳定度
 		track_position_ = predict(now);
-		++loss_frames_;
 		stability_ = std::max(0.0, stability_ - 0.06);
 	}
 
@@ -318,6 +307,14 @@ msg::TargetObservation TargetFusionProcessor::buildObservation(
 	return obs;
 }
 
+void TargetFusionProcessor::parseDetectionMeta(
+	const std::vector<float> &data, uint32_t &target_id, float &detection_conf, uint8_t &target_type) const
+{
+	if (data.size() >= 5) detection_conf = static_cast<float>(std::clamp<double>(data[4], 0.0, 1.0));
+	if (data.size() >= 6) target_id = static_cast<uint32_t>(std::max(0.0f, data[5]));
+	if (data.size() >= 7) target_type = static_cast<uint8_t>(std::max(0.0f, data[6]));
+}
+
 msg::GimbalVisualCommand TargetFusionProcessor::buildVisualCommand(const msg::TargetObservation &obs) const
 {
 	msg::GimbalVisualCommand cmd;
@@ -334,7 +331,7 @@ std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::buildLostRes
 	uint32_t target_id = 0;
 	float detection_conf = static_cast<float>(config_.default_confidence);
 	uint8_t target_type = config_.target_type_default;
-	parseBboxMeta(tc_data.bbox.data, target_id, detection_conf, target_type);
+	parseDetectionMeta(tc_data.bbox.data, target_id, detection_conf, target_type);
 
 	//2. 丢失时使用轨迹预测位置，并以“无观测”模式更新跟踪器
 	const geometry_msgs::msg::Point predicted = track_initialized_ ? predict(now) : geometry_msgs::msg::Point();

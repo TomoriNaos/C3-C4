@@ -1,4 +1,5 @@
 from launch import LaunchDescription
+from launch.actions import SetEnvironmentVariable
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -8,6 +9,7 @@ def generate_launch_description():
     pkg = get_package_share_directory('c3_drone_driver')
 
     return LaunchDescription([
+        SetEnvironmentVariable('ROS_LOG_DIR', '/tmp/ros_logs'),
         Node(
             package='c3_drone_driver',
             executable='gimbal_controller_node',
@@ -46,5 +48,28 @@ def generate_launch_description():
             name='motion_controller_node',
             output='screen',
             parameters=[os.path.join(pkg, 'config', 'motion_controller.yaml')],
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='px4_pose_bridge_node',
+            name='px4_pose_bridge_node',
+            output='screen',
+            parameters=[{
+                'use_odom_input': True,
+                'odom_topic': '/odom',
+                'output_topic': '/px4/vehicle_pose',
+                'output_frame_id': 'ned',
+            }],
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='offboard_setpoint_bridge_node',
+            name='offboard_setpoint_bridge_node',
+            output='screen',
+            parameters=[{
+                'input_topic': '/px4/offboard_goal',
+                'output_topic': '/px4/setpoint_pose',
+                'force_frame_id': 'ned',
+            }],
         ),
     ])

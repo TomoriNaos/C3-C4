@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
@@ -25,6 +25,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            SetEnvironmentVariable("ROS_LOG_DIR", "/tmp/ros_logs"),
             DeclareLaunchArgument("use_rviz", default_value="false"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(gazebo_launch_file),
@@ -97,6 +98,29 @@ def generate_launch_description():
                 name="motion_controller_node",
                 output="screen",
                 parameters=[os.path.join(pkg_share, "config", "motion_controller.yaml")],
+            ),
+            Node(
+                package="c3_drone_driver",
+                executable="px4_pose_bridge_node",
+                name="px4_pose_bridge_node",
+                output="screen",
+                parameters=[{
+                    "use_odom_input": True,
+                    "odom_topic": "/odom",
+                    "output_topic": "/px4/vehicle_pose",
+                    "output_frame_id": "ned",
+                }],
+            ),
+            Node(
+                package="c3_drone_driver",
+                executable="offboard_setpoint_bridge_node",
+                name="offboard_setpoint_bridge_node",
+                output="screen",
+                parameters=[{
+                    "input_topic": "/px4/offboard_goal",
+                    "output_topic": "/px4/setpoint_pose",
+                    "force_frame_id": "ned",
+                }],
             ),
             Node(
                 package="c3_drone_driver",

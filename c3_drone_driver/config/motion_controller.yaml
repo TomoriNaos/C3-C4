@@ -4,10 +4,6 @@ motion_controller_node:
     # 控制循环参数
     control_hz: 50.0              # 控制频率（Hz）
 
-    # 速度与加速度限制
-    cruise_speed_mps: 3.0         # 巡航速度（m/s）
-    max_accel_mps2: 1.5           # 最大加速度（m/s^2）
-
     # 任务与到点判定参数
     arrive_radius_m: 2.0          # 到达半径（m）
     hover_altitude_m: 20.0        # 默认悬停高度,无人机不会低于此高度飞行（m）

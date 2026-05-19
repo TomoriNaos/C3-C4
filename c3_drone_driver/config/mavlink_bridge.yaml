@@ -8,9 +8,8 @@ mavlink_bridge_node:
 
     # 状态发布参数
     status_hz: 1.0                # 状态发布频率（Hz）
+    status_keepalive_s: 5.0       # 状态保活周期（秒）
     target_obs_valid_timeout_s: 2.0 # 目标观测有效时间（秒）
 
-    # 指令确认参数
+    # 预留项（当前Bridge仅做透传与链路状态）
     mission_cmd_default: 0        # 默认任务指令ID
-    cmd_ack_timeout_ms: 300       # 指令ACK超时（毫秒）
-    cmd_max_retry: 5              # 指令最大重试次数

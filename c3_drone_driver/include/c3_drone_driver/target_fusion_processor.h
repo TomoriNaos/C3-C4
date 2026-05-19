@@ -66,9 +66,7 @@ public:
 	};
 
 	/// 构造函数 
-	explicit TargetFusionProcessor(
-		const Config &config,
-		const rclcpp::Logger &logger = rclcpp::get_logger("TargetFusionProcessor"));
+	explicit TargetFusionProcessor(const Config &config);
 
 	void updateTcDetection(const msg::TcDetection::SharedPtr &msg);
 	void updateGcPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr &msg);
@@ -133,7 +131,7 @@ private:
 	 * @param detection_conf 输出参数，提取的检测置信度
 	 * @param target_type 输出参数，提取的目标类型
 	 */
-	void parseBboxMeta(
+	void parseDetectionMeta(
 		const std::vector<float> &data,
 		uint32_t &target_id,
 		float &detection_conf,
@@ -187,8 +185,6 @@ private:
 	double computeConfidence(float detection_conf, double cluster_quality, double stability, bool lost) const;
 	
 	Config config_;
-	rclcpp::Logger logger_;
-
 	std::deque<TimestampedTcDetection> tc_detection_buffer_;
 	std::deque<std::pair<rclcpp::Time, sensor_msgs::msg::PointCloud2::SharedPtr>> gc_pc_buffer_;
 
@@ -196,7 +192,6 @@ private:
 	geometry_msgs::msg::Point track_position_{};
 	geometry_msgs::msg::Point track_velocity_{};
 	double stability_{0.5};
-	std::size_t loss_frames_{0};
 	rclcpp::Time last_track_time_{0, 0, RCL_ROS_TIME};
 
 	uint32_t obs_id_{0};

@@ -121,4 +121,30 @@ namespace c3_drone_driver
 		return Vec3(v[0], v[1], v[2]);
 	}
 
+	std::array<double, 3> PoseEstimator::shipRelativePointToNed(
+		const geometry_msgs::msg::PoseStamped &ship_pose_world,
+		const std::array<double, 3> &target_rel_ship)
+	{
+		const auto &sp = ship_pose_world.pose.position;
+		const auto &sq = ship_pose_world.pose.orientation;
+		const double ship_yaw = quatYaw(sq.x, sq.y, sq.z, sq.w);
+		const double c = std::cos(ship_yaw);
+		const double s = std::sin(ship_yaw);
+
+		const double rx = target_rel_ship[0];
+		const double ry = target_rel_ship[1];
+		const double rz = target_rel_ship[2];
+		return {
+			sp.x + c * rx - s * ry,
+			sp.y + s * rx + c * ry,
+			sp.z + rz};
+	}
+
+	double PoseEstimator::quatYaw(double x, double y, double z, double w)
+	{
+		const double siny_cosp = 2.0 * (w * z + x * y);
+		const double cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
+		return std::atan2(siny_cosp, cosy_cosp);
+	}
+
 } // namespace c3_drone_driver

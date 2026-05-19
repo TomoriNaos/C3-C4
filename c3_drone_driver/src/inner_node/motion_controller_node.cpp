@@ -21,8 +21,6 @@ namespace c3_drone_driver
         {
             // config/motion_controller_default.yaml
             control_hz_ = declare_parameter<double>("control_hz", 50.0);
-            cruise_speed_mps_ = declare_parameter<double>("cruise_speed_mps", 3.0);
-            max_accel_mps2_ = declare_parameter<double>("max_accel_mps2", 1.5);
             arrive_radius_m_ = declare_parameter<double>("arrive_radius_m", 2.0);
             hover_altitude_m_ = declare_parameter<double>("hover_altitude_m", 20.0);
             home_x_ = declare_parameter<double>("home_x", 0.0);
@@ -30,31 +28,30 @@ namespace c3_drone_driver
             home_z_ = declare_parameter<double>("home_z", 0.0);
 
             current_position_ = {home_x_, home_y_, home_z_};
-            current_velocity_ = {0.0, 0.0, 0.0};
             target_position_ = current_position_;
             mode_ = Mode::HOLD;
 
             // 订阅来自主控的消息
             // 目标位置由主控发布的/mission/goal提供，类型为geometry_msgs::msg::PoseStamped
             mission_goal_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-                "/mission/goal", 10, std::bind(&MotionControllerNode::onMissionGoal, this, std::placeholders::_1));
+                "/mission/goal", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onMissionGoal(msg); });
         
             // 任务命令由主控发布的/mission/cmd提供，类型为c3_drone_driver::msg::MissionCommand
             mission_cmd_sub_ = create_subscription<msg::MissionCommand>(
-                "/mission/cmd", 10, std::bind(&MotionControllerNode::onMissionCommand, this, std::placeholders::_1));
+                "/mission/cmd", 10, [this](const msg::MissionCommand::SharedPtr msg) { onMissionCommand(msg); });
 
-            // 无人机位姿发布器
-            vehicle_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/px4/vehicle_pose", 10);
+            // 订阅PX4/EKF2实际位姿
+            vehicle_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+                "/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onVehiclePose(msg); });
             
             // PX4 offboard 离线控制目标发布器
             offboard_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/px4/offboard_goal", 10);
 
-            // 定时器,根据实时更新的内部状态信息，结合PX4 offboard控制接口要求，发布无人机位姿和离线控制目标
+            // 定时器：结合实时位姿与任务目标，发布PX4 Offboard目标点
             const auto period = std::chrono::duration<double>(1.0 / std::max(control_hz_, 5.0));
             timer_ = create_wall_timer(
                 std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-                std::bind(&MotionControllerNode::onTick, this));
-            last_tick_time_ = now();
+                [this]() { onTick(); });
 
             RCLCPP_INFO(get_logger(), "motion_controller_node started");
         }
@@ -82,7 +79,7 @@ namespace c3_drone_driver
          */
         void onMissionGoal(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
         {
-            // 主控已完成坐标转换，这里只接收世界系目标点
+            // 这里只接收世界系目标点
             target_position_ = {msg->pose.position.x, msg->pose.position.y, msg->pose.position.z};
             // 如果目标位置的z坐标过小，认为是未设置高度，使用默认悬停高度
             if (std::abs(target_position_[2]) < 1e-6)
@@ -111,91 +108,65 @@ namespace c3_drone_driver
             if (msg->command == msg::MissionCommand::CMD_HOLD)
             {
                 target_position_ = current_position_;
-                current_velocity_ = {0.0, 0.0, 0.0};
                 mode_ = Mode::HOLD;
                 return;
             }
         }
 
+        void onVehiclePose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+        {
+            current_position_ = {msg->pose.position.x, msg->pose.position.y, msg->pose.position.z};
+            has_vehicle_pose_ = true;
+        }
+
         /**
-         * @brief 定时器回调函数，执行无人机运动控制逻辑
-         * 根据当前模式和状态计算无人机的下一个位置和速度，并发布无人机位姿和离线控制目标 
+         * @brief 定时器回调函数，发布PX4 Offboard目标点
          */
         void onTick()
         {
-            const auto now_time = now();
-            const double dt = std::clamp((now_time - last_tick_time_).seconds(), 0.001, 0.2);
-            last_tick_time_ = now_time;
+            if (!has_vehicle_pose_) return;
 
+            const std::array<double, 3> active_target = resolveActiveTarget();
             const Eigen::Vector3d current(current_position_[0], current_position_[1], current_position_[2]);
-            const Eigen::Vector3d target(target_position_[0], target_position_[1], target_position_[2]);
-            const Eigen::Vector3d velocity(current_velocity_[0], current_velocity_[1], current_velocity_[2]);
-
-            const Eigen::Vector3d delta = target - current;
-            const double distance = delta.norm();
-
-            Eigen::Vector3d desired_velocity = Eigen::Vector3d::Zero();
-            if (distance > arrive_radius_m_)
-            {
-                desired_velocity = (delta / std::max(distance, 1e-6)) * cruise_speed_mps_;
-            }
-            else
-            {
+            const Eigen::Vector3d target(active_target[0], active_target[1], active_target[2]);
+            const double distance = (target - current).norm();
+            if (distance <= arrive_radius_m_) {
                 mode_ = Mode::HOLD;
             }
 
-            const Eigen::Vector3d vel_error = desired_velocity - velocity;
-            const double vel_error_norm = vel_error.norm();
-            const double max_dv = max_accel_mps2_ * dt;
-            Eigen::Vector3d dv = vel_error;
-            if (vel_error_norm > max_dv && vel_error_norm > 1e-9)
-            {
-                dv = vel_error * (max_dv / vel_error_norm);
-            }
-
-            const Eigen::Vector3d next_velocity = velocity + dv;
-            const Eigen::Vector3d next_position = current + next_velocity * dt;
-
-            current_velocity_ = {next_velocity.x(), next_velocity.y(), next_velocity.z()};
-            current_position_ = {next_position.x(), next_position.y(), next_position.z()};
-
-            publishVehiclePose(now_time);
-            publishOffboardGoal(now_time);
+            publishOffboardGoal(now(), active_target);
         }
 
-        void publishVehiclePose(const rclcpp::Time &stamp)
+        std::array<double, 3> resolveActiveTarget() const
         {
-            geometry_msgs::msg::PoseStamped pose;
-            pose.header.stamp = stamp;
-            pose.header.frame_id = "ned";
-            pose.pose.position.x = current_position_[0];
-            pose.pose.position.y = current_position_[1];
-            pose.pose.position.z = current_position_[2];
-            pose.pose.orientation.w = 1.0;
-            vehicle_pose_pub_->publish(pose);
+            if (mode_ == Mode::RETURN) {
+                return {home_x_, home_y_, home_z_};
+            }
+            if (mode_ == Mode::HOLD) {
+                return current_position_;
+            }
+            return target_position_;
         }
 
-        void publishOffboardGoal(const rclcpp::Time &stamp)
+        void publishOffboardGoal(const rclcpp::Time &stamp, const std::array<double, 3> &target)
         {
             geometry_msgs::msg::PoseStamped goal;
             goal.header.stamp = stamp;
             goal.header.frame_id = "ned";
-            goal.pose.position.x = target_position_[0];
-            goal.pose.position.y = target_position_[1];
-            goal.pose.position.z = target_position_[2];
+            goal.pose.position.x = target[0];
+            goal.pose.position.y = target[1];
+            goal.pose.position.z = target[2];
             goal.pose.orientation.w = 1.0;
             offboard_goal_pub_->publish(goal);
         }
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr mission_goal_sub_;
         rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_sub_;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_pub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_sub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr offboard_goal_pub_;
         rclcpp::TimerBase::SharedPtr timer_;
 
         double control_hz_{50.0};
-        double cruise_speed_mps_{3.0};
-        double max_accel_mps2_{1.5};
         double arrive_radius_m_{2.0};
         double hover_altitude_m_{20.0};
         double home_x_{0.0};
@@ -203,10 +174,9 @@ namespace c3_drone_driver
         double home_z_{0.0};
 
         Mode mode_{Mode::HOLD};
+        bool has_vehicle_pose_{false};
         std::array<double, 3> current_position_{0.0, 0.0, 0.0};
-        std::array<double, 3> current_velocity_{0.0, 0.0, 0.0};
         std::array<double, 3> target_position_{0.0, 0.0, 0.0};
-        rclcpp::Time last_tick_time_{0, 0, RCL_ROS_TIME};
     };
 
 } // namespace c3_drone_driver

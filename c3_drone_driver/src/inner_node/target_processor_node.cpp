@@ -4,7 +4,6 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
-#include "std_msgs/msg/float32_multi_array.hpp"
 
 #include "c3_drone_driver/config.h"
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
@@ -52,30 +51,25 @@ public:
 		config.confidence_weight_stability = Config::GetOr<double>("confidence_weight_stability", 0.3);
 
 		// TargetFusionProcessor 实例化
-		processor_ = std::make_unique<TargetFusionProcessor>(config, get_logger());
+		processor_ = std::make_unique<TargetFusionProcessor>(config);
 
 		// tc数据接收器
 		tc_detection_sub_ = create_subscription<msg::TcDetection>(
 			"/tc/detection", rclcpp::SensorDataQoS(), [this](const msg::TcDetection::SharedPtr msg) {
 				processor_->updateTcDetection(msg);
-				process();
 			});
 
 		// gc数据接收器
 		gc_pc_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
 			"/gc/points", rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
 				processor_->updateGcPointCloud(msg);
-				process();
 			});
 
 		// 数据发布器
-		// 两个observation_pub_分别用于内部处理和mavlink转发
 		observation_pub_ = create_publisher<msg::TargetObservation>("/target/observation_body", 10);
-		mavlink_observation_pub_ = create_publisher<msg::TargetObservation>("/mavlink/target_obs", 10);
-		
+
 		// 基于观测结果生成的云台控制指令发布器
 		visual_cmd_pub_ = create_publisher<msg::GimbalVisualCommand>("/gimbal/visual_command", 10);
-		lost_pub_ = create_publisher<std_msgs::msg::Float32MultiArray>("/target/fusion_lost", 10);
 
 		// 定时处理器，每20ms调用一次process函数，确保在没有新数据到达时也能及时更新状态（如目标丢失）
 		timer_ = create_wall_timer(
@@ -103,17 +97,10 @@ private:
 		if (result->has_observation)
 		{
 			observation_pub_->publish(result->observation);
-			mavlink_observation_pub_->publish(result->observation);
 		}
 		if (result->has_visual_command)
 		{
 			visual_cmd_pub_->publish(result->gimbal_command);
-		}
-		if (result->lost)
-		{
-			std_msgs::msg::Float32MultiArray lost_msg;
-			lost_msg.data = {1.0F};
-			lost_pub_->publish(lost_msg);
 		}
 	}
 
@@ -123,9 +110,7 @@ private:
 	rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gc_pc_sub_;
 
 	rclcpp::Publisher<msg::TargetObservation>::SharedPtr observation_pub_;
-	rclcpp::Publisher<msg::TargetObservation>::SharedPtr mavlink_observation_pub_;
 	rclcpp::Publisher<msg::GimbalVisualCommand>::SharedPtr visual_cmd_pub_;
-	rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr lost_pub_;
 	rclcpp::TimerBase::SharedPtr timer_;
 };
 
