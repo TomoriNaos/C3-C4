@@ -18,14 +18,18 @@ gated_camera_recognizer:
     depth_topic: /depth_camera/depth/image_raw
     output_prefix: gated_camera
     frame_id: gated_camera_link
+    detection_input: raw
     yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
-    yolo_device: auto
-    half_precision: true
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [vessel, fishing_boat, buoy, fishnet_buoy, floating_obstacle, maritime_obstacle]
-    confidence_threshold: 0.35
+    class_names: [buoy, fishing_boat]
+    confidence_threshold: 0.25
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
     min_contour_area: 450.0
     process_stride: 1
     gate_near: [2.0, 18.0]
@@ -38,14 +42,18 @@ uav_long_range_recognizer:
     depth_topic: ""
     output_prefix: uav/long_range
     frame_id: uav_front_camera_link
+    detection_input: raw
     yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
-    yolo_device: auto
-    half_precision: true
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [vessel, fishing_boat, buoy, fishnet_buoy, floating_obstacle, maritime_obstacle]
-    confidence_threshold: 0.32
+    class_names: [buoy, fishing_boat]
+    confidence_threshold: 0.25
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
     min_contour_area: 650.0
     process_stride: 3
     gate_near: [10.0, 45.0]
@@ -56,7 +64,7 @@ dynamic_target_controller:
   ros__parameters:
     update_rate: 12.0
     wave_amplitude: 0.10
-    motion_time_scale: 4.0
+    motion_time_scale: 1.2
     vessel_name: moving_vessel
     fishing_boat_name: small_fishing_boat
     fishnet_buoy_name: fishnet_buoy

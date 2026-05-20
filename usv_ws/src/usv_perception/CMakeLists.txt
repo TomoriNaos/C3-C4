@@ -17,6 +17,16 @@ find_package(tf2_ros REQUIRED)
 find_package(vision_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
+set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}" CACHE PATH "ONNX Runtime installation root")
+if(NOT ONNXRUNTIME_ROOT)
+  set(ONNXRUNTIME_ROOT "/home/hu/onnxruntime-linux-x64-1.23.2")
+endif()
+set(ONNXRUNTIME_INCLUDE_DIR "${ONNXRUNTIME_ROOT}/include")
+set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so")
+if(NOT EXISTS "${ONNXRUNTIME_INCLUDE_DIR}/onnxruntime_cxx_api.h" OR NOT EXISTS "${ONNXRUNTIME_LIBRARY}")
+  message(FATAL_ERROR "ONNX Runtime not found. Set ONNXRUNTIME_ROOT to a directory containing include/ and lib/.")
+endif()
+
 set(NODE_DEPS
   builtin_interfaces
   gazebo_msgs
@@ -30,9 +40,13 @@ set(NODE_DEPS
 )
 
 add_executable(gated_camera_recognizer src/gated_camera_recognizer.cpp)
-target_include_directories(gated_camera_recognizer PRIVATE include ${OpenCV_INCLUDE_DIRS})
+target_include_directories(gated_camera_recognizer PRIVATE include ${OpenCV_INCLUDE_DIRS} ${ONNXRUNTIME_INCLUDE_DIR})
 ament_target_dependencies(gated_camera_recognizer rclcpp sensor_msgs std_msgs vision_msgs)
-target_link_libraries(gated_camera_recognizer ${OpenCV_LIBS})
+target_link_libraries(gated_camera_recognizer ${OpenCV_LIBS} ${ONNXRUNTIME_LIBRARY})
+set_target_properties(gated_camera_recognizer PROPERTIES
+  BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
+  INSTALL_RPATH "${ONNXRUNTIME_ROOT}/lib"
+)
 
 add_executable(dynamic_target_controller src/dynamic_target_controller.cpp)
 target_include_directories(dynamic_target_controller PRIVATE include)

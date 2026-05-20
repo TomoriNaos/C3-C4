@@ -8,6 +8,7 @@ Panels:
         - /RobotModel1
         - /Tracking Markers1
         - /Gated Range View1
+        - /Gated Detection Points1
       Splitter Ratio: 0.5
   - Class: rviz_common/Views
     Name: Views
@@ -105,6 +106,23 @@ Visualization Manager:
       Color Transformer: FlatColor
       Color: 255; 120; 70
       Queue Size: 5
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Gated Detection Points
+      Enabled: true
+      Topic:
+        Value: /gated_camera/detection_points
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Spheres
+      Size (m): 0.35
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Min Intensity: 0
+      Max Intensity: 1
+      Queue Size: 10
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Name: Tracking Markers

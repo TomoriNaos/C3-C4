@@ -1,7 +1,10 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstring>
 #include <cmath>
 #include <filesystem>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
@@ -11,8 +14,11 @@
 
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
+#include <onnxruntime_cxx_api.h>
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_msgs/msg/point_field.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "vision_msgs/msg/detection2_d.hpp"
@@ -35,6 +41,20 @@ struct YoloCandidate
   int class_index{0};
 };
 
+struct DetectionPoint
+{
+  float x{0.0F};
+  float y{0.0F};
+  float z{0.0F};
+  float score{0.0F};
+  float class_id{0.0F};
+  float bbox_cx{0.0F};
+  float bbox_cy{0.0F};
+  float bbox_w{0.0F};
+  float bbox_h{0.0F};
+  std::string label;
+};
+
 class GatedCameraRecognizer : public rclcpp::Node
 {
 public:
@@ -45,15 +65,19 @@ public:
     depth_topic_ = declare_parameter<std::string>("depth_topic", "/depth_camera/depth/image_raw");
     output_prefix_ = normalize_prefix(declare_parameter<std::string>("output_prefix", "gated_camera"));
     frame_id_ = declare_parameter<std::string>("frame_id", "gated_camera_link");
+    base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
+    detection_input_ = lower_copy(declare_parameter<std::string>("detection_input", "raw"));
     yolo_model_path_ = declare_parameter<std::string>("yolo_model_path", "");
-    yolo_device_ = declare_parameter<std::string>("yolo_device", "auto");
-    yolo_half_precision_ = declare_parameter<bool>("half_precision", true);
     confidence_threshold_ = declare_parameter<double>("confidence_threshold", 0.35);
     min_contour_area_ = declare_parameter<double>("min_contour_area", 450.0);
     process_stride_ = std::max(1, static_cast<int>(declare_parameter<int>("process_stride", 3)));
     yolo_input_width_ = std::max(32, static_cast<int>(declare_parameter<int>("yolo_input_width", 640)));
     yolo_input_height_ = std::max(32, static_cast<int>(declare_parameter<int>("yolo_input_height", 640)));
     yolo_nms_threshold_ = declare_parameter<double>("yolo_nms_threshold", 0.45);
+    camera_x_offset_ = declare_parameter<double>("camera_x_offset", 1.55);
+    camera_y_offset_ = declare_parameter<double>("camera_y_offset", 0.0);
+    camera_z_offset_ = declare_parameter<double>("camera_z_offset", 1.20);
+    camera_horizontal_fov_ = declare_parameter<double>("camera_horizontal_fov", 1.20);
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
       {"vessel", "fishing_boat", "buoy", "fishnet_buoy", "floating_obstacle", "maritime_obstacle"});
@@ -76,7 +100,9 @@ public:
     mid_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("slice_mid"), 10);
     far_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("slice_far"), 10);
     range_view_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("range_view"), 10);
+    annotated_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("annotated"), 10);
     detection_pub_ = create_publisher<vision_msgs::msg::Detection2DArray>(topic("detections"), 10);
+    detection_points_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(topic("detection_points"), 10);
     status_pub_ = create_publisher<std_msgs::msg::String>(topic("status"), 10);
 
     RCLCPP_INFO(
@@ -141,33 +167,24 @@ private:
     }
 
     try {
-      yolo_net_ = cv::dnn::readNetFromONNX(yolo_model_path_);
-      const std::string device = lower_copy(yolo_device_);
-      if (device != "cpu" && device != "none") {
-        yolo_net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
-        yolo_net_.setPreferableTarget(
-          yolo_half_precision_ ? cv::dnn::DNN_TARGET_CUDA_FP16 : cv::dnn::DNN_TARGET_CUDA);
-        yolo_backend_ = yolo_half_precision_ ? "opencv_dnn_cuda_fp16" : "opencv_dnn_cuda";
-        yolo_uses_cuda_ = true;
-      } else {
-        set_yolo_cpu_backend();
-      }
+      yolo_session_options_.SetIntraOpNumThreads(1);
+      yolo_session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+      yolo_session_ = std::make_unique<Ort::Session>(
+        yolo_env_, yolo_model_path_.c_str(), yolo_session_options_);
+      Ort::AllocatorWithDefaultOptions allocator;
+      input_name_ = yolo_session_->GetInputNameAllocated(0, allocator).get();
+      output_name_ = yolo_session_->GetOutputNameAllocated(0, allocator).get();
+      yolo_input_names_ = {input_name_.c_str()};
+      yolo_output_names_ = {output_name_.c_str()};
+      yolo_backend_ = "onnxruntime_cpu";
       yolo_loaded_ = true;
       RCLCPP_INFO(get_logger(), "Loaded YOLO ONNX model: %s backend=%s", yolo_model_path_.c_str(), yolo_backend_.c_str());
-    } catch (const cv::Exception & exc) {
+    } catch (const Ort::Exception & exc) {
       yolo_loaded_ = false;
       yolo_backend_ = "contour_fallback";
       RCLCPP_WARN(get_logger(), "Could not load YOLO ONNX model '%s': %s", yolo_model_path_.c_str(), exc.what());
       RCLCPP_WARN(get_logger(), "Falling back to contour recognizer");
     }
-  }
-
-  void set_yolo_cpu_backend()
-  {
-    yolo_net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-    yolo_net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-    yolo_backend_ = "opencv_dnn_cpu";
-    yolo_uses_cuda_ = false;
   }
 
   void on_depth(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -214,15 +231,27 @@ private:
     far_pub_->publish(bgr_to_msg(far_slice, msg->header));
     range_view_pub_->publish(bgr_to_msg(range_view, msg->header));
 
-    auto detections = detect_objects(range_view, msg->header);
+    const cv::Mat & detection_image = select_detection_image(bgr, near_slice, mid_slice, far_slice, range_view);
+    auto detections = detect_objects(detection_image, msg->header);
+    const auto points = estimate_detection_points(detections, depth, detection_image.cols, detection_image.rows);
+    const auto annotated = draw_detections(detection_image, detections, points);
     const std::size_t detection_count = detections.detections.size();
     detection_pub_->publish(detections);
+    annotated_pub_->publish(bgr_to_msg(annotated, msg->header));
+    detection_points_pub_->publish(points_to_cloud(points, msg->header));
 
     std_msgs::msg::String status;
     std::ostringstream text;
+    text << std::fixed << std::setprecision(2);
     text << "detections=" << detection_count
          << ", yolo=" << (yolo_loaded_ ? "onnx" : "off")
-         << ", backend=" << yolo_backend_;
+         << ", backend=" << yolo_backend_
+         << ", input=" << detection_input_
+         << ", max_score=" << last_yolo_max_score_;
+    for (const auto & point : points) {
+      text << " | " << point.label << "(" << point.x << "," << point.y << "," << point.z
+           << ") score=" << point.score;
+    }
     status.data = text.str();
     status_pub_->publish(status);
   }
@@ -302,44 +331,36 @@ private:
     return detect_with_contours(bgr, header);
   }
 
+  const cv::Mat & select_detection_image(
+    const cv::Mat & raw,
+    const cv::Mat & near_slice,
+    const cv::Mat & mid_slice,
+    const cv::Mat & far_slice,
+    const cv::Mat & range_view) const
+  {
+    if (detection_input_ == "near") {
+      return near_slice;
+    }
+    if (detection_input_ == "mid") {
+      return mid_slice;
+    }
+    if (detection_input_ == "far") {
+      return far_slice;
+    }
+    if (detection_input_ == "range" || detection_input_ == "range_view") {
+      return range_view;
+    }
+    return raw;
+  }
+
   vision_msgs::msg::Detection2DArray detect_with_yolo(const cv::Mat & bgr, const std_msgs::msg::Header & header)
   {
     vision_msgs::msg::Detection2DArray detections;
     detections.header = header;
     detections.header.frame_id = frame_id_;
 
-    std::vector<cv::Mat> outputs;
     try {
-      const cv::Mat blob = cv::dnn::blobFromImage(
-        bgr, 1.0 / 255.0, cv::Size(yolo_input_width_, yolo_input_height_), cv::Scalar(), true, false);
-      yolo_net_.setInput(blob);
-      yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
-    } catch (const cv::Exception & exc) {
-      if (yolo_uses_cuda_) {
-        RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 3000,
-          "YOLO CUDA inference failed, falling back to OpenCV CPU: %s", exc.what());
-        set_yolo_cpu_backend();
-        try {
-          const cv::Mat blob = cv::dnn::blobFromImage(
-            bgr, 1.0 / 255.0, cv::Size(yolo_input_width_, yolo_input_height_), cv::Scalar(), true, false);
-          yolo_net_.setInput(blob);
-          yolo_net_.forward(outputs, yolo_net_.getUnconnectedOutLayersNames());
-        } catch (const cv::Exception & cpu_exc) {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO CPU inference failed: %s", cpu_exc.what());
-          return detections;
-        }
-      } else {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO inference failed: %s", exc.what());
-        return detections;
-      }
-    }
-
-    if (outputs.empty()) {
-      return detections;
-    }
-
-    const auto candidates = parse_yolo_output(outputs.front(), bgr.cols, bgr.rows);
+      const auto candidates = run_yolo_onnxruntime(bgr);
     std::vector<cv::Rect> boxes;
     std::vector<float> scores;
     boxes.reserve(candidates.size());
@@ -366,11 +387,156 @@ private:
         class_id,
         candidate.score));
     }
+    } catch (const Ort::Exception & exc) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO ONNX Runtime inference failed: %s", exc.what());
+      return detect_with_contours(bgr, header);
+    } catch (const std::exception & exc) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO inference failed: %s", exc.what());
+      return detect_with_contours(bgr, header);
+    }
     return detections;
+  }
+
+  std::vector<YoloCandidate> run_yolo_onnxruntime(const cv::Mat & bgr) const
+  {
+    if (!yolo_session_) {
+      return {};
+    }
+
+    cv::Mat resized;
+    cv::resize(bgr, resized, cv::Size(yolo_input_width_, yolo_input_height_));
+    cv::cvtColor(resized, resized, cv::COLOR_BGR2RGB);
+
+    std::vector<float> input_tensor_values(
+      static_cast<std::size_t>(3 * yolo_input_width_ * yolo_input_height_));
+    const int channel_size = yolo_input_width_ * yolo_input_height_;
+    for (int row = 0; row < yolo_input_height_; ++row) {
+      const cv::Vec3b * ptr = resized.ptr<cv::Vec3b>(row);
+      for (int col = 0; col < yolo_input_width_; ++col) {
+        const int index = row * yolo_input_width_ + col;
+        input_tensor_values[0 * channel_size + index] = static_cast<float>(ptr[col][0]) / 255.0F;
+        input_tensor_values[1 * channel_size + index] = static_cast<float>(ptr[col][1]) / 255.0F;
+        input_tensor_values[2 * channel_size + index] = static_cast<float>(ptr[col][2]) / 255.0F;
+      }
+    }
+
+    std::array<int64_t, 4> input_shape{
+      1, 3, static_cast<int64_t>(yolo_input_height_), static_cast<int64_t>(yolo_input_width_)};
+    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    auto input_tensor = Ort::Value::CreateTensor<float>(
+      memory_info,
+      input_tensor_values.data(),
+      input_tensor_values.size(),
+      input_shape.data(),
+      input_shape.size());
+
+    auto output_tensors = yolo_session_->Run(
+      Ort::RunOptions{nullptr},
+      yolo_input_names_.data(),
+      &input_tensor,
+      1,
+      yolo_output_names_.data(),
+      1);
+    if (output_tensors.empty() || !output_tensors.front().IsTensor()) {
+      return {};
+    }
+
+    auto & output_tensor = output_tensors.front();
+    const auto shape = output_tensor.GetTensorTypeAndShapeInfo().GetShape();
+    const float * output_data = output_tensor.GetTensorMutableData<float>();
+    return parse_yolo_tensor(output_data, shape, bgr.cols, bgr.rows);
+  }
+
+  std::vector<YoloCandidate> parse_yolo_tensor(
+    const float * output_data,
+    const std::vector<int64_t> & shape,
+    int image_width,
+    int image_height) const
+  {
+    last_yolo_max_score_ = 0.0F;
+    if (output_data == nullptr || shape.empty()) {
+      return {};
+    }
+
+    int rows = 0;
+    int cols = 0;
+    bool transposed = false;
+    if (shape.size() == 3) {
+      const int dim1 = static_cast<int>(shape[1]);
+      const int dim2 = static_cast<int>(shape[2]);
+      if (dim1 < dim2 && dim1 <= 256) {
+        rows = dim2;
+        cols = dim1;
+        transposed = true;
+      } else {
+        rows = dim1;
+        cols = dim2;
+      }
+    } else if (shape.size() == 2) {
+      rows = static_cast<int>(shape[0]);
+      cols = static_cast<int>(shape[1]);
+    } else {
+      return {};
+    }
+
+    const bool has_known_no_objectness = cols == 4 + static_cast<int>(class_names_.size()) || cols == 84;
+    const bool has_known_objectness = cols == 5 + static_cast<int>(class_names_.size()) || cols == 85;
+    const int class_start = has_known_no_objectness ? 4 : (has_known_objectness ? 5 : 4);
+    const bool use_objectness = class_start == 5;
+    if (cols <= class_start) {
+      return {};
+    }
+
+    const auto value_at = [&](int row, int col) -> float {
+      if (shape.size() == 3) {
+        if (transposed) {
+          return output_data[col * rows + row];
+        }
+        return output_data[row * cols + col];
+      }
+      return output_data[row * cols + col];
+    };
+
+    const float x_factor = static_cast<float>(image_width) / static_cast<float>(yolo_input_width_);
+    const float y_factor = static_cast<float>(image_height) / static_cast<float>(yolo_input_height_);
+    std::vector<YoloCandidate> candidates;
+    for (int row = 0; row < rows; ++row) {
+      float best_score = 0.0F;
+      int best_class = 0;
+      for (int col = class_start; col < cols; ++col) {
+        const float class_score = value_at(row, col);
+        if (class_score > best_score) {
+          best_score = class_score;
+          best_class = col - class_start;
+        }
+      }
+
+      const float objectness = use_objectness ? value_at(row, 4) : 1.0F;
+      const float score = objectness * best_score;
+      last_yolo_max_score_ = std::max(last_yolo_max_score_, score);
+      if (score < confidence_threshold_) {
+        continue;
+      }
+
+      const float cx = value_at(row, 0) * x_factor;
+      const float cy = value_at(row, 1) * y_factor;
+      const float width = value_at(row, 2) * x_factor;
+      const float height = value_at(row, 3) * y_factor;
+      const int left = std::clamp(static_cast<int>(cx - width * 0.5F), 0, std::max(image_width - 1, 0));
+      const int top = std::clamp(static_cast<int>(cy - height * 0.5F), 0, std::max(image_height - 1, 0));
+      const int right = std::clamp(static_cast<int>(cx + width * 0.5F), 0, image_width);
+      const int bottom = std::clamp(static_cast<int>(cy + height * 0.5F), 0, image_height);
+      if (right <= left || bottom <= top) {
+        continue;
+      }
+      candidates.push_back(YoloCandidate{cv::Rect(left, top, right - left, bottom - top), score, best_class});
+    }
+    return candidates;
   }
 
   std::vector<YoloCandidate> parse_yolo_output(const cv::Mat & output, int image_width, int image_height) const
   {
+    last_yolo_max_score_ = 0.0F;
     cv::Mat proposals;
     if (output.dims == 3) {
       const int rows = output.size[1];
@@ -412,6 +578,7 @@ private:
 
       const float objectness = use_objectness ? data[4] : 1.0F;
       const float score = objectness * best_score;
+      last_yolo_max_score_ = std::max(last_yolo_max_score_, score);
       if (score < confidence_threshold_) {
         continue;
       }
@@ -505,6 +672,196 @@ private:
     return detection;
   }
 
+  std::vector<DetectionPoint> estimate_detection_points(
+    const vision_msgs::msg::Detection2DArray & detections,
+    const cv::Mat & depth,
+    int image_width,
+    int image_height) const
+  {
+    if (depth.empty() || image_width <= 0 || image_height <= 0) {
+      return {};
+    }
+
+    const double focal_x = static_cast<double>(image_width) /
+      (2.0 * std::tan(std::max(camera_horizontal_fov_, 0.01) * 0.5));
+    const double focal_y = focal_x;
+    const double center_x = 0.5 * static_cast<double>(image_width - 1);
+    const double center_y = 0.5 * static_cast<double>(image_height - 1);
+
+    std::vector<DetectionPoint> points;
+    for (const auto & detection : detections.detections) {
+      const auto rect = detection_rect(detection, image_width, image_height);
+      const auto depth_m = median_depth(rect, depth);
+      if (!(depth_m > 0.0F)) {
+        continue;
+      }
+
+      const double u = detection.bbox.center.position.x;
+      const double v = detection.bbox.center.position.y;
+      const double lateral = (u - center_x) * static_cast<double>(depth_m) / focal_x;
+      const double vertical = (v - center_y) * static_cast<double>(depth_m) / focal_y;
+
+      DetectionPoint point;
+      point.x = static_cast<float>(camera_x_offset_ + depth_m);
+      point.y = static_cast<float>(camera_y_offset_ - lateral);
+      point.z = static_cast<float>(camera_z_offset_ - vertical);
+      point.score = detection_score(detection);
+      point.label = detection_label(detection);
+      point.class_id = static_cast<float>(class_index_for_label(point.label));
+      point.bbox_cx = static_cast<float>(detection.bbox.center.position.x);
+      point.bbox_cy = static_cast<float>(detection.bbox.center.position.y);
+      point.bbox_w = static_cast<float>(detection.bbox.size_x);
+      point.bbox_h = static_cast<float>(detection.bbox.size_y);
+      points.push_back(point);
+    }
+    return points;
+  }
+
+  static cv::Rect detection_rect(
+    const vision_msgs::msg::Detection2D & detection,
+    int image_width,
+    int image_height)
+  {
+    const int left = std::clamp(
+      static_cast<int>(std::round(detection.bbox.center.position.x - detection.bbox.size_x * 0.5)),
+      0, std::max(image_width - 1, 0));
+    const int top = std::clamp(
+      static_cast<int>(std::round(detection.bbox.center.position.y - detection.bbox.size_y * 0.5)),
+      0, std::max(image_height - 1, 0));
+    const int right = std::clamp(
+      static_cast<int>(std::round(detection.bbox.center.position.x + detection.bbox.size_x * 0.5)),
+      0, image_width);
+    const int bottom = std::clamp(
+      static_cast<int>(std::round(detection.bbox.center.position.y + detection.bbox.size_y * 0.5)),
+      0, image_height);
+    return cv::Rect(left, top, std::max(0, right - left), std::max(0, bottom - top));
+  }
+
+  static float median_depth(const cv::Rect & rect, const cv::Mat & depth)
+  {
+    if (rect.width <= 0 || rect.height <= 0) {
+      return 0.0F;
+    }
+
+    const int sample_stride = std::max(1, static_cast<int>(std::sqrt(rect.area() / 300.0)));
+    std::vector<float> values;
+    values.reserve(static_cast<std::size_t>(rect.area() / (sample_stride * sample_stride) + 1));
+    for (int row = rect.y; row < rect.y + rect.height; row += sample_stride) {
+      const float * ptr = depth.ptr<float>(row);
+      for (int col = rect.x; col < rect.x + rect.width; col += sample_stride) {
+        const float value = ptr[col];
+        if (std::isfinite(value) && value > 0.1F && value < 200.0F) {
+          values.push_back(value);
+        }
+      }
+    }
+    if (values.empty()) {
+      return 0.0F;
+    }
+    const auto middle = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+    std::nth_element(values.begin(), middle, values.end());
+    return *middle;
+  }
+
+  cv::Mat draw_detections(
+    const cv::Mat & image,
+    const vision_msgs::msg::Detection2DArray & detections,
+    const std::vector<DetectionPoint> & points) const
+  {
+    cv::Mat annotated = image.clone();
+    for (std::size_t index = 0; index < detections.detections.size(); ++index) {
+      const auto & detection = detections.detections[index];
+      const auto rect = detection_rect(detection, annotated.cols, annotated.rows);
+      if (rect.width <= 0 || rect.height <= 0) {
+        continue;
+      }
+
+      const auto label = detection_label(detection);
+      const auto score = detection_score(detection);
+      const cv::Scalar color = label == "buoy" ? cv::Scalar(0, 220, 255) : cv::Scalar(80, 255, 80);
+      cv::rectangle(annotated, rect, color, 2);
+
+      std::ostringstream text;
+      text << label << " " << std::fixed << std::setprecision(2) << score;
+      if (index < points.size()) {
+        text << " x=" << points[index].x << " y=" << points[index].y;
+      }
+      const int baseline = 0;
+      const int text_y = std::max(18, rect.y - 6);
+      cv::putText(
+        annotated, text.str(), cv::Point(rect.x, text_y),
+        cv::FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv::LINE_AA);
+      (void)baseline;
+    }
+    return annotated;
+  }
+
+  sensor_msgs::msg::PointCloud2 points_to_cloud(
+    const std::vector<DetectionPoint> & points,
+    const std_msgs::msg::Header & header) const
+  {
+    sensor_msgs::msg::PointCloud2 cloud;
+    cloud.header = header;
+    cloud.header.frame_id = base_frame_;
+    cloud.height = 1;
+    cloud.width = static_cast<std::uint32_t>(points.size());
+    cloud.is_bigendian = false;
+    cloud.is_dense = true;
+    cloud.point_step = 36;
+    cloud.row_step = cloud.point_step * cloud.width;
+    cloud.fields.resize(9);
+    set_cloud_field(cloud.fields[0], "x", 0);
+    set_cloud_field(cloud.fields[1], "y", 4);
+    set_cloud_field(cloud.fields[2], "z", 8);
+    set_cloud_field(cloud.fields[3], "intensity", 12);
+    set_cloud_field(cloud.fields[4], "class_id", 16);
+    set_cloud_field(cloud.fields[5], "bbox_cx", 20);
+    set_cloud_field(cloud.fields[6], "bbox_cy", 24);
+    set_cloud_field(cloud.fields[7], "bbox_w", 28);
+    set_cloud_field(cloud.fields[8], "bbox_h", 32);
+    cloud.data.resize(static_cast<std::size_t>(cloud.row_step));
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      unsigned char * dst = cloud.data.data() + i * cloud.point_step;
+      std::memcpy(dst + 0, &points[i].x, sizeof(float));
+      std::memcpy(dst + 4, &points[i].y, sizeof(float));
+      std::memcpy(dst + 8, &points[i].z, sizeof(float));
+      std::memcpy(dst + 12, &points[i].score, sizeof(float));
+      std::memcpy(dst + 16, &points[i].class_id, sizeof(float));
+      std::memcpy(dst + 20, &points[i].bbox_cx, sizeof(float));
+      std::memcpy(dst + 24, &points[i].bbox_cy, sizeof(float));
+      std::memcpy(dst + 28, &points[i].bbox_w, sizeof(float));
+      std::memcpy(dst + 32, &points[i].bbox_h, sizeof(float));
+    }
+    return cloud;
+  }
+
+  static void set_cloud_field(sensor_msgs::msg::PointField & field, const std::string & name, std::uint32_t offset)
+  {
+    field.name = name;
+    field.offset = offset;
+    field.datatype = sensor_msgs::msg::PointField::FLOAT32;
+    field.count = 1;
+  }
+
+  static std::string detection_label(const vision_msgs::msg::Detection2D & detection)
+  {
+    return detection.results.empty() ? "object" : detection.results.front().hypothesis.class_id;
+  }
+
+  static float detection_score(const vision_msgs::msg::Detection2D & detection)
+  {
+    return detection.results.empty() ? 0.0F : static_cast<float>(detection.results.front().hypothesis.score);
+  }
+
+  int class_index_for_label(const std::string & label) const
+  {
+    const auto it = std::find(class_names_.begin(), class_names_.end(), label);
+    if (it == class_names_.end()) {
+      return -1;
+    }
+    return static_cast<int>(std::distance(class_names_.begin(), it));
+  }
+
   static cv::Mat color_msg_to_bgr(const sensor_msgs::msg::Image & msg)
   {
     const std::string encoding = lower_copy(msg.encoding);
@@ -569,9 +926,9 @@ private:
   std::string depth_topic_;
   std::string output_prefix_;
   std::string frame_id_;
+  std::string base_frame_{"base_link"};
+  std::string detection_input_{"raw"};
   std::string yolo_model_path_;
-  std::string yolo_device_{"auto"};
-  bool yolo_half_precision_{true};
   double confidence_threshold_{0.35};
   double min_contour_area_{450.0};
   int process_stride_{3};
@@ -579,13 +936,23 @@ private:
   int yolo_input_width_{640};
   int yolo_input_height_{640};
   double yolo_nms_threshold_{0.45};
+  double camera_x_offset_{1.55};
+  double camera_y_offset_{0.0};
+  double camera_z_offset_{1.20};
+  double camera_horizontal_fov_{1.20};
   std::vector<std::string> class_names_;
   GateBounds gates_[3];
   cv::Mat latest_depth_;
   bool has_depth_{false};
-  cv::dnn::Net yolo_net_;
+  Ort::Env yolo_env_{ORT_LOGGING_LEVEL_WARNING, "gated_camera_recognizer"};
+  Ort::SessionOptions yolo_session_options_;
+  std::unique_ptr<Ort::Session> yolo_session_;
+  std::string input_name_;
+  std::string output_name_;
+  std::array<const char *, 1> yolo_input_names_{};
+  std::array<const char *, 1> yolo_output_names_{};
   bool yolo_loaded_{false};
-  bool yolo_uses_cuda_{false};
+  mutable float last_yolo_max_score_{0.0F};
   std::string yolo_backend_{"contour_fallback"};
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
@@ -594,7 +961,9 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mid_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr far_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr range_view_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr annotated_pub_;
   rclcpp::Publisher<vision_msgs::msg::Detection2DArray>::SharedPtr detection_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr detection_points_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
 };
 
