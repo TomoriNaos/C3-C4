@@ -34,7 +34,6 @@ c3_drone_driver/
 | `motion_controller_node` | `inner_node` | 生成 PX4 Offboard 目标点 |
 | `mavlink_bridge_node` | `bridge_node` | ROS 侧 MAVLink 输入/输出桥接与链路状态网关 |
 | `px4_pose_bridge_node` | `bridge_node` | 将 `/odom` 或 `/pose` 统一为 `/px4/vehicle_pose` |
-| `offboard_setpoint_bridge_node` | `bridge_node` | 将 `/px4/offboard_goal` 透传为统一的 setpoint |
 | `offboard_setpoint_px4_bridge_node` | `bridge_node` | 将 Offboard 目标转成 PX4 原生 `px4_msgs` |
 | `gimbal_joint_state_bridge_node` | `bridge_node` | 将云台状态转成 `/joint_states` |
 
@@ -51,7 +50,7 @@ c3_drone_driver/
 - `drone_main_controller_node`
 - `motion_controller_node`
 - `px4_pose_bridge_node`
-- `offboard_setpoint_bridge_node`
+- `offboard_setpoint_px4_bridge_node`
 
 适合只看业务逻辑、不拉起 Gazebo 的场景。
 
@@ -87,7 +86,7 @@ TC / GC / 任务命令
   └─→ `/main_controller/status`
 `motion_controller_node`
   ↓ `/px4/offboard_goal`
-`offboard_setpoint_bridge_node` 或 `offboard_setpoint_px4_bridge_node`
+`offboard_setpoint_px4_bridge_node`
   ↓
 PX4 / Offboard
 ```

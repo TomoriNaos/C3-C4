@@ -85,10 +85,8 @@
 
 - `mavlink_bridge_node` 只处理 ROS 侧业务话题
 - 真正发给 PX4 FCU 的 Offboard 消息由：
-  - `offboard_setpoint_bridge_node`
   - `offboard_setpoint_px4_bridge_node`
   负责
 - `px4_msgs` 缺失时，后者不会编译生成
 
 ---
-

@@ -87,9 +87,6 @@ ament_target_dependencies(gimbal_joint_state_bridge_node rclcpp sensor_msgs)
 add_executable(px4_pose_bridge_node src/bridge_node/px4_pose_bridge_node.cpp)
 ament_target_dependencies(px4_pose_bridge_node rclcpp geometry_msgs nav_msgs)
 
-add_executable(offboard_setpoint_bridge_node src/bridge_node/offboard_setpoint_bridge_node.cpp)
-ament_target_dependencies(offboard_setpoint_bridge_node rclcpp geometry_msgs)
-
 if(px4_msgs_FOUND)
   add_executable(offboard_setpoint_px4_bridge_node src/bridge_node/offboard_setpoint_px4_bridge_node.cpp)
   ament_target_dependencies(offboard_setpoint_px4_bridge_node rclcpp geometry_msgs px4_msgs)
@@ -109,7 +106,6 @@ target_link_libraries(motion_controller_node ${c3_typesupport_target})
 target_link_libraries(sensor_mock_node ${c3_typesupport_target})
 target_link_libraries(gimbal_joint_state_bridge_node ${c3_typesupport_target})
 target_link_libraries(px4_pose_bridge_node ${c3_typesupport_target})
-target_link_libraries(offboard_setpoint_bridge_node ${c3_typesupport_target})
 if(px4_msgs_FOUND)
   target_link_libraries(offboard_setpoint_px4_bridge_node ${c3_typesupport_target})
 endif()
@@ -126,7 +122,6 @@ install(TARGETS
   sensor_mock_node
   gimbal_joint_state_bridge_node
   px4_pose_bridge_node
-  offboard_setpoint_bridge_node
   target_fusion_processor_lib
   pose_estimator_lib
   DESTINATION lib/${PROJECT_NAME}

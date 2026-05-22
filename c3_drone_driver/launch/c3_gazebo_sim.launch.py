@@ -132,17 +132,6 @@ def generate_launch_description():
             ),
             Node(
                 package="c3_drone_driver",
-                executable="offboard_setpoint_bridge_node",
-                name="offboard_setpoint_bridge_node",
-                output="screen",
-                parameters=[{
-                    "input_topic": "/px4/offboard_goal",
-                    "output_topic": "/px4/setpoint_pose",
-                    "force_frame_id": "ned",
-                }],
-            ),
-            Node(
-                package="c3_drone_driver",
                 executable="mavlink_bridge_node",
                 name="mavlink_bridge_node",
                 output="screen",

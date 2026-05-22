@@ -29,15 +29,16 @@ namespace c3_drone_driver
             target_position_ = current_position_;
             mode_ = Mode::HOLD;
 
-            // 订阅来自主控的消息
-            // 目标位置由主控发布的/mission/goal提供，类型为geometry_msgs::msg::PoseStamped
+            // ============= drone_main_controller_node通信接口 ==============
+            // 目标位置接收器
             mission_goal_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
                 "/mission/goal", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onMissionGoal(msg); });
         
-            // 任务命令由主控发布的/mission/cmd提供，类型为c3_drone_driver::msg::MissionCommand
+            // 任务命令接收器
             mission_cmd_sub_ = create_subscription<msg::MissionCommand>(
                 "/mission/cmd", 10, [this](const msg::MissionCommand::SharedPtr msg) { onMissionCommand(msg); });
 
+            // ============= px4_pose_bridge_node通信接口 ==============
             // 订阅PX4/EKF2实际位姿
             vehicle_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
                 "/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onVehiclePose(msg); });
@@ -103,7 +104,7 @@ namespace c3_drone_driver
                 return;
             }
 
-            // 若为CMD_START命令，进入TRANSIT模式（目标点由/mission/goal提供）
+            // 若为CMD_START命令，进入TRANSIT模式（目标点由主控提供）
             if (msg->command == msg::MissionCommand::CMD_START)
             {
                 mode_ = Mode::TRANSIT;
