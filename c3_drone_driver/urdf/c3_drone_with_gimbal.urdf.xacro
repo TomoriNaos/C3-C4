@@ -3,6 +3,10 @@
   <xacro:arg name="parent_link" default="base_link"/>
   <xacro:arg name="gimbal_mount_xyz" default="0.16 0.0 -0.04"/>
   <xacro:arg name="gimbal_mount_rpy" default="0 0 0"/>
+  <xacro:arg name="tc_camera_xyz" default="0.050 0.020 0.0"/>
+  <xacro:arg name="tc_camera_rpy" default="0 0 0"/>
+  <xacro:arg name="gated_camera_xyz" default="0.050 -0.020 0.0"/>
+  <xacro:arg name="gated_camera_rpy" default="0 0 0"/>
 
   <link name="base_link">
     <inertial>
@@ -120,10 +124,11 @@
     </collision>
   </link>
 
+  <!-- TC 物理安装点：统一挂在云台 pitch 轴下，作为外部相机包的 TF 绑定接口 -->
   <joint name="tc_camera_joint" type="fixed">
     <parent link="gimbal_pitch_link"/>
     <child link="tc_camera_link"/>
-    <origin xyz="0.050 0.020 0.0" rpy="0 0 0"/>
+    <origin xyz="$(arg tc_camera_xyz)" rpy="$(arg tc_camera_rpy)"/>
   </joint>
 
   <link name="tc_camera_link">
@@ -149,10 +154,11 @@
     </collision>
   </link>
 
+  <!-- GC 物理安装点：统一挂在云台 pitch 轴下，作为外部相机包的 TF 绑定接口 -->
   <joint name="gated_camera_joint" type="fixed">
     <parent link="gimbal_pitch_link"/>
     <child link="gated_camera_link"/>
-    <origin xyz="0.050 -0.020 0.0" rpy="0 0 0"/>
+    <origin xyz="$(arg gated_camera_xyz)" rpy="$(arg gated_camera_rpy)"/>
   </joint>
 
   <link name="gated_camera_link">

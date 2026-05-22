@@ -1,7 +1,7 @@
 # 无人机飞控与视觉跟踪框架
 
-> 版本：v1.2.0  
-> 更新日期：2026-05-19
+> 版本：v1.2.1  
+> 更新日期：2026-05-22
 
 ## 1. 作用
 
@@ -101,7 +101,85 @@ PX4 / Offboard
 
 ---
 
-## 5. 外部接口概览
+## 5. TC / GC 的 URDF 与 TF 绑定
+
+### 5.1 绑定原则
+
+- `TC` 与 `GC` 作为云台上的两套相机载荷，统一挂在 `gimbal_pitch_link` 下。
+- 物理挂载关系由 `c3_drone_with_gimbal.urdf.xacro` 定义，`robot_state_publisher` 负责发布 TF。
+- 相机包不应重复发布 `tc_camera_link`、`gated_camera_link` 这类固定变换，避免 TF 冲突。
+
+### 5.2 固定帧名
+
+- 云台基准帧：`gimbal_pitch_link`
+- TC 载荷帧：`tc_camera_link`
+- TC 光学帧：`tc_camera_optical_frame`
+- GC 载荷帧：`gated_camera_link`
+- GC 光学帧：`gated_camera_optical_frame`
+
+### 5.3 可调安装参数
+
+当前 URDF 已将相机安装位姿抽成 xacro 参数，便于后续标定或换型：
+
+- `tc_camera_xyz`
+- `tc_camera_rpy`
+- `gated_camera_xyz`
+- `gated_camera_rpy`
+
+### 5.4 对接约束
+
+- 相机驱动/算法包只消费上述帧名，不自建新的挂载层级。
+- 图像和检测结果继续走各自 topic，TF 只负责坐标绑定。
+- 若后续需要做生命周期启停，主控只按距离阈值触发，不改 TF 树。
+
+### 5.5 距离门控策略
+
+- 仅考虑非 `BACK` 态时，主控使用 `arrive_radius < enable_distance` 的策略。
+- `target_range > enable_distance` 时：
+  - 不控制云台进入视觉模式
+  - TC/GC 保持 `Inactive`
+- `target_range <= enable_distance` 时：
+  - 主控调用 TC/GC 的生命周期服务，激活相机节点
+  - 再进入云台视觉控制链路
+- 这里的 `arrive_radius` 保留给运动模块到点判定，`enable_distance` 保留给感知与云台激活判定。
+
+### 5.6 生命周期服务规范
+
+队友相机包后续建议实现标准生命周期服务：
+
+- 服务名：`/tc_camera_node/change_state`
+- 服务名：`/gated_camera_node/change_state`
+- 服务类型：`lifecycle_msgs/srv/ChangeState`
+
+请求字段：
+
+```text
+lifecycle_msgs/msg/Transition transition
+uint8 transition.id
+string transition.label
+```
+
+推荐使用的 `transition.id`：
+
+- `lifecycle_msgs/msg/Transition::TRANSITION_ACTIVATE`
+- `lifecycle_msgs/msg/Transition::TRANSITION_DEACTIVATE`
+
+响应字段：
+
+```text
+bool success
+```
+
+默认约定：
+
+- 节点启动后处于 `Inactive`
+- 主控在距离大于阈值时不调用激活
+- 主控在距离小于等于阈值时调用 `TRANSITION_ACTIVATE`
+- 主控在离开阈值或任务结束时调用 `TRANSITION_DEACTIVATE`
+
+---
+
+## 6. 外部接口概览
 
 ### 5.1 TC
 
@@ -122,7 +200,7 @@ PX4 / Offboard
 
 ---
 
-## 6. 备注
+## 7. 备注
 
 - 当前仓库里的 `UWB`、`AIS` 仍属于预留能力，未进入主业务链路。
 - `doc/` 更适合作为设计说明；具体接口以 `msg/`、`srv/`、`launch/` 和源码为准。

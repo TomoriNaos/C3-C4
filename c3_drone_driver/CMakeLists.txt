@@ -13,6 +13,7 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 find_package(px4_msgs QUIET)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -67,7 +68,7 @@ add_executable(mavlink_bridge_node src/bridge_node/mavlink_bridge_node.cpp)
 ament_target_dependencies(mavlink_bridge_node rclcpp)
 
 add_executable(drone_main_controller_node src/inner_node/drone_main_controller_node.cpp)
-ament_target_dependencies(drone_main_controller_node rclcpp geometry_msgs ament_index_cpp)
+ament_target_dependencies(drone_main_controller_node rclcpp geometry_msgs ament_index_cpp lifecycle_msgs)
 target_include_directories(drone_main_controller_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   ${OpenCV_INCLUDE_DIRS}

@@ -12,6 +12,10 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
+    tc_camera_xyz = LaunchConfiguration("tc_camera_xyz")
+    tc_camera_rpy = LaunchConfiguration("tc_camera_rpy")
+    gated_camera_xyz = LaunchConfiguration("gated_camera_xyz")
+    gated_camera_rpy = LaunchConfiguration("gated_camera_rpy")
 
     pkg_share = get_package_share_directory("c3_drone_driver")
     gazebo_launch_file = os.path.join(
@@ -21,12 +25,27 @@ def generate_launch_description():
         [FindPackageShare("c3_drone_driver"), "urdf", "c3_drone_with_gimbal.urdf.xacro"]
     )
 
-    robot_description = {"robot_description": Command(["xacro ", model_file])}
+    robot_description = {"robot_description": Command([
+        "xacro ",
+        model_file,
+        " tc_camera_xyz:=",
+        tc_camera_xyz,
+        " tc_camera_rpy:=",
+        tc_camera_rpy,
+        " gated_camera_xyz:=",
+        gated_camera_xyz,
+        " gated_camera_rpy:=",
+        gated_camera_rpy,
+    ])}
 
     return LaunchDescription(
         [
             SetEnvironmentVariable("ROS_LOG_DIR", "/tmp/ros_logs"),
             DeclareLaunchArgument("use_rviz", default_value="false"),
+            DeclareLaunchArgument("tc_camera_xyz", default_value="0.050 0.020 0.0"),
+            DeclareLaunchArgument("tc_camera_rpy", default_value="0 0 0"),
+            DeclareLaunchArgument("gated_camera_xyz", default_value="0.050 -0.020 0.0"),
+            DeclareLaunchArgument("gated_camera_rpy", default_value="0 0 0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(gazebo_launch_file),
                 launch_arguments={"verbose": "true"}.items(),

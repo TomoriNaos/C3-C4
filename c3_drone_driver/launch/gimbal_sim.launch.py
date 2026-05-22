@@ -9,6 +9,10 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     use_gui = LaunchConfiguration('use_gui')
     use_controller = LaunchConfiguration('use_controller')
+    tc_camera_xyz = LaunchConfiguration('tc_camera_xyz')
+    tc_camera_rpy = LaunchConfiguration('tc_camera_rpy')
+    gated_camera_xyz = LaunchConfiguration('gated_camera_xyz')
+    gated_camera_rpy = LaunchConfiguration('gated_camera_rpy')
 
     model_file = PathJoinSubstitution([
         FindPackageShare('c3_drone_driver'),
@@ -17,7 +21,18 @@ def generate_launch_description():
     ])
 
     robot_description = {
-        'robot_description': Command(['xacro ', model_file])
+        'robot_description': Command([
+            'xacro ',
+            model_file,
+            ' tc_camera_xyz:=',
+            tc_camera_xyz,
+            ' tc_camera_rpy:=',
+            tc_camera_rpy,
+            ' gated_camera_xyz:=',
+            gated_camera_xyz,
+            ' gated_camera_rpy:=',
+            gated_camera_rpy,
+        ])
     }
 
     return LaunchDescription([
@@ -31,6 +46,10 @@ def generate_launch_description():
             default_value='false',
             description='Run gimbal controller + bridge to drive joints from /gimbal/state'
         ),
+        DeclareLaunchArgument('tc_camera_xyz', default_value='0.050 0.020 0.0'),
+        DeclareLaunchArgument('tc_camera_rpy', default_value='0 0 0'),
+        DeclareLaunchArgument('gated_camera_xyz', default_value='0.050 -0.020 0.0'),
+        DeclareLaunchArgument('gated_camera_rpy', default_value='0 0 0'),
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',

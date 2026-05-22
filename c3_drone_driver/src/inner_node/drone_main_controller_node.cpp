@@ -4,9 +4,12 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "lifecycle_msgs/msg/transition.hpp"
+#include "lifecycle_msgs/srv/change_state.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/u_int8.hpp"
 
@@ -46,6 +49,8 @@ namespace c3_drone_driver
 			observation_valid_timeout_s_ = declare_parameter<double>("observation_valid_timeout_s", 2.0);
 			status_keepalive_s_ = declare_parameter<double>("status_keepalive_s", 1.0);
 			gimbal_enable_distance_m_ = declare_parameter<double>("gimbal_enable_distance_m", 8.0);
+			tc_lifecycle_service_name_ = declare_parameter<std::string>("tc_lifecycle_service_name", "/tc_camera_node/change_state");
+			gc_lifecycle_service_name_ = declare_parameter<std::string>("gc_lifecycle_service_name", "/gated_camera_node/change_state");
 
 			// 位姿计算器实例化
 			pose_estimator_ = std::make_unique<PoseEstimator>(pose_cfg);
@@ -87,9 +92,7 @@ namespace c3_drone_driver
 					// 将目标观测解算到机体系
 					const auto transformed = pose_estimator_->transformObservation(*msg);
 					if (!transformed.has_value())
-					{
 						return;
-					}
 
 					state_.target_body = transformed->position_body;
 					state_.has_target_body = true;
@@ -121,6 +124,14 @@ namespace c3_drone_driver
 			// 云台控制发布器
 			gimbal_motion_pub_ = create_publisher<msg::GimbalMotionCommand>("/gimbal/motion_command", 10);
 			gimbal_mode_client_ = create_client<srv::SetGimbalMode>("/gimbal/set_mode");
+
+			// 相机生命周期客户端
+			tc_lifecycle_client_ = create_client<lifecycle_msgs::srv::ChangeState>(tc_lifecycle_service_name_);
+			gc_lifecycle_client_ = create_client<lifecycle_msgs::srv::ChangeState>(gc_lifecycle_service_name_);
+			tc_camera_lifecycle_.service_name = tc_lifecycle_service_name_;
+			tc_camera_lifecycle_.client = tc_lifecycle_client_;
+			gc_camera_lifecycle_.service_name = gc_lifecycle_service_name_;
+			gc_camera_lifecycle_.client = gc_lifecycle_client_;
 
 			// 任务目标发布器
 			mission_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/mission/goal", 10);
@@ -154,6 +165,13 @@ namespace c3_drone_driver
 			uint8_t motion_mode{msg::DroneStatus::MODE_HOLD};
 			std::array<double, 3> target_body{0.0, 0.0, 0.0};
 			rclcpp::Time last_obs_time{0, 0, RCL_ROS_TIME};
+		};
+
+		struct LifecycleEndpoint
+		{
+			std::string service_name;
+			rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr client;
+			std::optional<bool> requested_enabled{};
 		};
 
 		void onTick()
@@ -204,20 +222,48 @@ namespace c3_drone_driver
 
 		void publishMotionCommand()
 		{
+			if (!state_.has_motion_mode)
+				return;
+			
+			//1a.返航模式关闭相机与云台
+			if (state_.motion_mode == msg::DroneStatus::MODE_BACK)
+			{
+				requestCameraLifecycle(false);
+				requestGimbalMode(msg::GimbalState::MODE_TRACKING);
+				return;
+			}
 			if (!state_.has_target_body)
+			{
+				requestCameraLifecycle(false);
+				requestGimbalMode(msg::GimbalState::MODE_TRACKING);
 				return;
+			}
 			if ((now() - state_.last_obs_time).seconds() > observation_valid_timeout_s_)
+			{
+				requestCameraLifecycle(false);
+				requestGimbalMode(msg::GimbalState::MODE_TRACKING);
 				return;
+			}
 
+			//1b.其他模式下，根据目标距离决定是否开启相机，并发布云台控制指令
+			const double target_range_m = targetRangeMeters(state_.target_body);
+			const bool enable_visual = target_range_m <= gimbal_enable_distance_m_;
+
+			requestCameraLifecycle(enable_visual);
+			
+			//2a.如果目标过远则不开启视觉，云台保持追踪模式
+			if (!enable_visual)
+			{
+				requestGimbalMode(msg::GimbalState::MODE_TRACKING);
+				return;
+			}
+
+			//2b.如果目标在可视范围内，发布云台控制指令使其指向目标
 			const auto cmd = pose_estimator_->bodyPointToGimbalYawPitch(state_.target_body);
 			if (!cmd.has_value())
 				return;
 
-			const double target_range_m = targetRangeMeters(state_.target_body);
-			const bool enable_visual = target_range_m <= gimbal_enable_distance_m_;
-			requestGimbalMode(enable_visual ? msg::GimbalState::MODE_DETECTING : msg::GimbalState::MODE_TRACKING);
-			if (!enable_visual)
-				return;
+			requestGimbalMode(msg::GimbalState::MODE_DETECTING);
 
 			msg::GimbalMotionCommand motion;
 			motion.header.stamp = now();
@@ -231,9 +277,7 @@ namespace c3_drone_driver
 			const auto stamp = now();
 			const auto status = buildStatus(stamp);
 			if (!shouldPublishStatus(status, status.header.stamp))
-			{
 				return;
-			}
 
 			status_pub_->publish(status);
 			last_status_ = status;
@@ -247,17 +291,12 @@ namespace c3_drone_driver
 			s.header.stamp = stamp;
 			s.t_usec = static_cast<uint64_t>(stamp.nanoseconds() / 1000ULL);
 			s.mission_mode = state_.has_motion_mode ? state_.motion_mode : msg::DroneStatus::MODE_HOLD;
-			s.gimbal_mode = computeGimbalMode();
-			return s;
-		}
-
-		uint8_t computeGimbalMode() const
-		{
-			if (state_.has_gimbal_state)
-			{
-				return state_.gimbal_state.mode;
+			if (state_.has_gimbal_state){
+				s.gimbal_mode = state_.gimbal_state.mode;
+			} else {
+				s.gimbal_mode = msg::GimbalState::MODE_TRACKING;
 			}
-			return msg::GimbalState::MODE_TRACKING;
+			return s;
 		}
 
 		double targetRangeMeters(const std::array<double, 3> &point_body) const
@@ -279,6 +318,47 @@ namespace c3_drone_driver
 			req->mode = mode;
 			(void)gimbal_mode_client_->async_send_request(req);
 			requested_gimbal_mode_ = mode;
+		}
+
+		void requestCameraLifecycle(bool enable)
+		{
+			requestLifecycleState(tc_camera_lifecycle_, enable);
+			requestLifecycleState(gc_camera_lifecycle_, enable);
+		}
+
+		/**
+		 * @brief 请求相机节点切换到激活/休眠状态
+		 * @param endpoint 相机节点的生命周期服务端点
+		 * @param enable 是否请求激活（true=激活，false=休眠）
+			 * @details
+		 * - 避免重复请求：如果已请求过且状态未变，则不重复请求
+		 * - 请求前检查服务是否就绪，未就绪则打印警告并返回
+			 * - 请求通过调用ChangeState服务实现，激活请求使用TRANSITION_ACTIVATE，休眠请求使用TRANSITION_DEACTIVATE
+			 * - 请求结果不处理（不等待响应），但会记录请求的目标状态以避免重复请求
+		 */
+		void requestLifecycleState(LifecycleEndpoint &endpoint, bool enable)
+		{
+			if (!endpoint.client)
+				return;
+			if (endpoint.requested_enabled && *endpoint.requested_enabled == enable)
+				return;
+			if (!enable && !endpoint.requested_enabled)
+				return;
+			if (!endpoint.client->service_is_ready())
+			{
+				RCLCPP_WARN_THROTTLE(
+					get_logger(), *get_clock(), 2000,
+					"Lifecycle service not ready: %s", endpoint.service_name.c_str());
+				return;
+			}
+
+			auto req = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+			req->transition.id = enable
+				? lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE
+				: lifecycle_msgs::msg::Transition::TRANSITION_DEACTIVATE;
+			req->transition.label = enable ? "activate" : "deactivate";
+			(void)endpoint.client->async_send_request(req);
+			endpoint.requested_enabled = enable;
 		}
 
 		/**
@@ -313,17 +393,23 @@ namespace c3_drone_driver
 		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mission_goal_pub_;
 		rclcpp::Publisher<msg::DroneStatus>::SharedPtr status_pub_;
 		rclcpp::Client<srv::SetGimbalMode>::SharedPtr gimbal_mode_client_;
+		rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr tc_lifecycle_client_;
+		rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr gc_lifecycle_client_;
 
 		rclcpp::TimerBase::SharedPtr timer_;
 		double motion_command_hz_{50.0};
 		double observation_valid_timeout_s_{2.0};
 		double status_keepalive_s_{1.0};
 		double gimbal_enable_distance_m_{8.0};
+		std::string tc_lifecycle_service_name_{"/tc_camera_node/change_state"};
+		std::string gc_lifecycle_service_name_{"/gated_camera_node/change_state"};
 		rclcpp::Time last_status_pub_time_{0, 0, RCL_ROS_TIME};
 		std::optional<uint8_t> requested_gimbal_mode_{};
 		msg::DroneStatus last_status_{};
 		bool has_last_status_{false};
 
+		LifecycleEndpoint tc_camera_lifecycle_{};
+		LifecycleEndpoint gc_camera_lifecycle_{};
 		MainState state_{};
 	};
 
