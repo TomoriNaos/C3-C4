@@ -1,0 +1,12 @@
+# PX4 位姿桥接节点配置
+px4_pose_bridge_node:
+  ros__parameters:
+    # 是否使用里程计输入（true: /odom, false: /pose）
+    use_odom_input: true
+
+    odom_topic: "/odom" # odom：位置 + 姿态 + 线速度 + 角速度 + 协方差矩阵，来自PX4 的 EKF2 输出
+    pose_topic: "/pose" # pose：位置 + 姿态
+
+    # 输出位姿话题和坐标系
+    output_topic: "/px4/vehicle_pose"
+    output_frame_id: "ned"

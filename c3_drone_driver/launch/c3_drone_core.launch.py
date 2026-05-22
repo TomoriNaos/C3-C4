@@ -54,11 +54,6 @@ def generate_launch_description():
             executable='px4_pose_bridge_node',
             name='px4_pose_bridge_node',
             output='screen',
-            parameters=[{
-                'use_odom_input': True,
-                'odom_topic': '/odom',
-                'output_topic': '/px4/vehicle_pose',
-                'output_frame_id': 'ned',
-            }],
+            parameters=[os.path.join(pkg, 'config', 'px4_pose.yaml')],
         ),
     ])

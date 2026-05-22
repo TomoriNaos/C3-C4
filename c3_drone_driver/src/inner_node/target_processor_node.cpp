@@ -1,5 +1,8 @@
 #include <chrono>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -9,6 +12,7 @@
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
 #include "c3_drone_driver/msg/tc_detection.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
+#include "c3_drone_driver/srv/set_gimbal_mode.hpp"
 #include "c3_drone_driver/target_fusion_processor.h"
 
 namespace c3_drone_driver
@@ -18,7 +22,7 @@ class TargetProcessorNode : public rclcpp::Node
 {
 public:
 	TargetProcessorNode()
-		: Node("target_processor_node")
+	: Node("target_processor_node")
 	{
 		const std::string config_file =
 			ament_index_cpp::get_package_share_directory("c3_drone_driver") +
@@ -28,6 +32,7 @@ public:
 			RCLCPP_WARN(get_logger(), "Failed to load %s, fallback to built-in defaults", config_file.c_str());
 		}
 
+		//config/target_fusion_default.yaml
 		TargetFusionProcessor::Config config;
 		config.time_sync_threshold_s = Config::GetOr<double>("time_sync_threshold_s", 0.1);
 		config.pending_wait_s = Config::GetOr<double>("pending_wait_s", 0.06);
@@ -58,60 +63,93 @@ public:
 		config.confidence_weight_cluster = Config::GetOr<double>("confidence_weight_cluster", 0.2);
 		config.confidence_weight_stability = Config::GetOr<double>("confidence_weight_stability", 0.3);
 
-		// TargetFusionProcessor 实例化
+		mode_request_min_interval_s_ = declare_parameter<double>("mode_request_min_interval_s", 0.2);
+		gimbal_mode_service_name_ = declare_parameter<std::string>("gimbal_mode_service_name", "/gimbal/set_mode");
+
+		// target_fusion_processor实例化
 		processor_ = std::make_unique<TargetFusionProcessor>(config);
 
-		// tc数据接收器
+		// ============ 摄像机通信接口 =============
+		// traditional camera (TC)
 		tc_detection_sub_ = create_subscription<msg::TcDetection>(
-			"/tc/detection", rclcpp::SensorDataQoS(), [this](const msg::TcDetection::SharedPtr msg) {
-				processor_->updateTcDetection(msg);
-			});
+			"/tc/detection", rclcpp::SensorDataQoS(),
+			[this](const msg::TcDetection::SharedPtr msg) { processor_->updateTcDetection(msg); });
 
-		// gc数据接收器（bbox + cloud）
+		// gated camera (GC)
 		gc_detection_sub_ = create_subscription<msg::TcDetection>(
-			"/gc/detection", rclcpp::SensorDataQoS(), [this](const msg::TcDetection::SharedPtr msg) {
-				processor_->updateGcDetection(msg);
-			});
+			"/gc/detection", rclcpp::SensorDataQoS(),
+			[this](const msg::TcDetection::SharedPtr msg) { processor_->updateGcDetection(msg); });
 
+		// =========== gimbal_controller_node通信接口 ============
+		// 云台状态接收器
 		gimbal_state_sub_ = create_subscription<msg::GimbalState>(
-			"/gimbal/state", rclcpp::SensorDataQoS(), [this](const msg::GimbalState::SharedPtr msg) {
-				processor_->updateGimbalState(msg);
-			});
+			"/gimbal/state", rclcpp::SensorDataQoS(),
+			[this](const msg::GimbalState::SharedPtr msg) { 		
+				if (!msg) return;
+				processor_->updateGimbalState(msg); });
 
-		// 数据发布器
+		// 观测发布接口
 		observation_pub_ = create_publisher<msg::TargetObservation>("/target/observation_body", 10);
-
-		// 基于观测结果生成的云台控制指令发布器
+		
+		// 视觉命令发布接口
 		visual_cmd_pub_ = create_publisher<msg::GimbalVisualCommand>("/gimbal/visual_command", 10);
+		
+		// 云台模式请求客户端
+		gimbal_mode_client_ = create_client<srv::SetGimbalMode>(gimbal_mode_service_name_);
 
-		// 定时处理器，每20ms调用一次process函数，确保在没有新数据到达时也能及时更新状态（如目标丢失）
+		// 定时处理器
 		timer_ = create_wall_timer(
 			std::chrono::milliseconds(20),
-			[this]() {
-				process();
-			});
+			[this]() { process(); });
 
 		RCLCPP_INFO(get_logger(), "target_processor_node started");
 	}
 
-private:
+	private:
 
-	/**
-	 * @brief 处理函数，调用TargetFusionProcessor的process方法获取融合结果，并根据结果发布相应的消息
-	 */
-	void process()
+	/// 请求云台进入指定模式
+	void requestGimbalMode(uint8_t mode, const rclcpp::Time &stamp)
 	{
-		const auto result = processor_->process(now());
-		if (!result.has_value())
+		// 1.不是同一次请求，并且距离上次请求已经超过最小间隔，才发出新请求
+		if (last_requested_mode_.has_value() && *last_requested_mode_ == mode &&
+			last_mode_request_time_.nanoseconds() != 0 &&
+			(stamp - last_mode_request_time_).seconds() < mode_request_min_interval_s_)
 		{
 			return;
 		}
 
+		// 2.请求云台模式服务，如果服务不可用则跳过请求
+		if (!gimbal_mode_client_->service_is_ready())
+		{
+			RCLCPP_WARN_THROTTLE(
+				get_logger(), *get_clock(), 2000,
+				"Gimbal mode service not ready: %s", gimbal_mode_service_name_.c_str());
+			return;
+		}
+
+		auto req = std::make_shared<srv::SetGimbalMode::Request>();
+		req->mode = mode;
+		(void)gimbal_mode_client_->async_send_request(req);
+		last_requested_mode_ = mode;
+		last_mode_request_time_ = stamp;
+	}
+
+	void process()
+	{
+		const auto stamp = now();
+		const auto result = processor_->process(stamp);
+		if (!result.has_value()) return;
+
 		if (result->has_observation)
 		{
 			observation_pub_->publish(result->observation);
+			if (result->observation.status == msg::TargetObservation::STATUS_VALID)
+			{
+				requestGimbalMode(msg::GimbalState::MODE_DETECTING, stamp);
+			}
 		}
-		if (result->has_visual_command)
+
+		if (result->has_visual_command && !result->lost)
 		{
 			visual_cmd_pub_->publish(result->gimbal_command);
 		}
@@ -125,7 +163,13 @@ private:
 
 	rclcpp::Publisher<msg::TargetObservation>::SharedPtr observation_pub_;
 	rclcpp::Publisher<msg::GimbalVisualCommand>::SharedPtr visual_cmd_pub_;
+	rclcpp::Client<srv::SetGimbalMode>::SharedPtr gimbal_mode_client_;
 	rclcpp::TimerBase::SharedPtr timer_;
+
+	std::string gimbal_mode_service_name_{"/gimbal/set_mode"};
+	double mode_request_min_interval_s_{0.2};
+	rclcpp::Time last_mode_request_time_{0, 0, RCL_ROS_TIME};
+	std::optional<uint8_t> last_requested_mode_{};
 };
 
 } // namespace c3_drone_driver

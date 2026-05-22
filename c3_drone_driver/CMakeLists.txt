@@ -88,8 +88,8 @@ add_executable(px4_pose_bridge_node src/bridge_node/px4_pose_bridge_node.cpp)
 ament_target_dependencies(px4_pose_bridge_node rclcpp geometry_msgs nav_msgs)
 
 if(px4_msgs_FOUND)
-  add_executable(offboard_setpoint_px4_bridge_node src/bridge_node/offboard_setpoint_px4_bridge_node.cpp)
-  ament_target_dependencies(offboard_setpoint_px4_bridge_node rclcpp geometry_msgs px4_msgs)
+  add_executable(offboard_setpoint_bridge_node src/bridge_node/offboard_setpoint_bridge_node.cpp)
+  ament_target_dependencies(offboard_setpoint_bridge_node rclcpp geometry_msgs px4_msgs)
 endif()
 
 rosidl_get_typesupport_target(c3_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
@@ -107,7 +107,7 @@ target_link_libraries(sensor_mock_node ${c3_typesupport_target})
 target_link_libraries(gimbal_joint_state_bridge_node ${c3_typesupport_target})
 target_link_libraries(px4_pose_bridge_node ${c3_typesupport_target})
 if(px4_msgs_FOUND)
-  target_link_libraries(offboard_setpoint_px4_bridge_node ${c3_typesupport_target})
+  target_link_libraries(offboard_setpoint_bridge_node ${c3_typesupport_target})
 endif()
 target_link_libraries(target_processor_node target_fusion_processor_lib)
 target_link_libraries(target_fusion_processor_lib pose_estimator_lib)
@@ -128,7 +128,7 @@ install(TARGETS
 )
 
 if(px4_msgs_FOUND)
-  install(TARGETS offboard_setpoint_px4_bridge_node
+  install(TARGETS offboard_setpoint_bridge_node
     DESTINATION lib/${PROJECT_NAME}
   )
 endif()

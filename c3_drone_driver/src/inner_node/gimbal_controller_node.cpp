@@ -34,15 +34,21 @@ public:
 
 		mode_ = msg::GimbalState::MODE_TRACKING;
 
+		// ============ drone_main_controller_node 通信接口 ============
 		// 订阅来自动作模块（主控发送的）消息
 		motion_sub_ = create_subscription<msg::GimbalMotionCommand>(
 			"/gimbal/motion_command", rclcpp::SensorDataQoS(),
-			[this](const msg::GimbalMotionCommand::SharedPtr msg) { onMotionCommand(msg); });
+			[this](const msg::GimbalMotionCommand::SharedPtr msg) { 
+				last_motion_ = *msg;
+				has_motion_ = true; });
 
+		// ============ target_processor_node 通信接口 ============
 		// 订阅来自视觉模块（目标处理器发送的）消息
 		visual_sub_ = create_subscription<msg::GimbalVisualCommand>(
 			"/gimbal/visual_command", rclcpp::SensorDataQoS(),
-			[this](const msg::GimbalVisualCommand::SharedPtr msg) { onVisualCommand(msg); });
+			[this](const msg::GimbalVisualCommand::SharedPtr msg) { 
+				last_visual_ = *msg;
+				has_visual_ = true; });
 
 		// 发布云台状态消息
 		state_pub_ = create_publisher<msg::GimbalState>("/gimbal/state", 10);
@@ -68,28 +74,6 @@ private:
 	static constexpr double kMinDtSec = 1e-6;
 	static constexpr double kLimitEpsilon = 1e-4;
 
-    /**
-	 * @brief 动作命令回调函数
-	 * @param msg 来自主控的云台动作命令消息
-	 * 接收来自主控的云台动作命令消息。
-	 */
-	void onMotionCommand(const msg::GimbalMotionCommand::SharedPtr msg)
-	{
-		last_motion_ = *msg;
-		has_motion_ = true;
-	}
-
-	/**
-	 * @brief 视觉命令回调函数
-	 * @param msg 来自目标处理器的视觉命令消息
-	 * 接收来自目标处理器的视觉命令消息。
-	 */
-	void onVisualCommand(const msg::GimbalVisualCommand::SharedPtr msg)
-	{
-		last_visual_ = *msg;
-		has_visual_ = true;
-	}
-
 	/**
 	 * @brief 设置云台模式服务回调函数
 	 * @param req 来自服务请求的设置云台模式请求消息
@@ -111,34 +95,29 @@ private:
 
 	bool visualValid(const rclcpp::Time &now_time) const
 	{
-		if (!has_visual_ || last_visual_.confidence < visual_conf_threshold_)
-		{
-			return false;
-		}
+		if (!has_visual_ || last_visual_.confidence < visual_conf_threshold_) return false;
 		const auto visual_stamp = rclcpp::Time(last_visual_.header.stamp);
 		return (now_time - visual_stamp).seconds() <= visual_valid_timeout_s_;
 	}
 
 	bool motionValid(const rclcpp::Time &now_time) const
 	{
-		if (!has_motion_)
-		{
-			return false;
-		}
+		if (!has_motion_) return false;
 		const auto motion_stamp = rclcpp::Time(last_motion_.header.stamp);
 		return (now_time - motion_stamp).seconds() <= motion_valid_timeout_s_;
 	}
 
 	void updateGimbalMode(const rclcpp::Time &now_time, bool visual_ok)
 	{
-		// 外部未请求视觉接管时，仅维持运动跟踪
 		if (requested_mode_ != msg::GimbalState::MODE_DETECTING)
 		{
+			// 非视觉接管模式时，直接回到 TRACKING，并清空丢失计时器，避免下次误触发回退。
 			mode_ = msg::GimbalState::MODE_TRACKING;
 			visual_loss_start_ = rclcpp::Time(0, 0, get_clock()->get_clock_type());
 			return;
 		}
 
+		// 进入 DETECTING 后，只要视觉仍有效，就持续保持该模式，并重置丢失计时器。
 		mode_ = msg::GimbalState::MODE_DETECTING;
 		if (visual_ok)
 		{
@@ -146,26 +125,44 @@ private:
 			return;
 		}
 
+		// 第一次检测到视觉失效时，记录失效起点，开始计算连续丢失时长。
 		if (visual_loss_start_.nanoseconds() == 0)
 		{
 			visual_loss_start_ = now_time;
 		}
+
+		// 连续失去视觉超过阈值后，回退到 TRACKING，交给运动前馈接管。
 		if ((now_time - visual_loss_start_).seconds() >= visual_loss_to_tracking_s_)
 		{
 			mode_ = msg::GimbalState::MODE_TRACKING;
 		}
 	}
 
-	void selectTargetAngles(bool visual_ok, double &target_yaw, double &target_pitch) const
+	void selectTargetAngles(const rclcpp::Time &now_time, bool visual_ok, double &target_yaw, double &target_pitch) const
 	{
+		// 默认保持当前位置，避免输入暂时失效时产生抖动。
 		target_yaw = current_yaw_;
 		target_pitch = current_pitch_;
-		if (mode_ == msg::GimbalState::MODE_DETECTING && visual_ok)
+
+		// DETECTING 模式：视觉优先；若视觉暂不可用，则用 motion 前馈兜底。
+		if (mode_ == msg::GimbalState::MODE_DETECTING)
 		{
-			target_yaw = last_visual_.yaw;
-			target_pitch = last_visual_.pitch;
+			if (visual_ok)
+			{
+				target_yaw = last_visual_.yaw;
+				target_pitch = last_visual_.pitch;
+				return;
+			}
+			if (motionValid(now_time))
+			{
+				target_yaw = last_motion_.yaw;
+				target_pitch = last_motion_.pitch;
+			}
+			return;
 		}
-		else if (motionValid(last_tick_time_))
+
+		// TRACKING 模式：只听 motion，视觉不参与。
+		if (mode_ == msg::GimbalState::MODE_TRACKING && motionValid(now_time))
 		{
 			target_yaw = last_motion_.yaw;
 			target_pitch = last_motion_.pitch;
@@ -174,6 +171,9 @@ private:
 
 	void applyAngleAndRateLimits(double &target_yaw, double &target_pitch, double dt, double &yaw_rate, double &pitch_rate) const
 	{
+		// return arg if min <= arg <= max
+		// return min if arg < min
+		// return max if arg > max
 		target_yaw = std::clamp(target_yaw, yaw_min_, yaw_max_);
 		target_pitch = std::clamp(target_pitch, pitch_min_, pitch_max_);
 		yaw_rate = std::clamp((target_yaw - current_yaw_) / dt, -yaw_rate_max_, yaw_rate_max_);
@@ -209,15 +209,23 @@ private:
 		}
 		last_tick_time_ = t_now;
 
+		// 1.检验视觉数据有效性，更新模式状态
 		const bool visual_ok = visualValid(t_now);
+
+		// 2.根据视觉有效性作仲裁
 		updateGimbalMode(t_now, visual_ok);
+
+		//3.根据仲裁结果和物理限制构建最终控制指令
 		double target_yaw   = current_yaw_;
 		double target_pitch = current_pitch_;
-		selectTargetAngles(visual_ok, target_yaw, target_pitch);
+		selectTargetAngles(t_now, visual_ok, target_yaw, target_pitch);
+
+		//4.应用角度和速度限制，计算实际控制输入
 		double yaw_rate = 0.0;
 		double pitch_rate = 0.0;
 		applyAngleAndRateLimits(target_yaw, target_pitch, dt, yaw_rate, pitch_rate);
 
+		//5.更新状态并发布
 		last_yaw_   = current_yaw_;
 		last_pitch_ = current_pitch_;
 		current_yaw_   += yaw_rate   * dt;
@@ -246,9 +254,9 @@ private:
 	double yaw_rate_max_{1.2};
 	double pitch_rate_max_{1.0};
 	double visual_conf_threshold_{0.55};
-		double visual_valid_timeout_s_{0.1};
-		double visual_loss_to_tracking_s_{2.0};
-		double motion_valid_timeout_s_{0.3};
+	double visual_valid_timeout_s_{0.1};
+	double visual_loss_to_tracking_s_{2.0};
+	double motion_valid_timeout_s_{0.3};
 	double control_hz_{100.0};
 
 	double current_yaw_{0.0};
@@ -256,8 +264,8 @@ private:
 	double last_yaw_{0.0};
 	double last_pitch_{0.0};
 
-		rclcpp::Time visual_loss_start_{0, 0, RCL_ROS_TIME};
-		rclcpp::Time last_tick_time_{0, 0, RCL_ROS_TIME};
+	rclcpp::Time visual_loss_start_{0, 0, RCL_ROS_TIME};
+	rclcpp::Time last_tick_time_{0, 0, RCL_ROS_TIME};
 	};
 
 } // namespace c3_drone_driver

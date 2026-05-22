@@ -7,19 +7,27 @@
 
 namespace c3_drone_driver
 {
-
+	/**
+	 * @brief PX4 位姿桥接节点
+	 * @details
+	 *  - 订阅 /odom 或 /pose 话题，统一输出为 /px4/vehicle_pose（geometry_msgs::PoseStamped）
+	 *  - 支持重设输出坐标系 frame_id（默认为 "ned"）
+	 *  - 为下游运动控制和主控节点提供标准化的无人机位姿
+	 */
 	class Px4PoseBridgeNode : public rclcpp::Node
 	{
 	public:
 		Px4PoseBridgeNode()
 			: Node("px4_pose_bridge_node")
 		{
+			// config/px4_pose.yaml
 			use_odom_input_ = declare_parameter<bool>("use_odom_input", true);
 			odom_topic_ = declare_parameter<std::string>("odom_topic", "/odom");
 			pose_topic_ = declare_parameter<std::string>("pose_topic", "/pose");
 			output_topic_ = declare_parameter<std::string>("output_topic", "/px4/vehicle_pose");
 			output_frame_id_ = declare_parameter<std::string>("output_frame_id", "ned");
 
+			// 位姿发布器
 			pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(output_topic_, 10);
 
 			if (use_odom_input_)

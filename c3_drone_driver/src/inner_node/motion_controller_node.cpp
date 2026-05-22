@@ -41,7 +41,9 @@ namespace c3_drone_driver
             // ============= px4_pose_bridge_node通信接口 ==============
             // 订阅PX4/EKF2实际位姿
             vehicle_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-                "/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onVehiclePose(msg); });
+                "/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { 
+                    current_position_ = {msg->pose.position.x, msg->pose.position.y, msg->pose.position.z};
+                    has_vehicle_pose_ = true; });
             
             // PX4 offboard 离线控制目标发布器
             offboard_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/px4/offboard_goal", 10);
@@ -84,9 +86,7 @@ namespace c3_drone_driver
             target_position_ = {msg->pose.position.x, msg->pose.position.y, msg->pose.position.z};
             // 如果目标位置的z坐标过小，认为是未设置高度，使用默认悬停高度
             if (std::abs(target_position_[2]) < 1e-6)
-            {
                 target_position_[2] = hover_altitude_m_;
-            }
         }
 
         /**
@@ -111,19 +111,13 @@ namespace c3_drone_driver
                 return;
             }
 
-            // 若为CMD_HOLD命令，设置目标位置为当前位置，速度变为0，切换到HOLD模式
+            // 若为CMD_HOLD命令，切换到HOLD模式
             if (msg->command == msg::MissionCommand::CMD_HOLD)
             {
                 target_position_ = current_position_;
                 mode_ = Mode::HOLD;
                 return;
             }
-        }
-
-        void onVehiclePose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-        {
-            current_position_ = {msg->pose.position.x, msg->pose.position.y, msg->pose.position.z};
-            has_vehicle_pose_ = true;
         }
 
         /**
@@ -142,25 +136,19 @@ namespace c3_drone_driver
             }
 
             publishOffboardGoal(now(), active_target);
-            publishMissionMode(now());
+            publishMissionMode();
         }
 
         std::array<double, 3> resolveActiveTarget() const
         {
-            if (mode_ == Mode::BACK) {
-                return target_position_;
-            }
-            if (mode_ == Mode::HOLD) {
-                return current_position_;
-            }
+            if (mode_ == Mode::HOLD) return current_position_;
             return target_position_;
         }
 
-        void publishMissionMode(const rclcpp::Time &stamp)
+        void publishMissionMode()
         {
             std_msgs::msg::UInt8 mode_msg;
             mode_msg.data = static_cast<uint8_t>(mode_);
-            (void)stamp;
             mission_mode_pub_->publish(mode_msg);
         }
 
