@@ -186,13 +186,13 @@ private:
 	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_rx_sub_;
 	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_rx_sub_;
 	rclcpp::Subscription<msg::DroneStatus>::SharedPtr main_status_sub_;
-		rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
-		rclcpp::Publisher<msg::DroneStatus>::SharedPtr drone_status_pub_;
-		rclcpp::Publisher<msg::CommandAck>::SharedPtr command_ack_pub_;
-		rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr heartbeat_tx_pub_;
-		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_pub_;
-		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_pub_;
-		rclcpp::Publisher<msg::TargetObservation>::SharedPtr mavlink_target_obs_pub_;
+	rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
+	rclcpp::Publisher<msg::DroneStatus>::SharedPtr drone_status_pub_;
+	rclcpp::Publisher<msg::CommandAck>::SharedPtr command_ack_pub_;
+	rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr heartbeat_tx_pub_;
+	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_pub_;
+	rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_pub_;
+	rclcpp::Publisher<msg::TargetObservation>::SharedPtr mavlink_target_obs_pub_;
 	rclcpp::TimerBase::SharedPtr timer_;
 	rclcpp::TimerBase::SharedPtr hb_timer_;
 

@@ -9,3 +9,5 @@ drone_main_controller_node:
     # 主控下发与状态时序参数
     motion_command_hz: 100.0      # 运动指令频率（Hz）
     observation_valid_timeout_s: 2.0 # 观测有效超时（秒）
+    status_keepalive_s: 1.0        # 状态保活（秒）
+    gimbal_enable_distance_m: 8.0  # 距离阈值，近距离才切到视觉云台

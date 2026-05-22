@@ -74,7 +74,7 @@ private:
   {
     msg::MissionCommand cmd;
     cmd.header.stamp = stamp;
-    cmd.command = msg::MissionCommand::CMD_DETECTING;
+    cmd.command = msg::MissionCommand::CMD_START;
     cmd.target_id = target_id_;
     cmd.timeout_s = 0.0F;
     mission_cmd_pub_->publish(cmd);

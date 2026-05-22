@@ -3,7 +3,7 @@ uint64 t_usec
 uint8 mission_mode
 uint8 MODE_HOLD=0
 uint8 MODE_TRANSIT=1
-uint8 MODE_RETURN=2
+uint8 MODE_BACK=2
 uint8 gimbal_mode
 uint8 link_state
 uint8 LINK_OK=0

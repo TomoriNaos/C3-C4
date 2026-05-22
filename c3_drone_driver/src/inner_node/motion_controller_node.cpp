@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/u_int8.hpp"
 
 #include "c3_drone_driver/msg/mission_command.hpp"
 
@@ -23,11 +24,8 @@ namespace c3_drone_driver
             control_hz_ = declare_parameter<double>("control_hz", 50.0);
             arrive_radius_m_ = declare_parameter<double>("arrive_radius_m", 2.0);
             hover_altitude_m_ = declare_parameter<double>("hover_altitude_m", 20.0);
-            home_x_ = declare_parameter<double>("home_x", 0.0);
-            home_y_ = declare_parameter<double>("home_y", 0.0);
-            home_z_ = declare_parameter<double>("home_z", 0.0);
 
-            current_position_ = {home_x_, home_y_, home_z_};
+            current_position_ = {0.0, 0.0, hover_altitude_m_};
             target_position_ = current_position_;
             mode_ = Mode::HOLD;
 
@@ -46,6 +44,8 @@ namespace c3_drone_driver
             
             // PX4 offboard 离线控制目标发布器
             offboard_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/px4/offboard_goal", 10);
+            // 发布运动模块实际状态，供主控对外发布统一状态
+            mission_mode_pub_ = create_publisher<std_msgs::msg::UInt8>("/motion/mission_mode", 10);
 
             // 定时器：结合实时位姿与任务目标，发布PX4 Offboard目标点
             const auto period = std::chrono::duration<double>(1.0 / std::max(control_hz_, 5.0));
@@ -62,13 +62,13 @@ namespace c3_drone_driver
          * @details
          *  -HOLD：保持当前位置
          *  -TRANSIT：前往目标位置
-         *  -RETURN：返回起飞点
+         *  -BACK：返回母船/回船目标
          */
         enum class Mode : uint8_t
         {
             HOLD = 0,
             TRANSIT = 1,
-            RETURN = 2
+            BACK = 2
         };
 
         /**
@@ -86,7 +86,6 @@ namespace c3_drone_driver
             {
                 target_position_[2] = hover_altitude_m_;
             }
-            mode_ = Mode::TRANSIT;
         }
 
         /**
@@ -97,10 +96,17 @@ namespace c3_drone_driver
          */
         void onMissionCommand(const msg::MissionCommand::SharedPtr msg)
         {
-            // 若为CMD_BACK命令，进入RETURN模式（返航目标由主控发布）
+            // 若为CMD_BACK命令，进入BACK模式（回船目标由主控发布）
             if (msg->command == msg::MissionCommand::CMD_BACK)
             {
-                mode_ = Mode::RETURN;
+                mode_ = Mode::BACK;
+                return;
+            }
+
+            // 若为CMD_START命令，进入TRANSIT模式（目标点由/mission/goal提供）
+            if (msg->command == msg::MissionCommand::CMD_START)
+            {
+                mode_ = Mode::TRANSIT;
                 return;
             }
 
@@ -135,17 +141,26 @@ namespace c3_drone_driver
             }
 
             publishOffboardGoal(now(), active_target);
+            publishMissionMode(now());
         }
 
         std::array<double, 3> resolveActiveTarget() const
         {
-            if (mode_ == Mode::RETURN) {
-                return {home_x_, home_y_, home_z_};
+            if (mode_ == Mode::BACK) {
+                return target_position_;
             }
             if (mode_ == Mode::HOLD) {
                 return current_position_;
             }
             return target_position_;
+        }
+
+        void publishMissionMode(const rclcpp::Time &stamp)
+        {
+            std_msgs::msg::UInt8 mode_msg;
+            mode_msg.data = static_cast<uint8_t>(mode_);
+            (void)stamp;
+            mission_mode_pub_->publish(mode_msg);
         }
 
         void publishOffboardGoal(const rclcpp::Time &stamp, const std::array<double, 3> &target)
@@ -164,14 +179,12 @@ namespace c3_drone_driver
         rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_sub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr offboard_goal_pub_;
+        rclcpp::Publisher<std_msgs::msg::UInt8>::SharedPtr mission_mode_pub_;
         rclcpp::TimerBase::SharedPtr timer_;
 
         double control_hz_{50.0};
         double arrive_radius_m_{2.0};
         double hover_altitude_m_{20.0};
-        double home_x_{0.0};
-        double home_y_{0.0};
-        double home_z_{0.0};
 
         Mode mode_{Mode::HOLD};
         bool has_vehicle_pose_{false};

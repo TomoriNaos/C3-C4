@@ -6,7 +6,6 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "c3_drone_driver/msg/gimbal_motion_command.hpp"
-#include "c3_drone_driver/msg/drone_status.hpp"
 #include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
 #include "c3_drone_driver/srv/set_gimbal_mode.hpp"
@@ -44,11 +43,6 @@ public:
 		visual_sub_ = create_subscription<msg::GimbalVisualCommand>(
 			"/gimbal/visual_command", rclcpp::SensorDataQoS(),
 			[this](const msg::GimbalVisualCommand::SharedPtr msg) { onVisualCommand(msg); });
-
-		// 订阅来自状态模块（主控发送的）消息
-		mission_state_sub_ = create_subscription<msg::DroneStatus>(
-			"/main_controller/status", 10,
-			[this](const msg::DroneStatus::SharedPtr msg) { onMissionStatus(msg); });
 
 		// 发布云台状态消息
 		state_pub_ = create_publisher<msg::GimbalState>("/gimbal/state", 10);
@@ -97,19 +91,6 @@ private:
 	}
 
 	/**
-	 * @brief 任务状态回调函数
-	 * @param msg 来自主控的任务状态消息
-	 * 接收来自主控的任务状态消息，并根据任务模式更新云台模式
-	 */
-	void onMissionStatus(const msg::DroneStatus::SharedPtr msg)
-	{
-		if (msg->gimbal_mode == msg::GimbalState::MODE_TRACKING || msg->gimbal_mode == msg::GimbalState::MODE_DETECTING)
-		{
-			requested_mode_ = msg->gimbal_mode;
-		}
-	}
-
-	/**
 	 * @brief 设置云台模式服务回调函数
 	 * @param req 来自服务请求的设置云台模式请求消息
 	 * @param res 用于响应服务请求的设置云台模式响应消息
@@ -150,7 +131,7 @@ private:
 
 	void updateGimbalMode(const rclcpp::Time &now_time, bool visual_ok)
 	{
-		// 主控未授权视觉接管时，强制跟踪模式
+		// 外部未请求视觉接管时，仅维持运动跟踪
 		if (requested_mode_ != msg::GimbalState::MODE_DETECTING)
 		{
 			mode_ = msg::GimbalState::MODE_TRACKING;
@@ -172,7 +153,6 @@ private:
 		if ((now_time - visual_loss_start_).seconds() >= visual_loss_to_tracking_s_)
 		{
 			mode_ = msg::GimbalState::MODE_TRACKING;
-			requested_mode_ = msg::GimbalState::MODE_TRACKING;
 		}
 	}
 
@@ -247,7 +227,6 @@ private:
 
 	rclcpp::Subscription<msg::GimbalMotionCommand>::SharedPtr motion_sub_;
 	rclcpp::Subscription<msg::GimbalVisualCommand>::SharedPtr visual_sub_;
-	rclcpp::Subscription<msg::DroneStatus>::SharedPtr mission_state_sub_;
 	rclcpp::Publisher<msg::GimbalState>::SharedPtr state_pub_;
 	rclcpp::Service<srv::SetGimbalMode>::SharedPtr mode_srv_;
 	rclcpp::TimerBase::SharedPtr timer_;
@@ -267,9 +246,9 @@ private:
 	double yaw_rate_max_{1.2};
 	double pitch_rate_max_{1.0};
 	double visual_conf_threshold_{0.55};
-	double visual_valid_timeout_s_{0.1};
-	double visual_loss_to_tracking_s_{2.0};
-	double motion_valid_timeout_s_{0.3};
+		double visual_valid_timeout_s_{0.1};
+		double visual_loss_to_tracking_s_{2.0};
+		double motion_valid_timeout_s_{0.3};
 	double control_hz_{100.0};
 
 	double current_yaw_{0.0};
@@ -277,9 +256,9 @@ private:
 	double last_yaw_{0.0};
 	double last_pitch_{0.0};
 
-	rclcpp::Time visual_loss_start_{0, 0, RCL_ROS_TIME};
-	rclcpp::Time last_tick_time_{0, 0, RCL_ROS_TIME};
-};
+		rclcpp::Time visual_loss_start_{0, 0, RCL_ROS_TIME};
+		rclcpp::Time last_tick_time_{0, 0, RCL_ROS_TIME};
+	};
 
 } // namespace c3_drone_driver
 

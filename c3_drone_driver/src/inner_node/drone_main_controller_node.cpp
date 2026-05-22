@@ -1,12 +1,14 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <optional>
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/u_int8.hpp"
 
 #include "c3_drone_driver/config.h"
 #include "c3_drone_driver/msg/drone_status.hpp"
@@ -14,6 +16,7 @@
 #include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/mission_command.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
+#include "c3_drone_driver/srv/set_gimbal_mode.hpp"
 #include "c3_drone_driver/pose_estimator.h"
 
 namespace c3_drone_driver
@@ -35,17 +38,19 @@ namespace c3_drone_driver
 				RCLCPP_WARN(get_logger(), "Failed to load %s, fallback to built-in defaults", config_file.c_str());
 			}
 
-			PoseEstimator::Config pose_cfg;
-			pose_cfg.body_to_gimbal_x = Config::GetOr<double>("body_to_gimbal_x", 0.15);
-			pose_cfg.body_to_gimbal_y = Config::GetOr<double>("body_to_gimbal_y", 0.0);
-			pose_cfg.body_to_gimbal_z = Config::GetOr<double>("body_to_gimbal_z", -0.05);
-			motion_command_hz_ = declare_parameter<double>("motion_command_hz", 100.0);
-			observation_valid_timeout_s_ = declare_parameter<double>("observation_valid_timeout_s", 2.0);
-			status_keepalive_s_ = declare_parameter<double>("status_keepalive_s", 1.0);
+				PoseEstimator::Config pose_cfg;
+				pose_cfg.body_to_gimbal_x = Config::GetOr<double>("body_to_gimbal_x", 0.15);
+				pose_cfg.body_to_gimbal_y = Config::GetOr<double>("body_to_gimbal_y", 0.0);
+				pose_cfg.body_to_gimbal_z = Config::GetOr<double>("body_to_gimbal_z", -0.05);
+				motion_command_hz_ = declare_parameter<double>("motion_command_hz", 100.0);
+				observation_valid_timeout_s_ = declare_parameter<double>("observation_valid_timeout_s", 2.0);
+				status_keepalive_s_ = declare_parameter<double>("status_keepalive_s", 1.0);
+				gimbal_enable_distance_m_ = declare_parameter<double>("gimbal_enable_distance_m", 8.0);
 
 			// 位姿计算器实例化
 			pose_estimator_ = std::make_unique<PoseEstimator>(pose_cfg);
 
+			// ============== mavlink_bridge_node通信接口 ==============
 			// 命令接收器
 			mission_cmd_sub_ = create_subscription<msg::MissionCommand>(
 				"/mission/cmd", 10, [this](const msg::MissionCommand::SharedPtr msg) { 
@@ -96,9 +101,17 @@ namespace c3_drone_driver
 			// 无人机位姿订阅
 			vehicle_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
 				"/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { pose_estimator_->updateVehiclePose(*msg); });
+
+			// 运动模块实际任务模式订阅（真值来源）
+			motion_mode_sub_ = create_subscription<std_msgs::msg::UInt8>(
+				"/motion/mission_mode", 10, [this](const std_msgs::msg::UInt8::SharedPtr msg) {
+					state_.motion_mode = msg->data;
+					state_.has_motion_mode = true;
+				});
 			
 			// 云台控制发布器
 			gimbal_motion_pub_ = create_publisher<msg::GimbalMotionCommand>("/gimbal/motion_command", 10);
+			gimbal_mode_client_ = create_client<srv::SetGimbalMode>("/gimbal/set_mode");
 			
 			// 任务目标发布器(motion_controller_node)
 			mission_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>("/mission/goal", 10);
@@ -116,20 +129,22 @@ namespace c3_drone_driver
 		}
 
 	private:
-		struct MainState
-		{
-			bool has_mission_cmd{false};
-			bool has_ship_pose{false};
-			bool has_ship_target{false};
-			bool has_target_body{false};
-			bool has_gimbal_state{false};
-			msg::MissionCommand mission_cmd{};
-			geometry_msgs::msg::PoseStamped ship_pose_world{};
-			geometry_msgs::msg::PoseStamped ship_target_rel{};
-			msg::GimbalState gimbal_state{};
-			std::array<double, 3> target_body{0.0, 0.0, 0.0};
-			rclcpp::Time last_obs_time{0, 0, RCL_ROS_TIME};
-		};
+			struct MainState
+			{
+				bool has_mission_cmd{false};
+				bool has_ship_pose{false};
+				bool has_ship_target{false};
+				bool has_target_body{false};
+				bool has_gimbal_state{false};
+				bool has_motion_mode{false};
+				msg::MissionCommand mission_cmd{};
+				geometry_msgs::msg::PoseStamped ship_pose_world{};
+				geometry_msgs::msg::PoseStamped ship_target_rel{};
+				msg::GimbalState gimbal_state{};
+				uint8_t motion_mode{msg::DroneStatus::MODE_HOLD};
+				std::array<double, 3> target_body{0.0, 0.0, 0.0};
+				rclcpp::Time last_obs_time{0, 0, RCL_ROS_TIME};
+			};
 
 		void onTick()
 		{
@@ -138,38 +153,27 @@ namespace c3_drone_driver
 			publishStatus();
 		}
 
-		void publishMissionGoal()
-		{
-			if (!state_.has_ship_pose)
+			void publishMissionGoal()
 			{
-				return;
-			}
-			if (!state_.has_mission_cmd)
-			{
-				return;
-			}
+				if (!state_.has_ship_pose) return;
+				if (!state_.has_mission_cmd) return;
 
 			geometry_msgs::msg::PoseStamped goal;
 			goal.header.stamp = now();
 			goal.header.frame_id = "ned";
 			goal.pose.orientation.w = 1.0;
 
-			if (state_.mission_cmd.command == msg::MissionCommand::CMD_BACK)
-			{
-				// 回船：直接跟随母船当前世界系位置
-				goal.pose.position = state_.ship_pose_world.pose.position;
-				mission_goal_pub_->publish(goal);
-				return;
+				if (state_.mission_cmd.command == msg::MissionCommand::CMD_BACK)
+				{
+					// 回船：直接跟随母船当前世界系位置
+					goal.pose.position = state_.ship_pose_world.pose.position;
+					mission_goal_pub_->publish(goal);
+					return;
 			}
 
-			if (state_.mission_cmd.command != msg::MissionCommand::CMD_START)
-			{
-				return;
-			}
-			if (!state_.has_ship_target)
-			{
-				return;
-			}
+			if (state_.mission_cmd.command != msg::MissionCommand::CMD_START) return;
+			if (!state_.has_ship_target) return;
+
 			const std::array<double, 3> rel_ship{
 				state_.ship_target_rel.pose.position.x,
 				state_.ship_target_rel.pose.position.y,
@@ -181,27 +185,28 @@ namespace c3_drone_driver
 			mission_goal_pub_->publish(goal);
 		}
 
-		void publishMotionCommand()
-		{
-			if (!state_.has_target_body)
+			void publishMotionCommand()
 			{
-				return;
+				if (!state_.has_target_body) return;
+				if ((now() - state_.last_obs_time).seconds() > observation_valid_timeout_s_) return;
+
+				const auto cmd = pose_estimator_->bodyPointToGimbalYawPitch(state_.target_body);
+				if (!cmd.has_value()) return;
+
+				const double target_range_m = targetRangeMeters(state_.target_body);
+				const bool enable_visual = target_range_m <= gimbal_enable_distance_m_;
+				requestGimbalMode(enable_visual ? msg::GimbalState::MODE_DETECTING : msg::GimbalState::MODE_TRACKING);
+				if (!enable_visual)
+				{
+					return;
+				}
+
+				msg::GimbalMotionCommand motion;
+				motion.header.stamp = now();
+				motion.yaw = static_cast<float>(cmd->first);
+				motion.pitch = static_cast<float>(cmd->second);
+				gimbal_motion_pub_->publish(motion);
 			}
-			if ((now() - state_.last_obs_time).seconds() > observation_valid_timeout_s_)
-			{
-				return;
-			}
-			const auto cmd = pose_estimator_->bodyPointToGimbalYawPitch(state_.target_body);
-			if (!cmd.has_value())
-			{
-				return;
-			}
-			msg::GimbalMotionCommand motion;
-			motion.header.stamp = now();
-			motion.yaw = static_cast<float>(cmd->first);
-			motion.pitch = static_cast<float>(cmd->second);
-			gimbal_motion_pub_->publish(motion);
-		}
 
 		void publishStatus()
 		{
@@ -218,45 +223,48 @@ namespace c3_drone_driver
 			last_status_pub_time_ = status.header.stamp;
 		}
 
-		msg::DroneStatus buildStatus(const rclcpp::Time &stamp) const
-		{
+			msg::DroneStatus buildStatus(const rclcpp::Time &stamp) const
+			{
 			msg::DroneStatus s;
 			s.header.stamp = stamp;
 			s.t_usec = static_cast<uint64_t>(stamp.nanoseconds() / 1000ULL);
-			s.mission_mode = computeMissionMode();
+			s.mission_mode = state_.has_motion_mode ? state_.motion_mode : msg::DroneStatus::MODE_HOLD;
 			s.gimbal_mode = computeGimbalMode();
 			return s;
 		}
 
-		uint8_t computeMissionMode() const
-		{
-			if (!state_.has_mission_cmd)
+			uint8_t computeGimbalMode() const
 			{
-				return msg::DroneStatus::MODE_HOLD;
+				if (state_.has_gimbal_state)
+				{
+					return state_.gimbal_state.mode;
+				}
+				return msg::GimbalState::MODE_TRACKING;
 			}
-			if (state_.mission_cmd.command == msg::MissionCommand::CMD_BACK)
-			{
-				return msg::DroneStatus::MODE_RETURN;
-			}
-			if (state_.mission_cmd.command == msg::MissionCommand::CMD_START)
-			{
-				return msg::DroneStatus::MODE_TRANSIT;
-			}
-			return msg::DroneStatus::MODE_HOLD;
-		}
 
-		uint8_t computeGimbalMode() const
-		{
-			if (state_.has_gimbal_state)
+			double targetRangeMeters(const std::array<double, 3> &point_body) const
 			{
-				return state_.gimbal_state.mode;
+				const double dx = point_body[0];
+				const double dy = point_body[1];
+				const double dz = point_body[2];
+				return std::sqrt(dx * dx + dy * dy + dz * dz);
 			}
-			if (state_.has_mission_cmd && state_.mission_cmd.command == msg::MissionCommand::CMD_DETECTING)
+
+			void requestGimbalMode(uint8_t mode)
 			{
-				return msg::GimbalState::MODE_DETECTING;
+				if (requested_gimbal_mode_ && *requested_gimbal_mode_ == mode)
+				{
+					return;
+				}
+				if (!gimbal_mode_client_->service_is_ready())
+				{
+					return;
+				}
+				auto req = std::make_shared<srv::SetGimbalMode::Request>();
+				req->mode = mode;
+				(void)gimbal_mode_client_->async_send_request(req);
+				requested_gimbal_mode_ = mode;
 			}
-			return msg::GimbalState::MODE_TRACKING;
-		}
 
 		/**
 		 * @brief 是否应发布无人机当前状态
@@ -278,24 +286,28 @@ namespace c3_drone_driver
 
 		std::unique_ptr<PoseEstimator> pose_estimator_;
 
-		rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_sub_;
-		rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_sub_;
-		rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_sub_;
-		rclcpp::Subscription<msg::TargetObservation>::SharedPtr observation_sub_;
-		rclcpp::Subscription<msg::GimbalState>::SharedPtr gimbal_state_sub_;
-		rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_sub_;
+			rclcpp::Subscription<msg::MissionCommand>::SharedPtr mission_cmd_sub_;
+			rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_sub_;
+			rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_sub_;
+			rclcpp::Subscription<msg::TargetObservation>::SharedPtr observation_sub_;
+			rclcpp::Subscription<msg::GimbalState>::SharedPtr gimbal_state_sub_;
+			rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr vehicle_pose_sub_;
+			rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr motion_mode_sub_;
 
-		rclcpp::Publisher<msg::GimbalMotionCommand>::SharedPtr gimbal_motion_pub_;
-		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mission_goal_pub_;
-		rclcpp::Publisher<msg::DroneStatus>::SharedPtr status_pub_;
+			rclcpp::Publisher<msg::GimbalMotionCommand>::SharedPtr gimbal_motion_pub_;
+			rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mission_goal_pub_;
+			rclcpp::Publisher<msg::DroneStatus>::SharedPtr status_pub_;
+			rclcpp::Client<srv::SetGimbalMode>::SharedPtr gimbal_mode_client_;
 
 		rclcpp::TimerBase::SharedPtr timer_;
-		double motion_command_hz_{50.0};
-		double observation_valid_timeout_s_{2.0};
-		double status_keepalive_s_{1.0};
-		rclcpp::Time last_status_pub_time_{0, 0, RCL_ROS_TIME};
-		msg::DroneStatus last_status_{};
-		bool has_last_status_{false};
+			double motion_command_hz_{50.0};
+			double observation_valid_timeout_s_{2.0};
+			double status_keepalive_s_{1.0};
+			double gimbal_enable_distance_m_{8.0};
+			rclcpp::Time last_status_pub_time_{0, 0, RCL_ROS_TIME};
+			std::optional<uint8_t> requested_gimbal_mode_{};
+			msg::DroneStatus last_status_{};
+			bool has_last_status_{false};
 
 		MainState state_{};
 	};

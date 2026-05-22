@@ -16,5 +16,4 @@ gimbal_controller_node:
     visual_valid_timeout_s: 0.10 # 视觉信息有效时间（秒）
     visual_loss_to_tracking_s: 2.0
     control_hz: 50.0             # 控制频率
-    mission_mode_default: 0      # 0=TRACKING, 1=DETECTING
     motion_valid_timeout_s: 0.3  # 前馈命令有效期（秒）

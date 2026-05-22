@@ -8,8 +8,4 @@ motion_controller_node:
     arrive_radius_m: 2.0          # 到达半径（m）
     hover_altitude_m: 20.0        # 默认悬停高度,无人机不会低于此高度飞行（m）
 
-    # 起始/Home点（NED/局部坐标）
-    # 说明：当前版本CMD_BACK由主控发布回船目标，本参数仅作初始化与调试保留
-    home_x: 0.0
-    home_y: 0.0
-    home_z: 0.0
+    # 回船目标由主控持续发布到 /mission/goal，运动模块不再维护 home_x/y/z 参数
