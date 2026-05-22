@@ -1,0 +1,140 @@
+flowchart TD
+    subgraph "外部/模拟输入"
+        SensorMock["sensor_mock_node<br/>(模拟TC/GC检测)"]
+        MavRx["MAVLink 接收<br/>(心跳/命令/船位姿/目标点)"]
+    end
+
+    subgraph "感知融合层"
+        TargetProc["target_processor_node<br/>(目标融合)"]
+        TC_Detect["/tc/detection"]
+        GC_Detect["/gc/detection"]
+        TargetObs["/target/observation_body"]
+        VisualCmd["/gimbal/visual_command"]
+    end
+
+    subgraph "云台控制层"
+        GimbalCtrl["gimbal_controller_node<br/>(云台仲裁)"]
+        GimbalState["/gimbal/state"]
+        GimbalMotionCmd["/gimbal/motion_command"]
+        GimbalModeSrv["/gimbal/set_mode"]
+    end
+
+    subgraph "主控决策层"
+        MainCtrl["drone_main_controller_node<br/>(主控制器)"]
+        MissionCmd["/mission/cmd"]
+        ShipPose["/ship/pose_world"]
+        ShipTarget["/ship/target_point"]
+        MissionGoal["/mission/goal"]
+        MainStatus["/main_controller/status"]
+        SetLifecycleSrv["/main_controller/set_lifecycle"]
+    end
+
+    subgraph "运动执行层"
+        MotionCtrl["motion_controller_node<br/>(运动控制)"]
+        MotionMode["/motion/mission_mode"]
+        OffboardGoal["/px4/offboard_goal"]
+    end
+
+    subgraph "PX4 桥接层"
+        Px4PoseBridge["px4_pose_bridge_node<br/>(位姿桥接)"]
+        OffboardBridge["offboard_setpoint_px4_bridge_node<br/>(Offboard指令)"]
+        VehiclePose["/px4/vehicle_pose"]
+        Px4OffboardMode["/fmu/in/offboard_control_mode"]
+        Px4TrajSetpoint["/fmu/in/trajectory_setpoint"]
+        Px4VehicleCmd["/fmu/in/vehicle_command"]
+    end
+
+    subgraph "MAVLink 通信层"
+        MavBridge["mavlink_bridge_node<br/>(MAVLink桥接)"]
+        HeartbeatTx["/mavlink/heartbeat_tx"]
+        CmdAck["/mavlink/mission_cmd_ack"]
+        MissionState["/mission/state"]
+        MavTargetObs["/mavlink/target_obs"]
+    end
+
+    subgraph "仿真/可视化"
+        GimbalJointBridge["gimbal_joint_state_bridge_node<br/>(关节状态发布)"]
+        JointStates["/joint_states"]
+    end
+
+    %% 传感器模拟 -> 感知层
+    SensorMock -->|发布| TC_Detect
+    SensorMock -->|发布| GC_Detect
+    TC_Detect --> TargetProc
+    GC_Detect --> TargetProc
+    GimbalState --> TargetProc
+    TargetProc -->|发布| TargetObs
+    TargetProc -->|发布| VisualCmd
+
+    %% 云台控制层交互
+    VisualCmd --> GimbalCtrl
+    GimbalMotionCmd --> GimbalCtrl
+    GimbalCtrl -->|发布| GimbalState
+    GimbalCtrl -.->|服务调用| GimbalModeSrv
+
+    %% 主控层订阅
+    MissionCmd --> MainCtrl
+    ShipPose --> MainCtrl
+    ShipTarget --> MainCtrl
+    TargetObs --> MainCtrl
+    GimbalState --> MainCtrl
+    VehiclePose --> MainCtrl
+    MotionMode --> MainCtrl
+    MainCtrl -->|发布| MissionGoal
+    MainCtrl -->|发布| GimbalMotionCmd
+    MainCtrl -->|发布| MainStatus
+    MainCtrl -.->|服务| SetLifecycleSrv
+
+    %% 运动控制层
+    MissionGoal --> MotionCtrl
+    MissionCmd --> MotionCtrl
+    VehiclePose --> MotionCtrl
+    MotionCtrl -->|发布| OffboardGoal
+    MotionCtrl -->|发布| MotionMode
+
+    %% PX4 位姿桥接
+    OdomOrPose["/odom 或 /pose"] --> Px4PoseBridge
+    Px4PoseBridge -->|发布| VehiclePose
+
+    %% Offboard 桥接到 PX4
+    OffboardGoal --> OffboardBridge
+    OffboardBridge -->|发布| Px4OffboardMode
+    OffboardBridge -->|发布| Px4TrajSetpoint
+    OffboardBridge -->|发布| Px4VehicleCmd
+
+    %% MAVLink 桥接 (接收)
+    MavRx -->|/mavlink/heartbeat_rx| MavBridge
+    MavRx -->|/mavlink/mission_cmd_rx| MavBridge
+    MavRx -->|/mavlink/ship_pose_world_rx| MavBridge
+    MavRx -->|/mavlink/ship_target_point_rx| MavBridge
+    TargetObs --> MavBridge
+    MainStatus --> MavBridge
+    MavBridge -->|发布| HeartbeatTx
+    MavBridge -->|发布| CmdAck
+    MavBridge -->|发布| MissionState
+    MavBridge -->|发布| MavTargetObs
+    MavBridge -->|发布| MissionCmd
+    MavBridge -->|发布| ShipPose
+    MavBridge -->|发布| ShipTarget
+
+    %% 关节状态桥接
+    GimbalState --> GimbalJointBridge
+    GimbalJointBridge -->|发布| JointStates
+
+    %% 样式
+    classDef input fill:#e1f5fe
+    classDef perception fill:#fff9c4
+    classDef gimbal fill:#e8eaf6
+    classDef main fill:#d1c4e9
+    classDef motion fill:#c8e6c9
+    classDef px4 fill:#ffccbc
+    classDef mavlink fill:#f0f4c3
+    classDef sim fill:#b2dfdb
+    class SensorMock, MavRx, OdomOrPose input
+    class TargetProc perception
+    class GimbalCtrl, GimbalJointBridge gimbal
+    class MainCtrl main
+    class MotionCtrl motion
+    class Px4PoseBridge, OffboardBridge px4
+    class MavBridge mavlink
+    class GimbalJointBridge sim

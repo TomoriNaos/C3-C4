@@ -1,0 +1,7 @@
+uint8 command
+uint8 CMD_ACTIVATE=1
+uint8 CMD_DEACTIVATE=2
+---
+bool success
+string message
+uint8 mission_mode

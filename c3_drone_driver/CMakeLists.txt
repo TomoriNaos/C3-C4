@@ -33,6 +33,7 @@ set(msg_files
 
 set(srv_files
   "srv/SetGimbalMode.srv"
+  "srv/SetDroneLifecycle.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

@@ -19,6 +19,7 @@
 #include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/mission_command.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
+#include "c3_drone_driver/srv/set_drone_lifecycle.hpp"
 #include "c3_drone_driver/srv/set_gimbal_mode.hpp"
 #include "c3_drone_driver/pose_estimator.h"
 
@@ -138,6 +139,14 @@ namespace c3_drone_driver
 
 			// 状态发布器
 			status_pub_ = create_publisher<msg::DroneStatus>("/main_controller/status", 10);
+			drone_lifecycle_srv_ = create_service<srv::SetDroneLifecycle>(
+				"/main_controller/set_lifecycle",
+				[this](
+					const srv::SetDroneLifecycle::Request::SharedPtr req,
+					srv::SetDroneLifecycle::Response::SharedPtr res)
+				{
+					onSetDroneLifecycle(req, res);
+				});
 
 			const auto period = std::chrono::duration<double>(1.0 / std::max(motion_command_hz_, 5.0));
 			// 定时器
@@ -326,6 +335,40 @@ namespace c3_drone_driver
 			requestLifecycleState(gc_camera_lifecycle_, enable);
 		}
 
+		void onSetDroneLifecycle(
+			const srv::SetDroneLifecycle::Request::SharedPtr req,
+			srv::SetDroneLifecycle::Response::SharedPtr res)
+		{
+			if (!req)
+			{
+				return;
+			}
+
+			bool accepted = true;
+			std::string message = "ok";
+
+			switch (req->command)
+			{
+			case srv::SetDroneLifecycle::Request::CMD_ACTIVATE:
+				requestCameraLifecycle(true);
+				break;
+			case srv::SetDroneLifecycle::Request::CMD_DEACTIVATE:
+				requestCameraLifecycle(false);
+				requestGimbalMode(msg::GimbalState::MODE_TRACKING);
+				break;
+			default:
+				accepted = false;
+				message = "unsupported lifecycle command";
+				break;
+			}
+
+			res->success = accepted;
+			res->message = message;
+			res->mission_mode = state_.has_motion_mode
+				? state_.motion_mode
+				: msg::DroneStatus::MODE_HOLD;
+		}
+
 		/**
 		 * @brief 请求相机节点切换到激活/休眠状态
 		 * @param endpoint 相机节点的生命周期服务端点
@@ -392,6 +435,7 @@ namespace c3_drone_driver
 		rclcpp::Publisher<msg::GimbalMotionCommand>::SharedPtr gimbal_motion_pub_;
 		rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mission_goal_pub_;
 		rclcpp::Publisher<msg::DroneStatus>::SharedPtr status_pub_;
+		rclcpp::Service<srv::SetDroneLifecycle>::SharedPtr drone_lifecycle_srv_;
 		rclcpp::Client<srv::SetGimbalMode>::SharedPtr gimbal_mode_client_;
 		rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr tc_lifecycle_client_;
 		rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr gc_lifecycle_client_;

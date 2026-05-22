@@ -37,6 +37,14 @@ c3_drone_driver/
 | `offboard_setpoint_px4_bridge_node` | `bridge_node` | 将 Offboard 目标转成 PX4 原生 `px4_msgs` |
 | `gimbal_joint_state_bridge_node` | `bridge_node` | 将云台状态转成 `/joint_states` |
 
+这些节点的职责边界是固定的：
+
+- 感知链路只负责把 TC/GC 数据整理成目标观测
+- 云台链路只负责角度控制、限位和模式仲裁
+- 主控链路只负责任务、距离阈值和生命周期调度
+- 运动链路只负责把目标点变成 PX4 可执行的 Offboard 目标
+- 桥接节点只负责和外部系统交换消息，不参与业务决策
+
 ---
 
 ## 3. 启动文件
@@ -98,6 +106,28 @@ PX4 / Offboard
 - `/mavlink/target_obs`
 - `/mavlink/mission_cmd_ack`
 
+### 4.1 主流程说明
+
+1. 母船通过 MAVLink 下发 `MissionCommand`、母船位姿和粗目标点。
+2. `mavlink_bridge_node` 将外部数据桥接成 ROS topic。
+3. `motion_controller_node` 根据 `MissionCommand` 和主控发布的 `/mission/goal` 生成 `/px4/offboard_goal`。
+4. `drone_main_controller_node` 订阅目标观测、云台状态、运动模式和母船目标点：
+   - 当任务为 `CMD_START` 时，发布任务目标点
+   - 当任务为 `CMD_BACK` 时，切到回船目标点
+   - 当目标距离小于 `enable_distance` 时，激活 TC/GC 生命周期，并进入视觉云台控制
+   - 当目标距离大于阈值时，不启用视觉链路
+5. `target_processor_node` 融合 TC/GC 结果，输出目标观测和视觉云台命令。
+6. `gimbal_controller_node` 对视觉命令和运动前馈命令做仲裁，最终发布 `/gimbal/state`。
+7. `drone_main_controller_node` 再根据 `/gimbal/state` 和目标距离决定是否发布 `/gimbal/motion_command`。
+8. `motion_controller_node` 接收 `/mission/goal` 后，持续生成 PX4 Offboard 目标。
+
+### 4.2 关键时序
+
+- 先有任务，再有目标点
+- 先有目标观测，再有视觉跟踪
+- 先到距离阈值，再激活 TC/GC
+- 先由主控做策略判断，再由云台和运动模块执行
+
 ---
 
 ## 5. TC / GC 的 URDF 与 TF 绑定
@@ -107,6 +137,7 @@ PX4 / Offboard
 - `TC` 与 `GC` 作为云台上的两套相机载荷，统一挂在 `gimbal_pitch_link` 下。
 - 物理挂载关系由 `c3_drone_with_gimbal.urdf.xacro` 定义，`robot_state_publisher` 负责发布 TF。
 - 相机包不应重复发布 `tc_camera_link`、`gated_camera_link` 这类固定变换，避免 TF 冲突。
+- 这里的 LINK 关系只做坐标绑定，不承载生命周期逻辑。
 
 ### 5.2 固定帧名
 
@@ -130,6 +161,7 @@ PX4 / Offboard
 - 相机驱动/算法包只消费上述帧名，不自建新的挂载层级。
 - 图像和检测结果继续走各自 topic，TF 只负责坐标绑定。
 - 若后续需要做生命周期启停，主控只按距离阈值触发，不改 TF 树。
+- TC/GC 自身不需要额外 srv；生命周期由主控统一调用标准 `ChangeState`。
 
 ### 5.5 距离门控策略
 
@@ -141,6 +173,8 @@ PX4 / Offboard
   - 主控调用 TC/GC 的生命周期服务，激活相机节点
   - 再进入云台视觉控制链路
 - 这里的 `arrive_radius` 保留给运动模块到点判定，`enable_distance` 保留给感知与云台激活判定。
+- `arrive_radius` 关注“是否到点”
+- `enable_distance` 关注“是否值得打开视觉链路”
 
 ### 5.6 生命周期服务规范
 
@@ -176,6 +210,35 @@ bool success
 - 主控在距离小于等于阈值时调用 `TRANSITION_ACTIVATE`
 - 主控在离开阈值或任务结束时调用 `TRANSITION_DEACTIVATE`
 
+### 5.7 母船控制无人机生命周期服务
+
+主控节点对外提供统一服务，供母船侧控制无人机任务生命周期：
+
+- 服务名：`/main_controller/set_lifecycle`
+- 服务类型：`c3_drone_driver/srv/SetDroneLifecycle`
+
+请求字段：
+
+```text
+uint8 command
+CMD_ACTIVATE=1
+CMD_DEACTIVATE=2
+```
+
+响应字段：
+
+```text
+bool success
+string message
+uint8 mission_mode
+```
+
+语义约定：
+
+- `CMD_ACTIVATE`：开启 TC/GC 生命周期
+- `CMD_DEACTIVATE`：关闭 TC/GC 生命周期，并强制切回云台追踪模式
+- 这个 srv 只负责 TC/GC 生命周期，不再混入任务切换语义
+
 ---
 
 ## 6. 外部接口概览
@@ -185,12 +248,14 @@ bool success
 - 发布：`/tc/detection`
 - 类型：`c3_drone_driver/msg/TcDetection`
 - 主要字段：`bbox.data`、`cloud`、`header.stamp`
+- 约定帧：`tc_camera_optical_frame`
 
 ### 5.2 GC
 
 - 发布：`/gc/detection`
 - 类型：`c3_drone_driver/msg/TcDetection`
 - 主要字段：`bbox.data`、`cloud`、`header.stamp`
+- 约定帧：`gated_camera_optical_frame`
 
 ### 5.3 母船
 

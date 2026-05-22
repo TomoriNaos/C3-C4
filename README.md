@@ -1,13 +1,14 @@
 # C3 Drone Driver
 
-> 版本：v1.0.0  
-> 更新日期：2026-05-19
+> 版本：v1.1.0  
+> 更新日期：2026-05-22
 
 无人机主链路：
 - 接收母船下发的任务命令与粗目标点（经 MAVLink 桥接）
 - 融合 TC/GC (传统相机/门控相机)感知结果，输出目标观测与云台视觉跟踪命令
 - 完成云台 yaw/pitch 仲裁控制（视觉优先于运动前馈）
 - 由主控与运动模块生成 Offboard 目标点，驱动 PX4 飞行（联调模式）
+- 以距离阈值控制 TC/GC 生命周期启停，TC/GC 本体不额外暴露自定义 srv
 
 详细设计见 `doc/`：
 - `doc/frame.md`
@@ -166,57 +167,55 @@ ros2 run c3_drone_driver offboard_setpoint_px4_bridge_node
 
 ---
 
-## 6. 仿真说明
+## 6. 外部接口（TC / GC / 母船）
 
-### 6.1 当前仓库内置仿真链路
-
-`sensor_mock_node` 会发布：
-- `/tc/detection`（含 bbox + TC 点云）
-- `/gc/detection`（含 bbox + GC 点云）
-- `/mission/cmd`（默认 `CMD_DETECTING`）
-
-用于驱动 `target_processor_node -> gimbal_controller_node -> drone_main_controller_node -> motion_controller_node` 的完整闭环。
-
-### 6.2 与 PX4 的关系
-
-- 当前 `c3_drone_core.launch.py` 默认使用 `offboard_setpoint_bridge_node`（`PoseStamped -> PoseStamped`）
-- 若要真正给 PX4 `fmu/in/*` 发送控制，需运行 `offboard_setpoint_px4_bridge_node`（依赖 `px4_msgs`）
-
----
-
-## 7. 外部接口（TC / GC / 母船）
-
-## 7.1 TC（Traditional Camera）接口
+## 6.1 TC（Traditional Camera）接口
 
 TC 对本项目发布：
 - Topic: `/tc/detection`
 - Type: `c3_drone_driver/msg/TcDetection`
 - 关键字段：
   - `header.stamp`
+  - `header.frame_id = tc_camera_optical_frame`
   - `bbox.data = [x, y, w, h, confidence, target_id]`
-  - `cloud`（`sensor_msgs/PointCloud2`，TC 光学坐标系）
+  - `cloud`（`sensor_msgs/PointCloud2`，同样使用 `tc_camera_optical_frame`）
 
-本项目对 TC 不做强制订阅要求（TC 可订阅以下辅助信息）：
+TC 的 LINK / TF 约定：
+- `gimbal_pitch_link -> tc_camera_link -> tc_camera_optical_frame`
+- 由 `c3_drone_driver/urdf/c3_drone_with_gimbal.urdf.xacro` 统一发布
+- TC 本身无需额外自定义 srv
+
+TC 若需要辅助信息，可订阅：
 - `/gimbal/state` (`c3_drone_driver/msg/GimbalState`)
 
-## 7.2 GC（Gated Camera）接口
+## 6.2 GC（Gated Camera）接口
 
 GC 对本项目发布：
 - Topic: `/gc/detection`
 - Type: `c3_drone_driver/msg/TcDetection`
 - 关键字段：
   - `header.stamp`
+  - `header.frame_id = gated_camera_optical_frame`
   - `bbox.data = [x, y, w, h, confidence, target_id]`
-  - `cloud`（`sensor_msgs/PointCloud2`，GC 光学坐标系）
+  - `cloud`（`sensor_msgs/PointCloud2`，同样使用 `gated_camera_optical_frame`）
 
-## 7.3 母船主控（MAVLink 上下行桥）接口
+GC 的 LINK / TF 约定：
+- `gimbal_pitch_link -> gated_camera_link -> gated_camera_optical_frame`
+- 由 `c3_drone_driver/urdf/c3_drone_with_gimbal.urdf.xacro` 统一发布
+- GC 本身无需额外自定义 srv
+
+## 6.3 母船主控（MAVLink 上下行桥）接口
 
 > 当前仓库内 `mavlink_bridge_node` 是 ROS 占位。真实串口/UDP 打包解包可接入这些 topic。
 
 母船 -> 无人机（桥接输入）：
 - `/mavlink/mission_cmd_rx` (`c3_drone_driver/msg/MissionCommand`)
+  - `CMD_START`：进入任务/航线模式
+  - `CMD_BACK`：回船模式
+  - `CMD_HOLD`：保持/悬停
 - `/mavlink/ship_pose_world_rx` (`geometry_msgs/msg/PoseStamped`)
 - `/mavlink/ship_target_point_rx` (`geometry_msgs/msg/PoseStamped`, `frame_id="ship"`)
+  - 船坐标系下的粗目标点
 - `/mavlink/heartbeat_rx` (`std_msgs/msg/Bool`)
 
 无人机 -> 母船（桥接输出）：
@@ -225,30 +224,47 @@ GC 对本项目发布：
 - `/mavlink/heartbeat_tx` (`std_msgs/msg/Bool`)
 - `/mission/state` (`c3_drone_driver/msg/DroneStatus`)
 
+母船如需直接控制无人机侧 TC/GC 生命周期，可调用主控服务：
+
+- 服务名：`/main_controller/set_lifecycle`
+- 服务类型：`c3_drone_driver/srv/SetDroneLifecycle`
+
+请求示例：
+
+```bash
+ros2 service call /main_controller/set_lifecycle c3_drone_driver/srv/SetDroneLifecycle "{command: 1}"
+ros2 service call /main_controller/set_lifecycle c3_drone_driver/srv/SetDroneLifecycle "{command: 2}"
+```
+
+语义：
+- `CMD_ACTIVATE`：主控尝试激活 TC/GC 生命周期
+- `CMD_DEACTIVATE`：主控尝试关闭 TC/GC 生命周期，并切回云台追踪模式
+- 该 srv 不承载 `START/BACK/HOLD` 任务切换，任务仍由 `MissionCommand` 和 MAVLink 链路管理
+
+TC/GC 侧当前无需额外自定义 srv。
+
 ---
 
-## 8. 节点功能简述
+## 7. 节点功能简述
 
 - `target_processor_node`
   - 融合 TC/GC 数据，发布 `/target/observation_body` 与 `/gimbal/visual_command`
 - `gimbal_controller_node`
   - 执行云台 yaw/pitch 限幅和控制权仲裁（视觉优先）
 - `drone_main_controller_node`
-  - 汇总任务与感知状态，发布 `/mission/goal`、`/gimbal/motion_command`、`/main_controller/status`
+  - 汇总任务与感知状态，按距离阈值启停 TC/GC 生命周期，发布 `/mission/goal`、`/gimbal/motion_command`、`/main_controller/status`
 - `motion_controller_node`
   - 基于任务目标和当前位姿生成 `/px4/offboard_goal`
 - `mavlink_bridge_node`
   - 任务命令/心跳/目标观测的 ROS 侧桥接与链路状态输出
 - `px4_pose_bridge_node`
   - 将 `/odom` 或 `/pose` 归一为 `/px4/vehicle_pose`
-- `offboard_setpoint_bridge_node`
-  - 将 `/px4/offboard_goal` 转发为 `/px4/setpoint_pose`
 - `offboard_setpoint_px4_bridge_node`
   - 将 Offboard 目标转换为 PX4 `fmu/in/*` 原生消息（需 `px4_msgs`）
 
 ---
 
-## 9. tools 说明
+## 8. tools 说明
 
 - `tools/setup_px4_stack.sh`
   - 一键准备 PX4 / px4_msgs / Micro-XRCE-DDS-Agent（可选）
