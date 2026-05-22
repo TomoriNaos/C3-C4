@@ -22,6 +22,11 @@ TargetFusionProcessor::TargetFusionProcessor(const Config &config)
 {
 }
 
+void TargetFusionProcessor::setTfBuffer(const std::shared_ptr<tf2_ros::Buffer> &tf_buffer)
+{
+	pose_estimator_.setTfBuffer(tf_buffer);
+}
+
 std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::process(const rclcpp::Time &now)
 {
 	//1. 清理过期数据
@@ -123,16 +128,21 @@ std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::process(cons
 		const auto roi = buildRoi(detection->bbox.data);
 		if (!roi) return std::nullopt;
 		std::optional<RoiResult> roi_result;
+		const std::string camera_frame = detection->header.frame_id.empty()
+			? (source == msg::TargetObservation::SOURCE_TC_ONLY
+				? "tc_camera_optical_frame"
+				: "gated_camera_optical_frame")
+			: detection->header.frame_id;
 		if (source == msg::TargetObservation::SOURCE_TC_ONLY)
 		{
 			roi_result = extractRoiCentroidInBody(
-				detection->cloud, *roi,
+				detection->cloud, *roi, camera_frame, "base_link",
 				config_.tc_to_gimbal_x, config_.tc_to_gimbal_y, config_.tc_to_gimbal_z);
 		}
 		else
 		{
 			roi_result = extractRoiCentroidInBody(
-				detection->cloud, *roi,
+				detection->cloud, *roi, camera_frame, "base_link",
 				config_.gc_to_gimbal_x, config_.gc_to_gimbal_y, config_.gc_to_gimbal_z);
 		}
 		if (!roi_result) return std::nullopt;
@@ -386,6 +396,8 @@ std::optional<TargetFusionProcessor::RoiResult> TargetFusionProcessor::extractRo
 std::optional<TargetFusionProcessor::RoiResult> TargetFusionProcessor::extractRoiCentroidInBody(
 	const sensor_msgs::msg::PointCloud2 &cloud,
 	const RoiBounds &roi,
+	const std::string &camera_optical_frame,
+	const std::string &body_frame,
 	double camera_to_gimbal_x,
 	double camera_to_gimbal_y,
 	double camera_to_gimbal_z) const
@@ -399,6 +411,8 @@ std::optional<TargetFusionProcessor::RoiResult> TargetFusionProcessor::extractRo
 		static_cast<double>(roi_result->centroid.z)};
 	const auto body_point = pose_estimator_.cameraOpticalPointToBody(
 		p_cam,
+		camera_optical_frame,
+		body_frame,
 		camera_to_gimbal_x,
 		camera_to_gimbal_y,
 		camera_to_gimbal_z);

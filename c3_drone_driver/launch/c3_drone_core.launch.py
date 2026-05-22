@@ -1,5 +1,8 @@
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -7,9 +10,19 @@ import os
 
 def generate_launch_description():
     pkg = get_package_share_directory('c3_drone_driver')
+    use_sim = LaunchConfiguration('use_sim')
 
     return LaunchDescription([
         SetEnvironmentVariable('ROS_LOG_DIR', '/tmp/ros_logs'),
+        DeclareLaunchArgument(
+            'use_sim',
+            default_value='true',
+            description='Launch Gazebo simulation environment together with core nodes',
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(pkg, 'launch', 'c3_gazebo_sim.launch.py')),
+            condition=IfCondition(use_sim),
+        ),
         Node(
             package='c3_drone_driver',
             executable='gimbal_controller_node',
@@ -55,5 +68,11 @@ def generate_launch_description():
             name='px4_pose_bridge_node',
             output='screen',
             parameters=[os.path.join(pkg, 'config', 'px4_pose.yaml')],
+        ),
+        Node(
+            package='c3_drone_driver',
+            executable='offboard_setpoint_px4_bridge_node',
+            name='offboard_setpoint_px4_bridge_node',
+            output='screen',
         ),
     ])

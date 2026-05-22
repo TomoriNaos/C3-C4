@@ -81,6 +81,22 @@ sudo ldconfig
 MicroXRCEAgent udp4 -p 8888
 ```
 
+### 2.4 外参配置说明
+
+如果需要修改相机和云台/机体的外参，请优先改这些文件：
+- `c3_drone_driver/urdf/c3_drone_with_gimbal.urdf.xacro`
+  - 这里改相机和云台的 TF 绑定关系，以及 `tc_camera_xyz/rpy`、`gated_camera_xyz/rpy`
+- `c3_drone_driver/config/target_fusion_default.yaml`
+  - 这里改融合节点使用的 `tc_to_gimbal_*`、`gc_to_gimbal_*`
+- `c3_drone_driver/config/pose_estimator_default.yaml`
+  - 这里改机体到云台的 `body_to_gimbal_*`
+
+当前实现会优先从 TF2 读取外参，TF 不可用时才回退到 YAML 配置。
+
+如果需要修改相机内参（焦距、主点、畸变）：
+- 本仓库当前没有统一的相机内参配置文件。
+- 需要在 TC/GC 各自感知节点（你们自己的相机驱动/算法包）里修改对应参数或 `camera_info` 配置。
+
 ---
 
 ## 3. 编译本项目
@@ -89,8 +105,7 @@ MicroXRCEAgent udp4 -p 8888
 
 ```bash
 source /opt/ros/humble/setup.bash
-# 如使用 PX4 原生消息桥，还需 source 你的 px4_msgs 工作区
-# source ~/px4_ros2_ws/install/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
 
 colcon build --packages-select c3_drone_driver --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
@@ -105,19 +120,19 @@ source install/setup.bash
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch c3_drone_driver c3_gazebo_sim.launch.py
+ros2 launch c3_drone_driver c3_drone_core.launch.py use_sim:=true
 ```
 
 说明：
-- 会启动 Gazebo + 机体模型 + `sensor_mock_node`
-- 同时启动主链路节点：`target_processor`、`gimbal_controller`、`drone_main_controller`、`motion_controller`、`mavlink_bridge` 及桥接节点
+- 会启动 Gazebo + 机体模型
+- 同时启动主链路节点：`target_processor`、`gimbal_controller`、`drone_main_controller`、`motion_controller`、`mavlink_bridge`、`px4_pose_bridge`、`offboard_setpoint_px4_bridge`
 
 ## 4.2 不启动 Gazebo，仅启动核心节点
 
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch c3_drone_driver c3_drone_core.launch.py
+ros2 launch c3_drone_driver c3_drone_core.launch.py use_sim:=false
 ```
 
 ## 4.3 云台单独联调
@@ -144,7 +159,7 @@ MicroXRCEAgent udp4 -p 8888
 ```bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch c3_drone_driver c3_drone_core.launch.py
+ros2 launch c3_drone_driver c3_drone_core.launch.py use_sim:=false
 ```
 
 终端 D（如果已编译出 `offboard_setpoint_px4_bridge_node`）：
@@ -159,9 +174,9 @@ ros2 run c3_drone_driver offboard_setpoint_px4_bridge_node
 ## 5. Launch 说明
 
 - `c3_drone_driver/launch/c3_gazebo_sim.launch.py`
-  - Gazebo 联合仿真入口；包含模型生成、`sensor_mock_node`、全套控制/桥接节点。
+  - Gazebo 联合仿真入口；仅包含模型生成、Gazebo 与可选 RViz。
 - `c3_drone_driver/launch/c3_drone_core.launch.py`
-  - 算法核心入口；不拉起 Gazebo，仅启动业务主链路节点。
+  - 算法核心入口；默认联动 Gazebo，可通过 `use_sim:=false` 关闭仿真，仅启动业务主链路节点。
 - `c3_drone_driver/launch/gimbal_sim.launch.py`
   - 云台专项调试；支持 GUI 手动关节控制和控制器驱动模式。
 
@@ -183,7 +198,6 @@ TC 对本项目发布：
 TC 的 LINK / TF 约定：
 - `gimbal_pitch_link -> tc_camera_link -> tc_camera_optical_frame`
 - 由 `c3_drone_driver/urdf/c3_drone_with_gimbal.urdf.xacro` 统一发布
-- TC 本身无需额外自定义 srv
 
 TC 若需要辅助信息，可订阅：
 - `/gimbal/state` (`c3_drone_driver/msg/GimbalState`)
@@ -202,7 +216,6 @@ GC 对本项目发布：
 GC 的 LINK / TF 约定：
 - `gimbal_pitch_link -> gated_camera_link -> gated_camera_optical_frame`
 - 由 `c3_drone_driver/urdf/c3_drone_with_gimbal.urdf.xacro` 统一发布
-- GC 本身无需额外自定义 srv
 
 ## 6.3 母船主控（MAVLink 上下行桥）接口
 
@@ -239,32 +252,9 @@ ros2 service call /main_controller/set_lifecycle c3_drone_driver/srv/SetDroneLif
 语义：
 - `CMD_ACTIVATE`：主控尝试激活 TC/GC 生命周期
 - `CMD_DEACTIVATE`：主控尝试关闭 TC/GC 生命周期，并切回云台追踪模式
-- 该 srv 不承载 `START/BACK/HOLD` 任务切换，任务仍由 `MissionCommand` 和 MAVLink 链路管理
-
-TC/GC 侧当前无需额外自定义 srv。
-
 ---
 
-## 7. 节点功能简述
-
-- `target_processor_node`
-  - 融合 TC/GC 数据，发布 `/target/observation_body` 与 `/gimbal/visual_command`
-- `gimbal_controller_node`
-  - 执行云台 yaw/pitch 限幅和控制权仲裁（视觉优先）
-- `drone_main_controller_node`
-  - 汇总任务与感知状态，按距离阈值启停 TC/GC 生命周期，发布 `/mission/goal`、`/gimbal/motion_command`、`/main_controller/status`
-- `motion_controller_node`
-  - 基于任务目标和当前位姿生成 `/px4/offboard_goal`
-- `mavlink_bridge_node`
-  - 任务命令/心跳/目标观测的 ROS 侧桥接与链路状态输出
-- `px4_pose_bridge_node`
-  - 将 `/odom` 或 `/pose` 归一为 `/px4/vehicle_pose`
-- `offboard_setpoint_px4_bridge_node`
-  - 将 Offboard 目标转换为 PX4 `fmu/in/*` 原生消息（需 `px4_msgs`）
-
----
-
-## 8. tools 说明
+## 7. tools 说明
 
 - `tools/setup_px4_stack.sh`
   - 一键准备 PX4 / px4_msgs / Micro-XRCE-DDS-Agent（可选）
@@ -274,10 +264,7 @@ TC/GC 侧当前无需额外自定义 srv。
 使用示例：
 
 ```bash
-# 仿真模式检查
-bash tools/verify_stack.sh sim
-
-# PX4联调模式检查（会额外检查 /fmu/in/* 话题）
+# PX4联调模式检查（会检查 /fmu/in/* 话题）
 bash tools/verify_stack.sh px4
 ```
 

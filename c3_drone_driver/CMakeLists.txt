@@ -14,6 +14,9 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_msgs REQUIRED)
 find_package(px4_msgs QUIET)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -47,6 +50,7 @@ ament_target_dependencies(gimbal_controller_node rclcpp)
 
 add_executable(target_processor_node src/inner_node/target_processor_node.cpp)
 ament_target_dependencies(target_processor_node rclcpp std_msgs sensor_msgs geometry_msgs ament_index_cpp)
+ament_target_dependencies(target_processor_node tf2 tf2_ros tf2_msgs)
 target_include_directories(target_processor_node PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   ${OpenCV_INCLUDE_DIRS}
@@ -54,12 +58,14 @@ target_include_directories(target_processor_node PRIVATE
 
 add_library(target_fusion_processor_lib src/target_fusion_processor.cpp)
 ament_target_dependencies(target_fusion_processor_lib rclcpp std_msgs sensor_msgs geometry_msgs)
+ament_target_dependencies(target_fusion_processor_lib tf2 tf2_ros tf2_msgs)
 target_include_directories(target_fusion_processor_lib PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
 add_library(pose_estimator_lib src/pose_estimator.cpp)
 ament_target_dependencies(pose_estimator_lib rclcpp geometry_msgs)
+ament_target_dependencies(pose_estimator_lib tf2 tf2_ros)
 target_include_directories(pose_estimator_lib PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
@@ -79,18 +85,12 @@ add_executable(motion_controller_node src/inner_node/motion_controller_node.cpp)
 ament_target_dependencies(motion_controller_node rclcpp geometry_msgs)
 target_link_libraries(motion_controller_node Eigen3::Eigen)
 
-add_executable(sensor_mock_node src/inner_node/sensor_mock_node.cpp)
-ament_target_dependencies(sensor_mock_node rclcpp std_msgs sensor_msgs)
-
-add_executable(gimbal_joint_state_bridge_node src/bridge_node/gimbal_joint_state_bridge_node.cpp)
-ament_target_dependencies(gimbal_joint_state_bridge_node rclcpp sensor_msgs)
-
 add_executable(px4_pose_bridge_node src/bridge_node/px4_pose_bridge_node.cpp)
 ament_target_dependencies(px4_pose_bridge_node rclcpp geometry_msgs nav_msgs)
 
 if(px4_msgs_FOUND)
-  add_executable(offboard_setpoint_bridge_node src/bridge_node/offboard_setpoint_bridge_node.cpp)
-  ament_target_dependencies(offboard_setpoint_bridge_node rclcpp geometry_msgs px4_msgs)
+  add_executable(offboard_setpoint_px4_bridge_node src/bridge_node/offboard_setpoint_bridge_node.cpp)
+  ament_target_dependencies(offboard_setpoint_px4_bridge_node rclcpp geometry_msgs px4_msgs)
 endif()
 
 rosidl_get_typesupport_target(c3_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
@@ -104,11 +104,9 @@ target_link_libraries(mavlink_bridge_node ${c3_typesupport_target})
 target_link_libraries(drone_main_controller_node ${c3_typesupport_target})
 target_link_libraries(drone_main_controller_node ${OpenCV_LIBS})
 target_link_libraries(motion_controller_node ${c3_typesupport_target})
-target_link_libraries(sensor_mock_node ${c3_typesupport_target})
-target_link_libraries(gimbal_joint_state_bridge_node ${c3_typesupport_target})
 target_link_libraries(px4_pose_bridge_node ${c3_typesupport_target})
 if(px4_msgs_FOUND)
-  target_link_libraries(offboard_setpoint_bridge_node ${c3_typesupport_target})
+  target_link_libraries(offboard_setpoint_px4_bridge_node ${c3_typesupport_target})
 endif()
 target_link_libraries(target_processor_node target_fusion_processor_lib)
 target_link_libraries(target_fusion_processor_lib pose_estimator_lib)
@@ -120,8 +118,6 @@ install(TARGETS
   mavlink_bridge_node
   drone_main_controller_node
   motion_controller_node
-  sensor_mock_node
-  gimbal_joint_state_bridge_node
   px4_pose_bridge_node
   target_fusion_processor_lib
   pose_estimator_lib
@@ -129,7 +125,7 @@ install(TARGETS
 )
 
 if(px4_msgs_FOUND)
-  install(TARGETS offboard_setpoint_bridge_node
+  install(TARGETS offboard_setpoint_px4_bridge_node
     DESTINATION lib/${PROJECT_NAME}
   )
 endif()

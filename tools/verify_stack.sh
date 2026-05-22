@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-MODE="${1:-sim}"  # sim | px4
-if [[ "$MODE" != "sim" && "$MODE" != "px4" ]]; then
-  echo "Usage: $0 [sim|px4]"
+MODE="${1:-px4}"
+if [[ "$MODE" != "px4" ]]; then
+  echo "Usage: $0 [px4]"
   exit 1
 fi
 
@@ -27,7 +27,7 @@ required_bins=(
   mavlink_bridge_node
   target_processor_node
   px4_pose_bridge_node
-  offboard_setpoint_bridge_node
+  offboard_setpoint_px4_bridge_node
 )
 for b in "${required_bins[@]}"; do
   if [[ ! -x "${BIN_DIR}/${b}" ]]; then
@@ -37,13 +37,11 @@ for b in "${required_bins[@]}"; do
 done
 echo "Binaries OK."
 
-if [[ "$MODE" == "px4" ]]; then
-  if [[ -x "${BIN_DIR}/offboard_setpoint_px4_bridge_node" ]]; then
-    echo "PX4 native bridge binary detected: offboard_setpoint_px4_bridge_node"
-  else
-    echo "WARNING: offboard_setpoint_px4_bridge_node not built."
-    echo "         This usually means px4_msgs is not installed/sourced."
-  fi
+if [[ -x "${BIN_DIR}/offboard_setpoint_px4_bridge_node" ]]; then
+  echo "PX4 native bridge binary detected: offboard_setpoint_px4_bridge_node"
+else
+  echo "WARNING: offboard_setpoint_px4_bridge_node not built."
+  echo "         This usually means px4_msgs is not installed/sourced."
 fi
 
 echo "[4/5] Runtime ROS graph checks (requires your stack is already running) ..."
@@ -87,9 +85,7 @@ required_topics_px4=(
 )
 
 required_topics=("${required_topics_common[@]}")
-if [[ "$MODE" == "px4" ]]; then
-  required_topics+=("${required_topics_px4[@]}")
-fi
+required_topics+=("${required_topics_px4[@]}")
 
 missing=0
 for t in "${required_topics[@]}"; do

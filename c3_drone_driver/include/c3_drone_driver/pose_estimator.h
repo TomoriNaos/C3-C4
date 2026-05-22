@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -10,6 +11,7 @@
 #include "c3_drone_driver/msg/target_observation.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/time.hpp"
+#include "tf2_ros/buffer.h"
 
 namespace c3_drone_driver
 {
@@ -86,6 +88,14 @@ namespace c3_drone_driver
 			double camera_to_gimbal_x,
 			double camera_to_gimbal_y,
 			double camera_to_gimbal_z) const;
+		std::optional<std::array<double, 3>> cameraOpticalPointToBody(
+			const std::array<double, 3> &point_camera_optical,
+			const std::string &camera_optical_frame,
+			const std::string &body_frame,
+			double camera_to_gimbal_x,
+			double camera_to_gimbal_y,
+			double camera_to_gimbal_z) const;
+		void setTfBuffer(const std::shared_ptr<tf2_ros::Buffer> &tf_buffer);
 
 		/**
 		 * @brief 云台状态是否已更新
@@ -123,8 +133,10 @@ namespace c3_drone_driver
 		static std::array<double, 3> toArray3(const Vec3 &v);
 		static Vec3 fromArray3(const std::array<double, 3> &v);
 		static double quatYaw(double x, double y, double z, double w);
+		static Mat3 quatToRot(double x, double y, double z, double w);
 
 		Config config_{};
+		std::shared_ptr<tf2_ros::Buffer> tf_buffer_{};
 		bool has_vehicle_pose_{false};
 		bool has_gimbal_state_{false};
 		Mat3 r_ned_body_{Mat3::Identity()};

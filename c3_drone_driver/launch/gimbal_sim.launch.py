@@ -82,12 +82,5 @@ def generate_launch_description():
                 'gimbal.yaml'
             ])],
             condition=IfCondition(use_controller)
-        ),
-        Node(
-            package='c3_drone_driver',
-            executable='gimbal_joint_state_bridge_node',
-            name='gimbal_joint_state_bridge_node',
-            output='screen',
-            condition=IfCondition(use_controller)
         )
     ])

@@ -2,12 +2,15 @@
 
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "geometry_msgs/msg/point.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "tf2_ros/buffer.h"
 
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
 #include "c3_drone_driver/msg/gimbal_state.hpp"
@@ -77,6 +80,7 @@ public:
 
 	/// 构造函数 
 	explicit TargetFusionProcessor(const Config &config);
+	void setTfBuffer(const std::shared_ptr<tf2_ros::Buffer> &tf_buffer);
 
 	void updateTcDetection(const msg::TcDetection::SharedPtr &msg);
 	void updateGcDetection(const msg::TcDetection::SharedPtr &msg);
@@ -183,6 +187,8 @@ private:
 	std::optional<RoiResult> extractRoiCentroidInBody(
 		const sensor_msgs::msg::PointCloud2 &cloud,
 		const RoiBounds &roi,
+		const std::string &camera_optical_frame,
+		const std::string &body_frame,
 		double camera_to_gimbal_x,
 		double camera_to_gimbal_y,
 		double camera_to_gimbal_z) const;

@@ -3,6 +3,8 @@
 #include <cmath>
 
 #include <Eigen/Geometry>
+#include "tf2/exceptions.hpp"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 
 namespace c3_drone_driver
 {
@@ -10,6 +12,11 @@ namespace c3_drone_driver
 	PoseEstimator::PoseEstimator(const Config &config)
 		: config_(config)
 	{
+	}
+
+	void PoseEstimator::setTfBuffer(const std::shared_ptr<tf2_ros::Buffer> &tf_buffer)
+	{
+		tf_buffer_ = tf_buffer;
 	}
 
 	void PoseEstimator::updateVehiclePose(const geometry_msgs::msg::PoseStamped &pose_msg)
@@ -94,6 +101,37 @@ namespace c3_drone_driver
 		return toArray3(p_body);
 	}
 
+	std::optional<std::array<double, 3>> PoseEstimator::cameraOpticalPointToBody(
+		const std::array<double, 3> &point_camera_optical,
+		const std::string &camera_optical_frame,
+		const std::string &body_frame,
+		double camera_to_gimbal_x,
+		double camera_to_gimbal_y,
+		double camera_to_gimbal_z) const
+	{
+		if (!tf_buffer_)
+		{
+			return cameraOpticalPointToBody(
+				point_camera_optical, camera_to_gimbal_x, camera_to_gimbal_y, camera_to_gimbal_z);
+		}
+
+		try
+		{
+			const auto tf_msg = tf_buffer_->lookupTransform(body_frame, camera_optical_frame, rclcpp::Time(0));
+			const auto &t = tf_msg.transform.translation;
+			const auto &q = tf_msg.transform.rotation;
+			const Mat3 r_body_camera = quatToRot(q.x, q.y, q.z, q.w);
+			const Vec3 p_camera(point_camera_optical[0], point_camera_optical[1], point_camera_optical[2]);
+			const Vec3 p_body = r_body_camera * p_camera + Vec3(t.x, t.y, t.z);
+			return toArray3(p_body);
+		}
+		catch (const tf2::TransformException &)
+		{
+			return cameraOpticalPointToBody(
+				point_camera_optical, camera_to_gimbal_x, camera_to_gimbal_y, camera_to_gimbal_z);
+		}
+	}
+
 	std::optional<std::pair<double, double>> PoseEstimator::bodyPointToGimbalYawPitch(
 		const std::array<double, 3> &point_body) const
 	{
@@ -173,6 +211,17 @@ namespace c3_drone_driver
 		const double siny_cosp = 2.0 * (w * z + x * y);
 		const double cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
 		return std::atan2(siny_cosp, cosy_cosp);
+	}
+
+	PoseEstimator::Mat3 PoseEstimator::quatToRot(double x, double y, double z, double w)
+	{
+		const double n = std::sqrt(x * x + y * y + z * z + w * w);
+		if (n < 1e-9)
+		{
+			return Mat3::Identity();
+		}
+		const Eigen::Quaterniond q(w / n, x / n, y / n, z / n);
+		return q.normalized().toRotationMatrix();
 	}
 
 } // namespace c3_drone_driver

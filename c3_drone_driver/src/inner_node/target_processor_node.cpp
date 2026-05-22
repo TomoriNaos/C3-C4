@@ -14,6 +14,8 @@
 #include "c3_drone_driver/msg/target_observation.hpp"
 #include "c3_drone_driver/srv/set_gimbal_mode.hpp"
 #include "c3_drone_driver/target_fusion_processor.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_msgs/msg/tf_message.hpp"
 
 namespace c3_drone_driver
 {
@@ -68,6 +70,28 @@ public:
 
 		// target_fusion_processor实例化
 		processor_ = std::make_unique<TargetFusionProcessor>(config);
+		tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+		tf_sub_ = create_subscription<tf2_msgs::msg::TFMessage>(
+			"/tf", rclcpp::SystemDefaultsQoS(),
+			[this](const tf2_msgs::msg::TFMessage::SharedPtr msg)
+			{
+				if (!msg) return;
+				for (const auto &tf : msg->transforms)
+				{
+					tf_buffer_->setTransform(tf, "default_authority");
+				}
+			});
+		tf_static_sub_ = create_subscription<tf2_msgs::msg::TFMessage>(
+			"/tf_static", rclcpp::QoS(100).transient_local().reliable(),
+			[this](const tf2_msgs::msg::TFMessage::SharedPtr msg)
+			{
+				if (!msg) return;
+				for (const auto &tf : msg->transforms)
+				{
+					tf_buffer_->setTransform(tf, "default_authority", true);
+				}
+			});
+		processor_->setTfBuffer(tf_buffer_);
 
 		// ============ 摄像机通信接口 =============
 		// traditional camera (TC)
@@ -156,6 +180,9 @@ public:
 	}
 
 	std::unique_ptr<TargetFusionProcessor> processor_;
+	std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+	rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_sub_;
+	rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_static_sub_;
 
 	rclcpp::Subscription<msg::TcDetection>::SharedPtr tc_detection_sub_;
 	rclcpp::Subscription<msg::TcDetection>::SharedPtr gc_detection_sub_;

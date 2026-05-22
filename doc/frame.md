@@ -27,7 +27,6 @@ c3_drone_driver/
 
 | 节点 | 位置 | 作用 |
 |---|---|---|
-| `sensor_mock_node` | `inner_node` | 仿真输入源，发布 TC/GC 数据和测试任务命令 |
 | `target_processor_node` | `inner_node` | 融合 TC/GC，输出目标观测和视觉云台命令 |
 | `gimbal_controller_node` | `inner_node` | 云台 yaw/pitch 仲裁、限位和状态输出 |
 | `drone_main_controller_node` | `inner_node` | 主控，协调观测、云台、任务状态和目标点 |
@@ -35,7 +34,6 @@ c3_drone_driver/
 | `mavlink_bridge_node` | `bridge_node` | ROS 侧 MAVLink 输入/输出桥接与链路状态网关 |
 | `px4_pose_bridge_node` | `bridge_node` | 将 `/odom` 或 `/pose` 统一为 `/px4/vehicle_pose` |
 | `offboard_setpoint_px4_bridge_node` | `bridge_node` | 将 Offboard 目标转成 PX4 原生 `px4_msgs` |
-| `gimbal_joint_state_bridge_node` | `bridge_node` | 将云台状态转成 `/joint_states` |
 
 这些节点的职责边界是固定的：
 
@@ -44,6 +42,29 @@ c3_drone_driver/
 - 主控链路只负责任务、距离阈值和生命周期调度
 - 运动链路只负责把目标点变成 PX4 可执行的 Offboard 目标
 - 桥接节点只负责和外部系统交换消息，不参与业务决策
+
+### 2.2 现有项目工作流程
+
+1. 母船通过 MAVLink 下发任务命令、船位姿和粗目标点。
+2. `mavlink_bridge_node` 把外部输入整理成 ROS 话题，供内部业务链路订阅。
+3. `target_processor_node` 接收 TC/GC 检测和云台状态，融合出目标观测与视觉云台命令。
+4. `gimbal_controller_node` 对视觉跟踪与运动前馈进行仲裁，并输出稳定的云台状态。
+5. `drone_main_controller_node` 根据任务模式、目标距离和观测结果，决定是否启用视觉链路，并生成任务目标点与云台运动命令。
+6. `motion_controller_node` 根据任务目标点和无人机位姿，计算 `/px4/offboard_goal`。
+7. `px4_pose_bridge_node` 统一外部位姿输入为 `/px4/vehicle_pose`，`offboard_setpoint_px4_bridge_node` 将 Offboard 目标转换成 PX4 原生消息。
+8. PX4 完成实际飞控闭环，再把状态回传到上层和母船侧。
+
+### 2.3 各节点工作流程
+
+| 节点 | 输入 | 处理 | 输出 |
+|---|---|---|---|
+| `target_processor_node` | `/tc/detection`、`/gc/detection`、`/gimbal/state` | 融合双相机检测结果，过滤低置信度/重复目标 | `/target/observation_body`、`/gimbal/visual_command` |
+| `gimbal_controller_node` | `/gimbal/visual_command`、`/gimbal/motion_command` | 按视觉优先原则仲裁控制权，叠加限位与角速度约束 | `/gimbal/state` |
+| `drone_main_controller_node` | `/mission/cmd`、`/ship/pose_world`、`/ship/target_point`、`/target/observation_body`、`/gimbal/state`、`/px4/vehicle_pose` | 做任务状态管理、距离门控和生命周期调度 | `/mission/goal`、`/gimbal/motion_command`、`/main_controller/status` |
+| `motion_controller_node` | `/mission/goal`、`/mission/cmd`、`/px4/vehicle_pose` | 根据目标点和当前位姿生成 Offboard 轨迹 | `/px4/offboard_goal`、`/motion/mission_mode` |
+| `mavlink_bridge_node` | `/mavlink/heartbeat_rx`、`/mavlink/mission_cmd_rx`、`/mavlink/ship_pose_world_rx`、`/mavlink/ship_target_point_rx`、`/target/observation_body`、`/main_controller/status` | 做 ROS 侧外部链路映射和状态回传 | `/mission/cmd`、`/ship/pose_world`、`/ship/target_point`、`/mavlink/target_obs`、`/mavlink/mission_cmd_ack`、`/mission/state` |
+| `px4_pose_bridge_node` | `/odom` 或 `/pose` | 将不同位姿源统一成内部标准接口 | `/px4/vehicle_pose` |
+| `offboard_setpoint_px4_bridge_node` | `/px4/offboard_goal` | 将 Offboard 目标打包成 PX4 原生消息 | `/fmu/in/offboard_control_mode`、`/fmu/in/trajectory_setpoint`、`/fmu/in/vehicle_command` |
 
 ---
 
@@ -67,15 +88,13 @@ c3_drone_driver/
 启动 Gazebo 联合仿真：
 - Gazebo 环境
 - 机体模型
-- `sensor_mock_node`
-- 全套业务节点
 - RViz（可选）
 
 ### 3.3 `gimbal_sim.launch.py`
 
 云台专项调试：
 - `use_gui:=true` 时启用手动关节控制
-- `use_controller:=true` 时启用 `gimbal_controller_node + gimbal_joint_state_bridge_node`
+- `use_controller:=true` 时启用 `gimbal_controller_node`
 
 ---
 
@@ -243,28 +262,22 @@ uint8 mission_mode
 
 ## 6. 外部接口概览
 
-### 5.1 TC
+### 6.1 TC
 
 - 发布：`/tc/detection`
 - 类型：`c3_drone_driver/msg/TcDetection`
 - 主要字段：`bbox.data`、`cloud`、`header.stamp`
 - 约定帧：`tc_camera_optical_frame`
 
-### 5.2 GC
+### 6.2 GC
 
 - 发布：`/gc/detection`
 - 类型：`c3_drone_driver/msg/TcDetection`
 - 主要字段：`bbox.data`、`cloud`、`header.stamp`
 - 约定帧：`gated_camera_optical_frame`
 
-### 5.3 母船
+### 6.3 母船
 
 - 输入：`/mavlink/heartbeat_rx`、`/mavlink/mission_cmd_rx`、`/mavlink/ship_pose_world_rx`、`/mavlink/ship_target_point_rx`
 - 输出：`/mavlink/heartbeat_tx`、`/mavlink/mission_cmd_ack`、`/mavlink/target_obs`、`/mission/state`
 
----
-
-## 7. 备注
-
-- 当前仓库里的 `UWB`、`AIS` 仍属于预留能力，未进入主业务链路。
-- `doc/` 更适合作为设计说明；具体接口以 `msg/`、`srv/`、`launch/` 和源码为准。
