@@ -271,13 +271,10 @@ namespace c3_drone_driver
 		void requestGimbalMode(uint8_t mode)
 		{
 			if (requested_gimbal_mode_ && *requested_gimbal_mode_ == mode)
-			{
 				return;
-			}
 			if (!gimbal_mode_client_->service_is_ready())
-			{
 				return;
-			}
+				
 			auto req = std::make_shared<srv::SetGimbalMode::Request>();
 			req->mode = mode;
 			(void)gimbal_mode_client_->async_send_request(req);
