@@ -30,6 +30,11 @@ namespace c3_drone_driver
 		has_gimbal_state_ = true;
 	}
 
+	bool PoseEstimator::hasGimbalState() const
+	{
+		return has_gimbal_state_;
+	}
+
 	std::optional<PoseEstimator::Result> PoseEstimator::transformObservation(
 		const msg::TargetObservation &obs) const
 	{
@@ -64,6 +69,29 @@ namespace c3_drone_driver
 		out.yaw_body = yaw_body;
 		out.pitch_body = pitch_body;
 		return out;
+	}
+
+	std::optional<std::array<double, 3>> PoseEstimator::cameraOpticalPointToBody(
+		const std::array<double, 3> &point_camera_optical,
+		double camera_to_gimbal_x,
+		double camera_to_gimbal_y,
+		double camera_to_gimbal_z) const
+	{
+		if (!has_gimbal_state_)
+		{
+			return std::nullopt;
+		}
+
+		const Mat3 r_body_gimbal = buildRBodyGimbal(gimbal_yaw_, gimbal_pitch_);
+		const Mat3 r_gimbal_camera = (Eigen::AngleAxisd(-M_PI_2, Eigen::Vector3d::UnitZ()) *
+			Eigen::AngleAxisd(-M_PI_2, Eigen::Vector3d::UnitX())).toRotationMatrix();
+		const Vec3 t_body_gimbal(
+			config_.body_to_gimbal_x, config_.body_to_gimbal_y, config_.body_to_gimbal_z);
+		const Vec3 t_gimbal_camera(camera_to_gimbal_x, camera_to_gimbal_y, camera_to_gimbal_z);
+		const Vec3 p_camera(point_camera_optical[0], point_camera_optical[1], point_camera_optical[2]);
+		const Vec3 p_gimbal = t_gimbal_camera + r_gimbal_camera * p_camera;
+		const Vec3 p_body = r_body_gimbal * p_gimbal + t_body_gimbal;
+		return toArray3(p_body);
 	}
 
 	std::optional<std::pair<double, double>> PoseEstimator::bodyPointToGimbalYawPitch(

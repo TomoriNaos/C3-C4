@@ -111,9 +111,9 @@ PX4 / Offboard
 
 ### 5.2 GC
 
-- 发布：`/gc/points`
-- 类型：`sensor_msgs/msg/PointCloud2`
-- 主要字段：`header.stamp`、点云坐标系
+- 发布：`/gc/detection`
+- 类型：`c3_drone_driver/msg/TcDetection`
+- 主要字段：`bbox.data`、`cloud`、`header.stamp`
 
 ### 5.3 母船
 

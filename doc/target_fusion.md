@@ -14,7 +14,7 @@
 ### 输入
 
 - `/tc/detection` -> `c3_drone_driver/msg/TcDetection`
-- `/gc/points` -> `sensor_msgs/msg/PointCloud2`
+- `/gc/detection` -> `c3_drone_driver/msg/TcDetection`
 
 ### 输出
 
@@ -30,18 +30,13 @@
 当前代码中，`bbox.data` 的约定是：
 
 ```text
-[x, y, w, h, confidence, target_id, target_type]
+[x, y, w, h, confidence, target_id]
 ```
 
-同时还携带：
+TC 和 GC 检测消息都携带：
 - `header.stamp`
 - `header.frame_id`
-- `cloud`（TC 的点云）
-
-### `GC PointCloud2`
-
-- 只需要有效的 `header.stamp`
-- 点云宽高和 xyz 数据必须有效
+- `cloud`（对应相机的点云）
 
 ---
 
@@ -60,18 +55,18 @@
 
 ### 5.1 缓冲与同步
 
-- TC 检测和 GC 点云分别进入缓冲区
+- TC 检测和 GC 检测分别进入缓冲区
 - 只保留最近 `buffer_keep_s` 时间窗的数据
-- `process(now)` 里先清理过期数据，再找最近的 TC / GC 组合
-- 若 GC 未在同步窗口内到达：
+- `process(now)` 里先清理过期数据，再找最近的 TC / GC 检测组合
+- 若对侧检测未在同步窗口内到达：
   - 在 `pending_wait_s` 内继续等
   - 超时后返回丢失结果
 
 ### 5.2 ROI 提取
 
-- 根据 bbox 构建 ROI
+- TC 与 GC 各自根据本路 bbox 构建 ROI
 - 使用 `roi_margin_px` 扩展边界
-- 从 TC 点云中遍历 ROI 像素对应点
+- 从对应点云中遍历 ROI 像素对应点
 - 去除无效点和越界深度点
 - 点数不足则认为 ROI 无效
 
@@ -106,7 +101,7 @@
 - `track_id`
 - `target_id`
 - `frame = FRAME_BODY_DRONE`
-- `target_type`
+- `target_type`（来源标识：TC=1，GC=0）
 - `position`
 - `range`
 - `yaw`

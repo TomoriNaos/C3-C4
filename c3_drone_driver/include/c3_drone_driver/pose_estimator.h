@@ -74,6 +74,25 @@ namespace c3_drone_driver
 		std::optional<Result> transformObservation(const msg::TargetObservation &obs) const;
 
 		/**
+		 * @brief 将相机光学坐标系下的三维点转换到机体系
+		 * @param point_camera_optical 相机光学坐标系三维点
+		 * @param camera_to_gimbal_x 相机安装点在云台系下的x偏移
+		 * @param camera_to_gimbal_y 相机安装点在云台系下的y偏移
+		 * @param camera_to_gimbal_z 相机安装点在云台系下的z偏移
+		 * @return 成功返回机体系三维点；当云台状态未就绪时返回std::nullopt
+		 */
+		std::optional<std::array<double, 3>> cameraOpticalPointToBody(
+			const std::array<double, 3> &point_camera_optical,
+			double camera_to_gimbal_x,
+			double camera_to_gimbal_y,
+			double camera_to_gimbal_z) const;
+
+		/**
+		 * @brief 云台状态是否已更新
+		 */
+		bool hasGimbalState() const;
+
+		/**
 		 * @brief 将机体系目标点反解为云台期望Yaw/Pitch
 		 * @param point_body 目标点（机体系）
 		 * @return 成功返回<yaw, pitch>；无效输入或不可解时返回std::nullopt

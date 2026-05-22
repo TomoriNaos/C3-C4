@@ -12,7 +12,6 @@ sensor_mock_node:
     target_z_m: 0.5
 
     # 目标语义参数
-    target_type: 2                # 目标类型ID
     target_id: 101                # 目标ID
 
     # 检测框尺寸参数（像素）

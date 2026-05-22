@@ -127,7 +127,7 @@ source install/setup.bash
 ros2 launch c3_drone_driver gimbal_sim.launch.py use_gui:=true use_controller:=true
 ```
 
-## 4.4 与 PX4 SITL 联调（最小流程）
+## 4.4 与 PX4 SITL 联调
 
 终端 A（启动 PX4 SITL，目录在 `PX4-Autopilot`）：
 ```bash
@@ -172,7 +172,7 @@ ros2 run c3_drone_driver offboard_setpoint_px4_bridge_node
 
 `sensor_mock_node` 会发布：
 - `/tc/detection`（含 bbox + TC 点云）
-- `/gc/points`（GC 点云）
+- `/gc/detection`（含 bbox + GC 点云）
 - `/mission/cmd`（默认 `CMD_DETECTING`）
 
 用于驱动 `target_processor_node -> gimbal_controller_node -> drone_main_controller_node -> motion_controller_node` 的完整闭环。
@@ -193,7 +193,7 @@ TC 对本项目发布：
 - Type: `c3_drone_driver/msg/TcDetection`
 - 关键字段：
   - `header.stamp`
-  - `bbox.data = [x, y, w, h, confidence, target_id, target_type]`
+  - `bbox.data = [x, y, w, h, confidence, target_id]`
   - `cloud`（`sensor_msgs/PointCloud2`，TC 光学坐标系）
 
 本项目对 TC 不做强制订阅要求（TC 可订阅以下辅助信息）：
@@ -202,11 +202,12 @@ TC 对本项目发布：
 ## 7.2 GC（Gated Camera）接口
 
 GC 对本项目发布：
-- Topic: `/gc/points`
-- Type: `sensor_msgs/msg/PointCloud2`
-- 要求：
-  - `header.stamp` 有效
-  - 坐标系语义与标定一致
+- Topic: `/gc/detection`
+- Type: `c3_drone_driver/msg/TcDetection`
+- 关键字段：
+  - `header.stamp`
+  - `bbox.data = [x, y, w, h, confidence, target_id]`
+  - `cloud`（`sensor_msgs/PointCloud2`，GC 光学坐标系）
 
 ## 7.3 母船主控（MAVLink 上下行桥）接口
 

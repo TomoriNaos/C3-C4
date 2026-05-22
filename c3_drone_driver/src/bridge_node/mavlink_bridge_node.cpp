@@ -44,6 +44,9 @@ public:
 		ship_target_rx_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
 			"/mavlink/ship_target_point_rx", 10,
 			[this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onShipTargetRx(msg); });
+		main_status_sub_ = create_subscription<msg::DroneStatus>(
+			"/main_controller/status", 10,
+			[this](const msg::DroneStatus::SharedPtr msg) { onMainStatus(msg); });
 
 		mission_cmd_pub_ = create_publisher<msg::MissionCommand>("/mission/cmd", 10);
 		drone_status_pub_ = create_publisher<msg::DroneStatus>("/mission/state", 10);
@@ -114,6 +117,16 @@ private:
 		ship_target_pub_->publish(*msg);
 	}
 
+	void onMainStatus(const msg::DroneStatus::SharedPtr msg)
+	{
+		if (!msg)
+		{
+			return;
+		}
+		main_status_ = *msg;
+		has_main_status_ = true;
+	}
+
 	void publishCommandAck(uint8_t command, uint8_t result, uint8_t retry_count, const std::string &text)
 	{
 		msg::CommandAck ack;
@@ -140,11 +153,14 @@ private:
 		const uint8_t link_state = (since_rx >= link_lost_s_) ? msg::DroneStatus::LINK_LOST
 			: (since_rx >= link_degraded_s_) ? msg::DroneStatus::LINK_DEGRADED
 											   : msg::DroneStatus::LINK_OK;
-		msg::DroneStatus status;
+		if (!has_main_status_)
+		{
+			return;
+		}
+
+		msg::DroneStatus status = main_status_;
 		status.header.stamp = t_now;
 		status.t_usec = static_cast<uint64_t>(t_now.nanoseconds() / 1000ULL);
-		status.mission_mode = msg::DroneStatus::MODE_HOLD;
-		status.gimbal_mode = msg::GimbalState::MODE_TRACKING;
 		status.link_state = link_state;
 
 		const bool status_changed = !has_last_status_ ||
@@ -169,6 +185,7 @@ private:
 	rclcpp::Subscription<msg::TargetObservation>::SharedPtr target_obs_sub_;
 	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_pose_rx_sub_;
 	rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ship_target_rx_sub_;
+	rclcpp::Subscription<msg::DroneStatus>::SharedPtr main_status_sub_;
 		rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
 		rclcpp::Publisher<msg::DroneStatus>::SharedPtr drone_status_pub_;
 		rclcpp::Publisher<msg::CommandAck>::SharedPtr command_ack_pub_;
@@ -190,8 +207,10 @@ private:
 	rclcpp::Time last_status_pub_time_{0, 0, RCL_ROS_TIME};
 	uint32_t last_obs_id_{0};
 	msg::DroneStatus last_status_{};
+	msg::DroneStatus main_status_{};
 	bool has_last_obs_{false};
 	bool has_last_status_{false};
+	bool has_main_status_{false};
 
 };
 

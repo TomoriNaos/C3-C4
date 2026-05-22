@@ -113,6 +113,7 @@ if(px4_msgs_FOUND)
   target_link_libraries(offboard_setpoint_px4_bridge_node ${c3_typesupport_target})
 endif()
 target_link_libraries(target_processor_node target_fusion_processor_lib)
+target_link_libraries(target_fusion_processor_lib pose_estimator_lib)
 target_link_libraries(drone_main_controller_node pose_estimator_lib)
 
 install(TARGETS

@@ -8,7 +8,6 @@ buffer_keep_s: 0.2            # 缓冲保留时长（秒）
 
 # 目标与跟踪参数
 default_confidence: 0.6       # 默认检测置信度
-target_type_default: 0        # 默认目标类型
 low_conf_threshold: 0.55      # 低置信阈值
 smoothing_alpha: 0.35         # 轨迹平滑系数
 max_tracking_loss_frames: 30  # 最大允许丢失帧数
@@ -21,6 +20,17 @@ roi_margin_px: 16             # ROI扩展边界（像素）
 image_width: 1280             # 图像宽度（像素）
 image_height: 720             # 图像高度（像素）
 min_roi_points: 20            # ROI内最少有效点数
+
+# 位姿与外参参数（米）
+body_to_gimbal_x: 0.15        # 机体原点->云台坐标原点
+body_to_gimbal_y: 0.0
+body_to_gimbal_z: -0.05
+tc_to_gimbal_x: 0.05          # 云台坐标原点->TC相机安装点
+tc_to_gimbal_y: 0.02
+tc_to_gimbal_z: 0.0
+gc_to_gimbal_x: 0.05          # 云台坐标原点->GC相机安装点
+gc_to_gimbal_y: -0.02
+gc_to_gimbal_z: 0.0
 
 # 深度过滤参数
 depth_min: 0.5                # 最小有效深度（米）

@@ -28,7 +28,6 @@ public:
     target_x_m_ = declare_parameter<double>("target_x_m", 18.0);
     target_y_m_ = declare_parameter<double>("target_y_m", 2.0);
     target_z_m_ = declare_parameter<double>("target_z_m", 0.5);
-    target_type_ = declare_parameter<int>("target_type", 2);
     target_id_ = declare_parameter<int>("target_id", 101);
     bbox_w_px_ = declare_parameter<double>("bbox_w_px", 120.0);
     bbox_h_px_ = declare_parameter<double>("bbox_h_px", 100.0);
@@ -38,7 +37,7 @@ public:
     noise_z_m_ = declare_parameter<double>("noise_z_m", 0.08);
 
     tc_detection_pub_ = create_publisher<msg::TcDetection>("/tc/detection", rclcpp::SensorDataQoS());
-    gc_pc_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/gc/points", rclcpp::SensorDataQoS());
+    gc_detection_pub_ = create_publisher<msg::TcDetection>("/gc/detection", rclcpp::SensorDataQoS());
     mission_cmd_pub_ = create_publisher<msg::MissionCommand>("/mission/cmd", 10);
 
     const auto period = std::chrono::duration<double>(1.0 / std::max(1.0, pub_hz_));
@@ -59,7 +58,7 @@ private:
     publishMission(stamp);
     const auto target = targetPositionAt(t);
     publishTcDetection(stamp, target);
-    publishCloud(stamp, target, "gated_camera_optical_frame", gc_pc_pub_, 1.0);
+    publishGcDetection(stamp, target);
   }
 
   geometry_msgs::msg::Point targetPositionAt(double t) const
@@ -83,6 +82,22 @@ private:
 
   void publishTcDetection(const rclcpp::Time &stamp, const geometry_msgs::msg::Point &target)
   {
+    publishDetection(stamp, target, "tc_camera_optical_frame", tc_detection_pub_, 0.92F, 0.9);
+  }
+
+  void publishGcDetection(const rclcpp::Time &stamp, const geometry_msgs::msg::Point &target)
+  {
+    publishDetection(stamp, target, "gated_camera_optical_frame", gc_detection_pub_, 0.96F, 1.0);
+  }
+
+  void publishDetection(
+    const rclcpp::Time &stamp,
+    const geometry_msgs::msg::Point &target,
+    const std::string &frame_id,
+    const rclcpp::Publisher<msg::TcDetection>::SharedPtr &pub,
+    float confidence,
+    double cloud_confidence_scale)
+  {
     const double yaw = std::atan2(target.y, std::max(1e-4, target.x));
     const double pitch = std::atan2(target.z, std::sqrt(target.x * target.x + target.y * target.y));
     const double cx = static_cast<double>(cloud_width_) * 0.5 + (yaw / yaw_amp_rad_) * 120.0;
@@ -90,18 +105,17 @@ private:
 
     msg::TcDetection detection;
     detection.header.stamp = stamp;
-    detection.header.frame_id = "tc_camera_optical_frame";
+    detection.header.frame_id = frame_id;
     detection.bbox.data = {
       static_cast<float>(std::clamp(cx - bbox_w_px_ * 0.5, 0.0, static_cast<double>(cloud_width_ - 1))),
       static_cast<float>(std::clamp(cy - bbox_h_px_ * 0.5, 0.0, static_cast<double>(cloud_height_ - 1))),
       static_cast<float>(bbox_w_px_),
       static_cast<float>(bbox_h_px_),
-      0.92F,
-      static_cast<float>(target_id_),
-      static_cast<float>(target_type_)
+      confidence,
+      static_cast<float>(target_id_)
     };
-    detection.cloud = buildCloud(stamp, target, "tc_camera_optical_frame", 0.9);
-    tc_detection_pub_->publish(detection);
+    detection.cloud = buildCloud(stamp, target, frame_id, cloud_confidence_scale);
+    pub->publish(detection);
   }
 
   sensor_msgs::msg::PointCloud2 buildCloud(
@@ -156,18 +170,8 @@ private:
     return cloud;
   }
 
-  void publishCloud(
-    const rclcpp::Time &stamp,
-    const geometry_msgs::msg::Point &target,
-    const std::string &frame_id,
-    const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr &pub,
-    double confidence_scale)
-  {
-    pub->publish(buildCloud(stamp, target, frame_id, confidence_scale));
-  }
-
   rclcpp::Publisher<msg::TcDetection>::SharedPtr tc_detection_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr gc_pc_pub_;
+  rclcpp::Publisher<msg::TcDetection>::SharedPtr gc_detection_pub_;
   rclcpp::Publisher<msg::MissionCommand>::SharedPtr mission_cmd_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -178,7 +182,6 @@ private:
   double target_x_m_{18.0};
   double target_y_m_{2.0};
   double target_z_m_{0.5};
-  int target_type_{2};
   int target_id_{101};
   double bbox_w_px_{120.0};
   double bbox_h_px_{100.0};

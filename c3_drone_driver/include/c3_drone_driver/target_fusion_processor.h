@@ -10,8 +10,10 @@
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
+#include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/tc_detection.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
+#include "c3_drone_driver/pose_estimator.h"
 
 namespace c3_drone_driver
 {
@@ -29,11 +31,19 @@ public:
 		double pending_wait_s{0.06};
 		double buffer_keep_s{0.2};
 		double default_confidence{0.6};
-		uint8_t target_type_default{0};
 		double visual_cmd_gain{1.0};
 		int roi_margin_px{16};
 		int image_width{1280};
 		int image_height{720};
+		double body_to_gimbal_x{0.15};
+		double body_to_gimbal_y{0.0};
+		double body_to_gimbal_z{-0.05};
+		double tc_to_gimbal_x{0.05};
+		double tc_to_gimbal_y{0.02};
+		double tc_to_gimbal_z{0.0};
+		double gc_to_gimbal_x{0.05};
+		double gc_to_gimbal_y{-0.02};
+		double gc_to_gimbal_z{0.0};
 		double depth_min{0.5};
 		double depth_max{120.0};
 		std::size_t min_roi_points{20};
@@ -69,11 +79,15 @@ public:
 	explicit TargetFusionProcessor(const Config &config);
 
 	void updateTcDetection(const msg::TcDetection::SharedPtr &msg);
-	void updateGcPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr &msg);
+	void updateGcDetection(const msg::TcDetection::SharedPtr &msg);
+	void updateGimbalState(const msg::GimbalState::SharedPtr &msg);
 	std::optional<Result> process(const rclcpp::Time &now);
 
 private:
-	struct TimestampedTcDetection
+	static constexpr uint8_t kTargetTypeGcDetection = 0U;
+	static constexpr uint8_t kTargetTypeTcDetection = 1U;
+
+	struct TimestampedDetection
 	{
 		rclcpp::Time stamp;
 		msg::TcDetection::SharedPtr data;
@@ -98,14 +112,29 @@ private:
 	 * @brief 获取最新的TC联合检测（bbox + 点云）
 	 * @return 指向最新检测的指针，若无则返回nullptr
 	 */
-	const TimestampedTcDetection *latestTcDetection() const;
+	const TimestampedDetection *latestTcDetection() const;
 
 	/**
-	 * @brief 在给定时间戳附近的点云中寻找时间同步的点云数据
-	 * @param stamp 目标检测时间戳
-	 * @return 若找到时间同步的点云数据，则返回包含点云数据和相关信息的结构体；否则返回std::nullopt
+	 * @brief 获取最新的GC联合检测（bbox + 点云）
+	 * @return 指向最新检测的指针，若无则返回nullptr
 	 */
-	std::optional<sensor_msgs::msg::PointCloud2::SharedPtr> findNearestGcCloud(
+	const TimestampedDetection *latestGcDetection() const;
+
+	/**
+	 * @brief 在给定时间戳附近查找时间最接近的TC检测
+	 * @param stamp 目标时间戳
+	 * @return 若找到则返回检测指针，否则返回std::nullopt
+	 */
+	std::optional<msg::TcDetection::SharedPtr> findNearestTcDetection(
+		const rclcpp::Time &stamp,
+		rclcpp::Time *matched_stamp = nullptr) const;
+
+	/**
+	 * @brief 在给定时间戳附近查找时间最接近的GC检测
+	 * @param stamp 目标时间戳
+	 * @return 若找到则返回检测指针，否则返回std::nullopt
+	 */
+	std::optional<msg::TcDetection::SharedPtr> findNearestGcDetection(
 		const rclcpp::Time &stamp,
 		rclcpp::Time *matched_stamp = nullptr) const;
 	
@@ -125,17 +154,15 @@ private:
 	bool withinSyncThreshold(const rclcpp::Time &lhs, const rclcpp::Time &rhs) const;
 	
 	/**
-	 * @brief 解析bbox信息，提取目标ID、检测置信度和目标类型
+	 * @brief 解析bbox信息，提取目标ID和检测置信度
 	 * @param data bbox数据
 	 * @param target_id 输出参数，提取的目标ID
 	 * @param detection_conf 输出参数，提取的检测置信度
-	 * @param target_type 输出参数，提取的目标类型
 	 */
 	void parseDetectionMeta(
 		const std::vector<float> &data,
 		uint32_t &target_id,
-		float &detection_conf,
-		uint8_t &target_type) const;
+		float &detection_conf) const;
 	
 	/**
 	 * @brief 构建ROI边界
@@ -153,6 +180,12 @@ private:
 	 * @return 质心坐标和相关信息，若ROI内无有效点则返回std::nullopt
 	 */
 	std::optional<RoiResult> extractRoiCentroid(const sensor_msgs::msg::PointCloud2 &cloud, const RoiBounds &roi) const;
+	std::optional<RoiResult> extractRoiCentroidInBody(
+		const sensor_msgs::msg::PointCloud2 &cloud,
+		const RoiBounds &roi,
+		double camera_to_gimbal_x,
+		double camera_to_gimbal_y,
+		double camera_to_gimbal_z) const;
 
 	/**
 	 * @brief 更新跟踪状态
@@ -178,15 +211,21 @@ private:
 	 * @brief 构建丢失结果
 	 * @details 当目标丢失时，构建一个包含丢失状态的Result对象，方便上层处理
 	 * @param now 当前时间
-	 * @param tc_data 最近的TC检测数据，用于提取目标类型等信息
+	 * @param detection_data 最近的检测数据，用于提取目标ID和检测置信度
+	 * @param target_type 丢失观测仍保留的数据来源类型（TC=1, GC=0）
 	 * @return 包含丢失状态的Result对象
 	 */
-	std::optional<Result> buildLostResult(const rclcpp::Time &now, const msg::TcDetection &tc_data);
+	std::optional<Result> buildLostResult(
+		const rclcpp::Time &now,
+		const msg::TcDetection &detection_data,
+		uint8_t target_type,
+		uint8_t source);
 	double computeConfidence(float detection_conf, double cluster_quality, double stability, bool lost) const;
 	
 	Config config_;
-	std::deque<TimestampedTcDetection> tc_detection_buffer_;
-	std::deque<std::pair<rclcpp::Time, sensor_msgs::msg::PointCloud2::SharedPtr>> gc_pc_buffer_;
+	PoseEstimator pose_estimator_;
+	std::deque<TimestampedDetection> tc_detection_buffer_;
+	std::deque<TimestampedDetection> gc_detection_buffer_;
 
 	bool track_initialized_{false};
 	geometry_msgs::msg::Point track_position_{};

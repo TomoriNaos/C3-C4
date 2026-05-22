@@ -3,9 +3,9 @@
 
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/point_cloud2.hpp"
 
 #include "c3_drone_driver/config.h"
+#include "c3_drone_driver/msg/gimbal_state.hpp"
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
 #include "c3_drone_driver/msg/tc_detection.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
@@ -33,11 +33,19 @@ public:
 		config.pending_wait_s = Config::GetOr<double>("pending_wait_s", 0.06);
 		config.buffer_keep_s = Config::GetOr<double>("buffer_keep_s", 0.2);
 		config.default_confidence = Config::GetOr<double>("default_confidence", 0.6);
-		config.target_type_default = static_cast<uint8_t>(Config::GetOr<int>("target_type_default", 0));
 		config.visual_cmd_gain = Config::GetOr<double>("visual_cmd_gain", 1.0);
 		config.roi_margin_px = Config::GetOr<int>("roi_margin_px", 16);
 		config.image_width = Config::GetOr<int>("image_width", 1280);
 		config.image_height = Config::GetOr<int>("image_height", 720);
+		config.body_to_gimbal_x = Config::GetOr<double>("body_to_gimbal_x", 0.15);
+		config.body_to_gimbal_y = Config::GetOr<double>("body_to_gimbal_y", 0.0);
+		config.body_to_gimbal_z = Config::GetOr<double>("body_to_gimbal_z", -0.05);
+		config.tc_to_gimbal_x = Config::GetOr<double>("tc_to_gimbal_x", 0.05);
+		config.tc_to_gimbal_y = Config::GetOr<double>("tc_to_gimbal_y", 0.02);
+		config.tc_to_gimbal_z = Config::GetOr<double>("tc_to_gimbal_z", 0.0);
+		config.gc_to_gimbal_x = Config::GetOr<double>("gc_to_gimbal_x", 0.05);
+		config.gc_to_gimbal_y = Config::GetOr<double>("gc_to_gimbal_y", -0.02);
+		config.gc_to_gimbal_z = Config::GetOr<double>("gc_to_gimbal_z", 0.0);
 		config.depth_min = Config::GetOr<double>("depth_min", 0.5);
 		config.depth_max = Config::GetOr<double>("depth_max", 120.0);
 		config.min_roi_points = static_cast<std::size_t>(Config::GetOr<int>("min_roi_points", 20));
@@ -59,10 +67,15 @@ public:
 				processor_->updateTcDetection(msg);
 			});
 
-		// gc数据接收器
-		gc_pc_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-			"/gc/points", rclcpp::SensorDataQoS(), [this](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-				processor_->updateGcPointCloud(msg);
+		// gc数据接收器（bbox + cloud）
+		gc_detection_sub_ = create_subscription<msg::TcDetection>(
+			"/gc/detection", rclcpp::SensorDataQoS(), [this](const msg::TcDetection::SharedPtr msg) {
+				processor_->updateGcDetection(msg);
+			});
+
+		gimbal_state_sub_ = create_subscription<msg::GimbalState>(
+			"/gimbal/state", rclcpp::SensorDataQoS(), [this](const msg::GimbalState::SharedPtr msg) {
+				processor_->updateGimbalState(msg);
 			});
 
 		// 数据发布器
@@ -107,7 +120,8 @@ private:
 	std::unique_ptr<TargetFusionProcessor> processor_;
 
 	rclcpp::Subscription<msg::TcDetection>::SharedPtr tc_detection_sub_;
-	rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gc_pc_sub_;
+	rclcpp::Subscription<msg::TcDetection>::SharedPtr gc_detection_sub_;
+	rclcpp::Subscription<msg::GimbalState>::SharedPtr gimbal_state_sub_;
 
 	rclcpp::Publisher<msg::TargetObservation>::SharedPtr observation_pub_;
 	rclcpp::Publisher<msg::GimbalVisualCommand>::SharedPtr visual_cmd_pub_;

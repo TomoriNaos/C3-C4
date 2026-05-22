@@ -48,27 +48,54 @@ namespace c3_drone_driver
 
 			// 命令接收器
 			mission_cmd_sub_ = create_subscription<msg::MissionCommand>(
-				"/mission/cmd", 10, [this](const msg::MissionCommand::SharedPtr msg) { onMissionCmd(msg); });
+				"/mission/cmd", 10, [this](const msg::MissionCommand::SharedPtr msg) { 
+					state_.mission_cmd = *msg;
+					state_.has_mission_cmd = true; });
 			
 			// 母船位姿（位置）订阅
 			ship_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-				"/ship/pose_world", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onShipPose(msg); });
+				"/ship/pose_world", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { 
+					state_.ship_pose_world = *msg;
+					state_.has_ship_pose = true; });
 			
 			// 目标点订阅
 			ship_target_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-				"/ship/target_point", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onShipTarget(msg); });
+				"/ship/target_point", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { 
+					// 约定：输入为船坐标系相对目标点（frame_id=ship）
+					if (msg->header.frame_id != "ship")
+					{
+						RCLCPP_WARN_THROTTLE(
+							get_logger(), *get_clock(), 1000, "Ship target frame_id should be 'ship'");
+						return;
+					}
+					state_.ship_target_rel = *msg;
+					state_.has_ship_target = true; });
 			
 			// 目标观测(target_processor)订阅
 			observation_sub_ = create_subscription<msg::TargetObservation>(
-				"/target/observation_body", 10, [this](const msg::TargetObservation::SharedPtr msg) { onObservation(msg); });
+				"/target/observation_body", 10, [this](const msg::TargetObservation::SharedPtr msg) { 			
+					// 将目标观测解算到机体系
+					const auto transformed = pose_estimator_->transformObservation(*msg);
+					if (!transformed.has_value())
+					{
+						return;
+					}
+
+					state_.target_body = transformed->position_body;
+					state_.has_target_body = true;
+					state_.last_obs_time = now(); });
 			
 			// 云台状态订阅
 			gimbal_state_sub_ = create_subscription<msg::GimbalState>(
-				"/gimbal/state", 10, [this](const msg::GimbalState::SharedPtr msg) { onGimbalState(msg); });
+				"/gimbal/state", 10, [this](const msg::GimbalState::SharedPtr msg) {
+					pose_estimator_->updateGimbalState(*msg);
+					state_.gimbal_state = *msg;
+					state_.has_gimbal_state = true;
+				});
 			
 			// 无人机位姿订阅
 			vehicle_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-				"/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { onVehiclePose(msg); });
+				"/px4/vehicle_pose", 10, [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) { pose_estimator_->updateVehiclePose(*msg); });
 			
 			// 云台控制发布器
 			gimbal_motion_pub_ = create_publisher<msg::GimbalMotionCommand>("/gimbal/motion_command", 10);
@@ -95,61 +122,14 @@ namespace c3_drone_driver
 			bool has_ship_pose{false};
 			bool has_ship_target{false};
 			bool has_target_body{false};
+			bool has_gimbal_state{false};
 			msg::MissionCommand mission_cmd{};
 			geometry_msgs::msg::PoseStamped ship_pose_world{};
 			geometry_msgs::msg::PoseStamped ship_target_rel{};
+			msg::GimbalState gimbal_state{};
 			std::array<double, 3> target_body{0.0, 0.0, 0.0};
 			rclcpp::Time last_obs_time{0, 0, RCL_ROS_TIME};
 		};
-
-		void onMissionCmd(const msg::MissionCommand::SharedPtr msg)
-		{
-			state_.mission_cmd = *msg;
-			state_.has_mission_cmd = true;
-		}
-
-		void onShipPose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-		{
-			state_.ship_pose_world = *msg;
-			state_.has_ship_pose = true;
-		}
-
-		void onShipTarget(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-		{
-			// 约定：输入为船坐标系相对目标点（frame_id=ship）
-			if (msg->header.frame_id != "ship")
-			{
-				RCLCPP_WARN_THROTTLE(
-					get_logger(), *get_clock(), 1000, "Ship target frame_id should be 'ship'");
-				return;
-			}
-			state_.ship_target_rel = *msg;
-			state_.has_ship_target = true;
-		}
-
-		void onObservation(const msg::TargetObservation::SharedPtr msg)
-		{
-			// 将目标观测解算到机体系
-			const auto transformed = pose_estimator_->transformObservation(*msg);
-			if (!transformed.has_value())
-			{
-				return;
-			}
-
-			state_.target_body = transformed->position_body;
-			state_.has_target_body = true;
-			state_.last_obs_time = now();
-		}
-
-		void onGimbalState(const msg::GimbalState::SharedPtr msg)
-		{
-			pose_estimator_->updateGimbalState(*msg);
-		}
-
-		void onVehiclePose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
-		{
-			pose_estimator_->updateVehiclePose(*msg);
-		}
 
 		void onTick()
 		{
@@ -245,7 +225,6 @@ namespace c3_drone_driver
 			s.t_usec = static_cast<uint64_t>(stamp.nanoseconds() / 1000ULL);
 			s.mission_mode = computeMissionMode();
 			s.gimbal_mode = computeGimbalMode();
-			s.link_state = msg::DroneStatus::LINK_OK;
 			return s;
 		}
 
@@ -268,6 +247,10 @@ namespace c3_drone_driver
 
 		uint8_t computeGimbalMode() const
 		{
+			if (state_.has_gimbal_state)
+			{
+				return state_.gimbal_state.mode;
+			}
 			if (state_.has_mission_cmd && state_.mission_cmd.command == msg::MissionCommand::CMD_DETECTING)
 			{
 				return msg::GimbalState::MODE_DETECTING;
@@ -275,6 +258,13 @@ namespace c3_drone_driver
 			return msg::GimbalState::MODE_TRACKING;
 		}
 
+		/**
+		 * @brief 是否应发布无人机当前状态
+		 * @details 
+		 * - 第一次一定发布：!has_last_status_
+		 * - 任一关键状态变化就发布：mission_mode / gimbal_mode / link_state
+		 * - 即使没变化，也每隔 status_keepalive_s_ 秒强制发布一次，防止下游以为链路断了((HERATBEAT)
+		 */
 		bool shouldPublishStatus(const msg::DroneStatus &status, const rclcpp::Time &stamp) const
 		{
 			const bool status_changed = !has_last_status_ ||

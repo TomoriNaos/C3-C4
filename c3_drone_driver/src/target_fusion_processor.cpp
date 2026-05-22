@@ -1,6 +1,7 @@
 #include "c3_drone_driver/target_fusion_processor.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -10,7 +11,14 @@ namespace c3_drone_driver
 {
 
 TargetFusionProcessor::TargetFusionProcessor(const Config &config)
-: config_(config)
+: config_(config),
+  pose_estimator_([&config]() {
+	  PoseEstimator::Config pose_cfg;
+	  pose_cfg.body_to_gimbal_x = config.body_to_gimbal_x;
+	  pose_cfg.body_to_gimbal_y = config.body_to_gimbal_y;
+	  pose_cfg.body_to_gimbal_z = config.body_to_gimbal_z;
+	  return pose_cfg;
+	}())
 {
 }
 
@@ -19,71 +27,199 @@ std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::process(cons
 	//1. 清理过期数据
 	pruneBuffers(now);
 
-	//2. 更新数据
-	const auto *tc_detection = latestTcDetection();
-	if (!tc_detection || !tc_detection->data) return std::nullopt;
-	const auto &bbox_data = tc_detection->data->bbox.data;
-	const auto &tc_cloud = tc_detection->data->cloud;
-	if (bbox_data.empty() || tc_cloud.width == 0U || tc_cloud.height == 0U) return std::nullopt;
-	rclcpp::Time gc_stamp(0, 0, RCL_ROS_TIME);
-	const auto gc_cloud = findNearestGcCloud(tc_detection->stamp, &gc_stamp);
-	const bool gc_ready = gc_cloud && withinSyncThreshold(gc_stamp, tc_detection->stamp);
+	//2. 选取锚点检测（TC/GC中时间更新的一侧）
+	const auto *tc_latest = latestTcDetection();
+	const auto *gc_latest = latestGcDetection();
+	if ((!tc_latest || !tc_latest->data) && (!gc_latest || !gc_latest->data)) return std::nullopt;
 
-	if (!gc_ready)
+	bool anchor_is_tc = false;
+	const TimestampedDetection *anchor = nullptr;
+	if (tc_latest && tc_latest->data &&
+		(!gc_latest || !gc_latest->data || tc_latest->stamp >= gc_latest->stamp))
 	{
-		if ((now - tc_detection->stamp).seconds() < config_.pending_wait_s) return std::nullopt;
-		return buildLostResult(now, *tc_detection->data);
+		anchor = tc_latest;
+		anchor_is_tc = true;
+	}
+	else
+	{
+		anchor = gc_latest;
+		anchor_is_tc = false;
+	}
+	if (!anchor || !anchor->data) return std::nullopt;
+	if (!pose_estimator_.hasGimbalState()) return std::nullopt;
+
+	rclcpp::Time matched_stamp(0, 0, RCL_ROS_TIME);
+	std::optional<msg::TcDetection::SharedPtr> counterpart;
+	if (anchor_is_tc)
+	{
+		counterpart = findNearestGcDetection(anchor->stamp, &matched_stamp);
+	}
+	else
+	{
+		counterpart = findNearestTcDetection(anchor->stamp, &matched_stamp);
+	}
+	const bool counterpart_ready = counterpart.has_value() &&
+		withinSyncThreshold(matched_stamp, anchor->stamp);
+
+	//3. 等待短窗口内迟到帧，尽量争取TC+GC联合融合
+	if (!counterpart_ready && (now - anchor->stamp).seconds() < config_.pending_wait_s)
+	{
+		return std::nullopt;
 	}
 
-	//3. 解析bbox信息（ROS2 data）
-	uint32_t target_id = 0;
-	float detection_conf = static_cast<float>(config_.default_confidence);
-	uint8_t target_type = config_.target_type_default;
-	parseDetectionMeta(bbox_data, target_id, detection_conf, target_type);
+	msg::TcDetection::SharedPtr tc_detection = nullptr;
+	msg::TcDetection::SharedPtr gc_detection = nullptr;
+	rclcpp::Time tc_stamp(0, 0, RCL_ROS_TIME);
+	rclcpp::Time gc_stamp(0, 0, RCL_ROS_TIME);
+	if (anchor_is_tc)
+	{
+		tc_detection = anchor->data;
+		tc_stamp = anchor->stamp;
+		if (counterpart_ready)
+		{
+			gc_detection = *counterpart;
+			gc_stamp = matched_stamp;
+		}
+	}
+	else
+	{
+		gc_detection = anchor->data;
+		gc_stamp = anchor->stamp;
+		if (counterpart_ready)
+		{
+			tc_detection = *counterpart;
+			tc_stamp = matched_stamp;
+		}
+	}
 
-	//4. 构建ROI并提取质心
-	const auto roi = buildRoi(bbox_data);
+	//4. 从每路检测提取ROI质心与元数据（各自使用自己的bbox+点云）
+	struct CandidateObservation
+	{
+		RoiResult roi;
+		uint32_t target_id{0};
+		float detection_conf{0.0F};
+		uint8_t target_type{kTargetTypeGcDetection};
+		uint8_t source{msg::TargetObservation::SOURCE_GC_ONLY};
+		rclcpp::Time stamp{0, 0, RCL_ROS_TIME};
+	};
 
-	// 若ROI无效，直接返回丢失结果（但仍携带检测信息），避免后续处理出错
-	if (!roi) return buildLostResult(now, *tc_detection->data);
+	auto buildCandidate = [this](
+		const msg::TcDetection::SharedPtr &detection,
+		uint8_t target_type,
+		uint8_t source,
+		const rclcpp::Time &stamp) -> std::optional<CandidateObservation>
+	{
+		if (!detection) return std::nullopt;
+		if (detection->bbox.data.empty()) return std::nullopt;
+		if (detection->cloud.width == 0U || detection->cloud.height == 0U) return std::nullopt;
 
-	const auto tc_result = extractRoiCentroid(tc_cloud, *roi);
-	const auto gc_result = gc_ready ? extractRoiCentroid(**gc_cloud, *roi) : std::nullopt;
+		CandidateObservation candidate;
+		candidate.target_type = target_type;
+		candidate.source = source;
+		candidate.stamp = stamp;
+		candidate.detection_conf = static_cast<float>(config_.default_confidence);
+		parseDetectionMeta(detection->bbox.data, candidate.target_id, candidate.detection_conf);
 
-	if (!tc_result && !gc_result) return buildLostResult(now, *tc_detection->data);
+		const auto roi = buildRoi(detection->bbox.data);
+		if (!roi) return std::nullopt;
+		std::optional<RoiResult> roi_result;
+		if (source == msg::TargetObservation::SOURCE_TC_ONLY)
+		{
+			roi_result = extractRoiCentroidInBody(
+				detection->cloud, *roi,
+				config_.tc_to_gimbal_x, config_.tc_to_gimbal_y, config_.tc_to_gimbal_z);
+		}
+		else
+		{
+			roi_result = extractRoiCentroidInBody(
+				detection->cloud, *roi,
+				config_.gc_to_gimbal_x, config_.gc_to_gimbal_y, config_.gc_to_gimbal_z);
+		}
+		if (!roi_result) return std::nullopt;
+		candidate.roi = *roi_result;
+		return candidate;
+	};
 
-	//5. 融合结果并更新跟踪
+	const auto tc_candidate = buildCandidate(
+		tc_detection,
+		kTargetTypeTcDetection,
+		msg::TargetObservation::SOURCE_TC_ONLY,
+		tc_stamp);
+	const auto gc_candidate = buildCandidate(
+		gc_detection,
+		kTargetTypeGcDetection,
+		msg::TargetObservation::SOURCE_GC_ONLY,
+		gc_stamp);
+
+	//5. 两路都无有效ROI时，按锚点源返回LOST结果
+	if (!tc_candidate && !gc_candidate)
+	{
+		const uint8_t lost_type = anchor_is_tc ? kTargetTypeTcDetection : kTargetTypeGcDetection;
+		const uint8_t lost_source = anchor_is_tc
+			? msg::TargetObservation::SOURCE_TC_ONLY
+			: msg::TargetObservation::SOURCE_GC_ONLY;
+		return buildLostResult(now, *anchor->data, lost_type, lost_source);
+	}
+
+	//6. 融合结果并更新跟踪
 	geometry_msgs::msg::Point fused_center;
-	uint8_t source = msg::TargetObservation::SOURCE_FUSED;
+	uint32_t target_id = 0U;
+	float detection_conf = static_cast<float>(config_.default_confidence);
+	uint8_t target_type = kTargetTypeTcDetection;
+	uint8_t source = msg::TargetObservation::SOURCE_TC_ONLY;
 	double cluster_quality = 0.0;
-	if (tc_result && gc_result)
+	if (tc_candidate && gc_candidate)
 	{
 		// 根据质心质量（即ROI内点的数量和分布情况）进行加权融合，质量更高的结果权重更大
 		const double tc_w = 1.0 / std::max(1e-6, config_.tc_noise_std * config_.tc_noise_std);
 		const double gc_w = 1.0 / std::max(1e-6, config_.gc_noise_std * config_.gc_noise_std);
 		const double sum_w = tc_w + gc_w;
-		fused_center.x = static_cast<float>((tc_result->centroid.x * tc_w + gc_result->centroid.x * gc_w) / sum_w);
-		fused_center.y = static_cast<float>((tc_result->centroid.y * tc_w + gc_result->centroid.y * gc_w) / sum_w);
-		fused_center.z = static_cast<float>((tc_result->centroid.z * tc_w + gc_result->centroid.z * gc_w) / sum_w);
-		cluster_quality = std::clamp(0.5 * (tc_result->quality + gc_result->quality), 0.0, 1.0);
+		fused_center.x = static_cast<float>((tc_candidate->roi.centroid.x * tc_w + gc_candidate->roi.centroid.x * gc_w) / sum_w);
+		fused_center.y = static_cast<float>((tc_candidate->roi.centroid.y * tc_w + gc_candidate->roi.centroid.y * gc_w) / sum_w);
+		fused_center.z = static_cast<float>((tc_candidate->roi.centroid.z * tc_w + gc_candidate->roi.centroid.z * gc_w) / sum_w);
+		cluster_quality = std::clamp(0.5 * (tc_candidate->roi.quality + gc_candidate->roi.quality), 0.0, 1.0);
+		detection_conf = static_cast<float>(
+			std::clamp((tc_candidate->detection_conf * tc_w + gc_candidate->detection_conf * gc_w) / sum_w, 0.0, 1.0));
+
+		const bool use_tc_meta =
+			(tc_candidate->detection_conf > gc_candidate->detection_conf + 1e-4F) ||
+			(std::abs(tc_candidate->detection_conf - gc_candidate->detection_conf) <= 1e-4F &&
+			 tc_candidate->stamp >= gc_candidate->stamp);
+		if (use_tc_meta)
+		{
+			target_id = tc_candidate->target_id;
+			target_type = tc_candidate->target_type;
+		}
+		else
+		{
+			target_id = gc_candidate->target_id;
+			target_type = gc_candidate->target_type;
+		}
+		source = msg::TargetObservation::SOURCE_FUSED;
 	}
-	else if (tc_result)
+	else if (tc_candidate)
 	{
-		fused_center = tc_result->centroid;
-		cluster_quality = tc_result->quality;
+		fused_center = tc_candidate->roi.centroid;
+		cluster_quality = tc_candidate->roi.quality;
+		target_id = tc_candidate->target_id;
+		detection_conf = tc_candidate->detection_conf;
+		target_type = tc_candidate->target_type;
 		source = msg::TargetObservation::SOURCE_TC_ONLY;
 	}
 	else
 	{
-		fused_center = gc_result->centroid;
-		cluster_quality = gc_result->quality;
+		fused_center = gc_candidate->roi.centroid;
+		cluster_quality = gc_candidate->roi.quality;
+		target_id = gc_candidate->target_id;
+		detection_conf = gc_candidate->detection_conf;
+		target_type = gc_candidate->target_type;
 		source = msg::TargetObservation::SOURCE_GC_ONLY;
 	}
 
-	//6.更新跟踪状态
+	//7.更新跟踪状态
 	updateTrack(fused_center, now, true);
 
-	//7. 构建结果
+	//8. 构建结果
 	Result result;
 	result.observation = buildObservation(now, target_id, target_type, detection_conf, fused_center, cluster_quality, source, false);
 	result.gimbal_command = buildVisualCommand(result.observation);
@@ -101,28 +237,50 @@ void TargetFusionProcessor::updateTcDetection(const msg::TcDetection::SharedPtr 
 	pruneBuffers(stamp);
 }
 
-void TargetFusionProcessor::updateGcPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr &msg)
+void TargetFusionProcessor::updateGcDetection(const msg::TcDetection::SharedPtr &msg)
 {
 	if (!msg) return;
 	const rclcpp::Time stamp(msg->header.stamp);
-	gc_pc_buffer_.push_back({stamp, msg});
+	gc_detection_buffer_.push_back({stamp, msg});
 	pruneBuffers(stamp);
 }
 
-const TargetFusionProcessor::TimestampedTcDetection *TargetFusionProcessor::latestTcDetection() const
+void TargetFusionProcessor::updateGimbalState(const msg::GimbalState::SharedPtr &msg)
+{
+	if (!msg) return;
+	pose_estimator_.updateGimbalState(*msg);
+}
+
+const TargetFusionProcessor::TimestampedDetection *TargetFusionProcessor::latestTcDetection() const
 {
 	return tc_detection_buffer_.empty() ? nullptr : &tc_detection_buffer_.back();
 }
 
-std::optional<sensor_msgs::msg::PointCloud2::SharedPtr> TargetFusionProcessor::findNearestGcCloud(
+const TargetFusionProcessor::TimestampedDetection *TargetFusionProcessor::latestGcDetection() const
+{
+	return gc_detection_buffer_.empty() ? nullptr : &gc_detection_buffer_.back();
+}
+
+std::optional<msg::TcDetection::SharedPtr> TargetFusionProcessor::findNearestTcDetection(
 	const rclcpp::Time &stamp, rclcpp::Time *matched_stamp) const
 {
-	if (gc_pc_buffer_.empty()) return std::nullopt;
-	const auto nearest_one = std::min_element(gc_pc_buffer_.begin(), gc_pc_buffer_.end(), [&](const auto &a, const auto &b) {
-		return std::abs((a.first - stamp).seconds()) < std::abs((b.first - stamp).seconds());
+	if (tc_detection_buffer_.empty()) return std::nullopt;
+	const auto nearest_one = std::min_element(tc_detection_buffer_.begin(), tc_detection_buffer_.end(), [&](const auto &a, const auto &b) {
+		return std::abs((a.stamp - stamp).seconds()) < std::abs((b.stamp - stamp).seconds());
 	});
-	if (matched_stamp) *matched_stamp = nearest_one->first;
-	return nearest_one->second;
+	if (matched_stamp) *matched_stamp = nearest_one->stamp;
+	return nearest_one->data;
+}
+
+std::optional<msg::TcDetection::SharedPtr> TargetFusionProcessor::findNearestGcDetection(
+	const rclcpp::Time &stamp, rclcpp::Time *matched_stamp) const
+{
+	if (gc_detection_buffer_.empty()) return std::nullopt;
+	const auto nearest_one = std::min_element(gc_detection_buffer_.begin(), gc_detection_buffer_.end(), [&](const auto &a, const auto &b) {
+		return std::abs((a.stamp - stamp).seconds()) < std::abs((b.stamp - stamp).seconds());
+	});
+	if (matched_stamp) *matched_stamp = nearest_one->stamp;
+	return nearest_one->data;
 }
 
 void TargetFusionProcessor::pruneBuffers(const rclcpp::Time &now)
@@ -132,9 +290,9 @@ void TargetFusionProcessor::pruneBuffers(const rclcpp::Time &now)
 	{
 		tc_detection_buffer_.pop_front();
 	}
-	while (!gc_pc_buffer_.empty() && (now - gc_pc_buffer_.front().first).seconds() > config_.buffer_keep_s)
+	while (!gc_detection_buffer_.empty() && (now - gc_detection_buffer_.front().stamp).seconds() > config_.buffer_keep_s)
 	{
-		gc_pc_buffer_.pop_front();
+		gc_detection_buffer_.pop_front();
 	}
 }
 
@@ -225,6 +383,34 @@ std::optional<TargetFusionProcessor::RoiResult> TargetFusionProcessor::extractRo
 	return result;
 }
 
+std::optional<TargetFusionProcessor::RoiResult> TargetFusionProcessor::extractRoiCentroidInBody(
+	const sensor_msgs::msg::PointCloud2 &cloud,
+	const RoiBounds &roi,
+	double camera_to_gimbal_x,
+	double camera_to_gimbal_y,
+	double camera_to_gimbal_z) const
+{
+	const auto roi_result = extractRoiCentroid(cloud, roi);
+	if (!roi_result) return std::nullopt;
+
+	std::array<double, 3> p_cam{
+		static_cast<double>(roi_result->centroid.x),
+		static_cast<double>(roi_result->centroid.y),
+		static_cast<double>(roi_result->centroid.z)};
+	const auto body_point = pose_estimator_.cameraOpticalPointToBody(
+		p_cam,
+		camera_to_gimbal_x,
+		camera_to_gimbal_y,
+		camera_to_gimbal_z);
+	if (!body_point) return std::nullopt;
+
+	RoiResult out = *roi_result;
+	out.centroid.x = static_cast<float>((*body_point)[0]);
+	out.centroid.y = static_cast<float>((*body_point)[1]);
+	out.centroid.z = static_cast<float>((*body_point)[2]);
+	return out;
+}
+
 void TargetFusionProcessor::updateTrack(const geometry_msgs::msg::Point &observed, const rclcpp::Time &now, bool has_observation)
 {
 	//1. 首帧初始化轨迹状态
@@ -308,30 +494,45 @@ msg::TargetObservation TargetFusionProcessor::buildObservation(
 }
 
 void TargetFusionProcessor::parseDetectionMeta(
-	const std::vector<float> &data, uint32_t &target_id, float &detection_conf, uint8_t &target_type) const
+	const std::vector<float> &data, uint32_t &target_id, float &detection_conf) const
 {
 	if (data.size() >= 5) detection_conf = static_cast<float>(std::clamp<double>(data[4], 0.0, 1.0));
 	if (data.size() >= 6) target_id = static_cast<uint32_t>(std::max(0.0f, data[5]));
-	if (data.size() >= 7) target_type = static_cast<uint8_t>(std::max(0.0f, data[6]));
 }
 
 msg::GimbalVisualCommand TargetFusionProcessor::buildVisualCommand(const msg::TargetObservation &obs) const
 {
 	msg::GimbalVisualCommand cmd;
 	cmd.header = obs.header;
-	cmd.yaw = static_cast<float>(config_.visual_cmd_gain * obs.yaw);
-	cmd.pitch = static_cast<float>(config_.visual_cmd_gain * obs.pitch);
+	const std::array<double, 3> body_point{
+		static_cast<double>(obs.position.x),
+		static_cast<double>(obs.position.y),
+		static_cast<double>(obs.position.z)};
+	const auto gimbal_angles = pose_estimator_.bodyPointToGimbalYawPitch(body_point);
+	if (gimbal_angles.has_value())
+	{
+		cmd.yaw = static_cast<float>(config_.visual_cmd_gain * gimbal_angles->first);
+		cmd.pitch = static_cast<float>(config_.visual_cmd_gain * gimbal_angles->second);
+	}
+	else
+	{
+		cmd.yaw = static_cast<float>(config_.visual_cmd_gain * obs.yaw);
+		cmd.pitch = static_cast<float>(config_.visual_cmd_gain * obs.pitch);
+	}
 	cmd.confidence = obs.confidence;
 	return cmd;
 }
 
-std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::buildLostResult(const rclcpp::Time &now, const msg::TcDetection &tc_data)
+std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::buildLostResult(
+	const rclcpp::Time &now,
+	const msg::TcDetection &detection_data,
+	uint8_t target_type,
+	uint8_t source)
 {
-	//1. 从最近一次检测提取目标元信息（ID/类别/检测置信度）
+	//1. 从最近一次检测提取目标元信息（ID/检测置信度）
 	uint32_t target_id = 0;
 	float detection_conf = static_cast<float>(config_.default_confidence);
-	uint8_t target_type = config_.target_type_default;
-	parseDetectionMeta(tc_data.bbox.data, target_id, detection_conf, target_type);
+	parseDetectionMeta(detection_data.bbox.data, target_id, detection_conf);
 
 	//2. 丢失时使用轨迹预测位置，并以“无观测”模式更新跟踪器
 	const geometry_msgs::msg::Point predicted = track_initialized_ ? predict(now) : geometry_msgs::msg::Point();
@@ -339,7 +540,7 @@ std::optional<TargetFusionProcessor::Result> TargetFusionProcessor::buildLostRes
 
 	//3. 构造LOST状态观测（仅保留观测，不下发云台视觉指令）
 	Result result;
-	result.observation = buildObservation(now, target_id, target_type, detection_conf, predicted, 0.0, 0, true);
+	result.observation = buildObservation(now, target_id, target_type, detection_conf, predicted, 0.0, source, true);
 	result.has_observation = true;
 	result.lost = true;
 	return result;
