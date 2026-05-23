@@ -8,6 +8,7 @@ Panels:
         - /RobotModel1
         - /Tracking Markers1
         - /Gated Range View1
+        - /UAV Gated Camera View1
         - /Gated Detection Points1
       Splitter Ratio: 0.5
   - Class: rviz_common/Views
@@ -184,10 +185,10 @@ Visualization Manager:
       Max Value: 1
       Value: true
     - Class: rviz_default_plugins/Image
-      Name: UAV Long Range View
-      Enabled: false
+      Name: UAV Gated Camera View
+      Enabled: true
       Topic:
-        Value: /uav/long_range/range_view
+        Value: /uav/gated_camera/range_view
         Reliability Policy: Reliable
         Durability Policy: Volatile
         History Policy: Keep Last
@@ -195,7 +196,7 @@ Visualization Manager:
       Normalize Range: true
       Min Value: 0
       Max Value: 1
-      Value: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 35; 40; 42

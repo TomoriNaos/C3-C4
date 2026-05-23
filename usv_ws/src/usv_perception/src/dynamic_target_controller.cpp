@@ -30,6 +30,9 @@ public:
     fishnet_buoy_name_ = declare_parameter<std::string>("fishnet_buoy_name", "fishnet_buoy");
     obstacle_name_ = declare_parameter<std::string>("obstacle_name", "floating_obstacle");
     debris_name_ = declare_parameter<std::string>("debris_name", "drift_debris");
+    survey_boat_name_ = declare_parameter<std::string>("survey_boat_name", "survey_boat");
+    service_boat_name_ = declare_parameter<std::string>("service_boat_name", "service_boat");
+    tracked_target_name_ = declare_parameter<std::string>("tracked_target_name", vessel_name_);
 
     client_ = create_client<gazebo_msgs::srv::SetEntityState>("/set_entity_state");
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("simulated_targets", 10);
@@ -40,6 +43,12 @@ public:
   }
 
 private:
+  struct Waypoint
+  {
+    double x;
+    double y;
+  };
+
   double elapsed_seconds() const
   {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time_).count();
@@ -57,12 +66,36 @@ private:
 
     const double t = elapsed_seconds() * motion_time_scale_;
     std::vector<gazebo_msgs::msg::EntityState> targets;
-    targets.reserve(5);
-    targets.push_back(vessel_state(t));
-    targets.push_back(fishing_boat_state(t));
-    targets.push_back(fishnet_buoy_state(t));
-    targets.push_back(obstacle_state(t));
-    targets.push_back(debris_state(t));
+    targets.reserve(7);
+    targets.push_back(path_state(
+      vessel_name_,
+      {{18.0, -18.0}, {42.0, -8.0}, {66.0, 11.0}, {82.0, 28.0}, {58.0, 47.0},
+        {30.0, 31.0}, {15.0, 8.0}},
+      0.42, 0.30, t, 0.0));
+    targets.push_back(path_state(
+      fishing_boat_name_,
+      {{-18.0, 34.0}, {8.0, 42.0}, {36.0, 37.0}, {62.0, 21.0}, {78.0, -4.0}},
+      0.34, 0.17, t, 35.0));
+    targets.push_back(path_state(
+      fishnet_buoy_name_,
+      {{24.0, -32.0}, {28.0, -18.0}, {34.0, -4.0}, {42.0, 10.0}, {48.0, 26.0}},
+      0.30, 0.045, t, 90.0));
+    targets.push_back(path_state(
+      obstacle_name_,
+      {{52.0, -46.0}, {57.0, -28.0}, {62.0, -10.0}, {70.0, 8.0}, {76.0, 24.0}},
+      0.24, 0.060, t, 150.0));
+    targets.push_back(path_state(
+      debris_name_,
+      {{8.0, 48.0}, {20.0, 52.0}, {37.0, 48.0}, {53.0, 42.0}, {71.0, 34.0}},
+      0.16, 0.035, t, 210.0));
+    targets.push_back(path_state(
+      survey_boat_name_,
+      {{-35.0, -24.0}, {-10.0, -28.0}, {18.0, -25.0}, {45.0, -18.0}, {72.0, -6.0}},
+      0.36, 0.20, t, 20.0));
+    targets.push_back(path_state(
+      service_boat_name_,
+      {{95.0, 36.0}, {74.0, 22.0}, {53.0, 12.0}, {31.0, 5.0}, {12.0, -2.0}},
+      0.38, 0.15, t, 75.0));
 
     for (const auto & target : targets) {
       set_target_state(target);
@@ -70,59 +103,60 @@ private:
     publish_markers(targets);
   }
 
-  gazebo_msgs::msg::EntityState vessel_state(double t) const
+  gazebo_msgs::msg::EntityState path_state(
+    const std::string & name,
+    const std::vector<Waypoint> & path,
+    double base_z,
+    double speed,
+    double t,
+    double phase_seconds) const
   {
-    const double x = 12.5 + 4.8 * std::sin(0.24 * t);
-    const double y = 5.8 * std::sin(0.62 * t);
-    const double vx = 4.8 * 0.24 * std::cos(0.24 * t);
-    const double vy = 5.8 * 0.62 * std::cos(0.62 * t);
-    const double yaw = std::abs(vx) + std::abs(vy) > 1e-3 ? std::atan2(vy, vx) : 0.0;
-    const double z = 0.42 + wave_height(x, y, t, wave_amplitude_);
-    return make_state(vessel_name_, x, y, z, yaw, vx, vy);
-  }
+    if (path.size() < 2) {
+      return make_state(name, 0.0, 0.0, base_z, 0.0, 0.0, 0.0);
+    }
 
-  gazebo_msgs::msg::EntityState fishing_boat_state(double t) const
-  {
-    const double x = 10.5 + 3.4 * std::sin(0.34 * t + 0.7);
-    const double y = -3.8 + 3.4 * std::cos(0.58 * t);
-    const double vx = 3.4 * 0.34 * std::cos(0.34 * t + 0.7);
-    const double vy = -3.4 * 0.58 * std::sin(0.58 * t);
-    const double yaw = std::abs(vx) + std::abs(vy) > 1e-3 ? std::atan2(vy, vx) : 0.0;
-    const double z = 0.34 + wave_height(x, y, t, wave_amplitude_);
-    return make_state(fishing_boat_name_, x, y, z, yaw, vx, vy);
-  }
+    double total_length = 0.0;
+    std::vector<double> segment_lengths;
+    segment_lengths.reserve(path.size() - 1);
+    for (std::size_t index = 1; index < path.size(); ++index) {
+      const double length = std::hypot(path[index].x - path[index - 1].x, path[index].y - path[index - 1].y);
+      segment_lengths.push_back(length);
+      total_length += length;
+    }
 
-  gazebo_msgs::msg::EntityState fishnet_buoy_state(double t) const
-  {
-    const double x = 7.6 + 1.8 * std::sin(0.48 * t + 2.0);
-    const double y = 3.4 * std::sin(0.86 * t);
-    const double vx = 1.8 * 0.48 * std::cos(0.48 * t + 2.0);
-    const double vy = 3.4 * 0.86 * std::cos(0.86 * t);
-    const double yaw = std::abs(vx) + std::abs(vy) > 1e-3 ? std::atan2(vy, vx) : 0.0;
-    const double z = 0.30 + wave_height(x, y, t, wave_amplitude_);
-    return make_state(fishnet_buoy_name_, x, y, z, yaw, vx, vy);
-  }
+    const double cycle_length = std::max(0.1, 2.0 * total_length);
+    double distance = std::fmod(std::max(0.0, t + phase_seconds) * speed, cycle_length);
+    bool reverse = false;
+    if (distance > total_length) {
+      distance = cycle_length - distance;
+      reverse = true;
+    }
 
-  gazebo_msgs::msg::EntityState obstacle_state(double t) const
-  {
-    const double x = 6.8 + 2.0 * std::sin(0.52 * t + 1.4);
-    const double y = -2.6 + 2.2 * std::cos(0.76 * t);
-    const double vx = 2.0 * 0.52 * std::cos(0.52 * t + 1.4);
-    const double vy = -2.2 * 0.76 * std::sin(0.76 * t);
-    const double yaw = std::abs(vx) + std::abs(vy) > 1e-3 ? std::atan2(vy, vx) : 0.0;
-    const double z = 0.24 + wave_height(x, y, t, wave_amplitude_);
-    return make_state(obstacle_name_, x, y, z, yaw, vx, vy);
-  }
+    std::size_t segment_index = 0;
+    while (segment_index < segment_lengths.size() && distance > segment_lengths[segment_index]) {
+      distance -= segment_lengths[segment_index];
+      ++segment_index;
+    }
+    segment_index = std::min(segment_index, segment_lengths.size() - 1);
 
-  gazebo_msgs::msg::EntityState debris_state(double t) const
-  {
-    const double x = 5.8 + 1.6 * std::sin(0.58 * t + 2.7);
-    const double y = 2.8 + 1.6 * std::cos(0.82 * t + 0.4);
-    const double vx = 1.6 * 0.58 * std::cos(0.58 * t + 2.7);
-    const double vy = -1.6 * 0.82 * std::sin(0.82 * t + 0.4);
-    const double yaw = std::abs(vx) + std::abs(vy) > 1e-3 ? std::atan2(vy, vx) : 0.0;
-    const double z = 0.16 + wave_height(x, y, t, wave_amplitude_);
-    return make_state(debris_name_, x, y, z, yaw, vx, vy);
+    const auto & a = path[segment_index];
+    const auto & b = path[segment_index + 1];
+    const double length = std::max(0.1, segment_lengths[segment_index]);
+    double ratio = std::clamp(distance / length, 0.0, 1.0);
+    if (reverse) {
+      ratio = 1.0 - ratio;
+    }
+
+    const double x = a.x + (b.x - a.x) * ratio;
+    const double y = a.y + (b.y - a.y) * ratio;
+    const double direction_sign = reverse ? -1.0 : 1.0;
+    const double heading_x = direction_sign * (b.x - a.x);
+    const double heading_y = direction_sign * (b.y - a.y);
+    const double yaw = std::atan2(heading_y, heading_x);
+    const double vx = speed * std::cos(yaw);
+    const double vy = speed * std::sin(yaw);
+    const double z = base_z + wave_height(x, y, t, wave_amplitude_);
+    return make_state(name, x, y, z, yaw, vx, vy);
   }
 
   static gazebo_msgs::msg::EntityState make_state(
@@ -154,7 +188,10 @@ private:
     const builtin_interfaces::msg::Time now = get_clock()->now();
     for (std::size_t index = 0; index < states.size(); ++index) {
       const auto & state = states[index];
-      const bool is_vessel = state.name == vessel_name_ || state.name == fishing_boat_name_;
+      const bool is_primary_target = state.name == tracked_target_name_;
+      const bool is_vessel =
+        state.name == vessel_name_ || state.name == fishing_boat_name_ ||
+        state.name == survey_boat_name_ || state.name == service_boat_name_;
       const bool is_buoy = state.name == fishnet_buoy_name_;
 
       visualization_msgs::msg::Marker marker;
@@ -169,9 +206,9 @@ private:
       marker.scale.x = state.name == vessel_name_ ? 2.2 : (is_vessel ? 1.35 : 0.55);
       marker.scale.y = state.name == vessel_name_ ? 0.8 : (is_vessel ? 0.50 : 0.55);
       marker.scale.z = is_vessel ? 0.55 : 0.42;
-      marker.color.r = is_vessel ? 1.0 : 0.9;
-      marker.color.g = state.name == vessel_name_ ? 0.85 : (is_vessel ? 0.35 : 0.2);
-      marker.color.b = is_vessel ? 0.1 : 0.05;
+      marker.color.r = is_primary_target ? 0.05 : (is_vessel ? 1.0 : 0.9);
+      marker.color.g = is_primary_target ? 1.0 : (state.name == vessel_name_ ? 0.85 : (is_vessel ? 0.35 : 0.2));
+      marker.color.b = is_primary_target ? 0.25 : (is_vessel ? 0.1 : 0.05);
       marker.color.a = 0.9;
       marker.lifetime.sec = 1;
       markers.markers.push_back(marker);
@@ -192,7 +229,7 @@ private:
       text.color.g = 1.0;
       text.color.b = 1.0;
       text.color.a = 1.0;
-      text.text = state.name;
+      text.text = is_primary_target ? "TRACK TARGET: " + state.name : state.name;
       text.lifetime.sec = 1;
       markers.markers.push_back(text);
     }
@@ -206,6 +243,9 @@ private:
   std::string fishnet_buoy_name_;
   std::string obstacle_name_;
   std::string debris_name_;
+  std::string survey_boat_name_;
+  std::string service_boat_name_;
+  std::string tracked_target_name_;
   bool warned_waiting_{false};
   std::chrono::steady_clock::time_point start_time_;
   rclcpp::Client<gazebo_msgs::srv::SetEntityState>::SharedPtr client_;

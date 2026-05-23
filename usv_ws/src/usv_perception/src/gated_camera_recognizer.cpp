@@ -15,12 +15,15 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <onnxruntime_cxx_api.h>
+#include "geometry_msgs/msg/transform_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 #include "std_msgs/msg/header.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 #include "vision_msgs/msg/detection2_d.hpp"
 #include "vision_msgs/msg/detection2_d_array.hpp"
 #include "vision_msgs/msg/object_hypothesis_with_pose.hpp"
@@ -55,12 +58,22 @@ struct DetectionPoint
   std::string label;
 };
 
+struct LocalPoint
+{
+  double x{0.0};
+  double y{0.0};
+  double z{0.0};
+};
+
 class GatedCameraRecognizer : public rclcpp::Node
 {
 public:
   GatedCameraRecognizer()
   : Node("gated_camera_recognizer")
   {
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
+
     image_topic_ = declare_parameter<std::string>("image_topic", "/gated_camera/image_raw");
     depth_topic_ = declare_parameter<std::string>("depth_topic", "/depth_camera/depth/image_raw");
     output_prefix_ = normalize_prefix(declare_parameter<std::string>("output_prefix", "gated_camera"));
@@ -78,6 +91,7 @@ public:
     camera_y_offset_ = declare_parameter<double>("camera_y_offset", 0.0);
     camera_z_offset_ = declare_parameter<double>("camera_z_offset", 1.20);
     camera_horizontal_fov_ = declare_parameter<double>("camera_horizontal_fov", 1.20);
+    use_tf_transform_ = declare_parameter<bool>("use_tf_transform", true);
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
       {"vessel", "fishing_boat", "buoy", "fishnet_buoy", "floating_obstacle", "maritime_obstacle"});
@@ -676,7 +690,7 @@ private:
     const vision_msgs::msg::Detection2DArray & detections,
     const cv::Mat & depth,
     int image_width,
-    int image_height) const
+    int image_height)
   {
     if (depth.empty() || image_width <= 0 || image_height <= 0) {
       return {};
@@ -701,10 +715,13 @@ private:
       const double lateral = (u - center_x) * static_cast<double>(depth_m) / focal_x;
       const double vertical = (v - center_y) * static_cast<double>(depth_m) / focal_y;
 
+      const LocalPoint local_point{depth_m, -lateral, -vertical};
+      const LocalPoint base_point = transform_to_base(local_point);
+
       DetectionPoint point;
-      point.x = static_cast<float>(camera_x_offset_ + depth_m);
-      point.y = static_cast<float>(camera_y_offset_ - lateral);
-      point.z = static_cast<float>(camera_z_offset_ - vertical);
+      point.x = static_cast<float>(base_point.x);
+      point.y = static_cast<float>(base_point.y);
+      point.z = static_cast<float>(base_point.z);
       point.score = detection_score(detection);
       point.label = detection_label(detection);
       point.class_id = static_cast<float>(class_index_for_label(point.label));
@@ -715,6 +732,52 @@ private:
       points.push_back(point);
     }
     return points;
+  }
+
+  LocalPoint transform_to_base(const LocalPoint & local_point)
+  {
+    if (use_tf_transform_ && tf_buffer_ && frame_id_ != base_frame_) {
+      try {
+        const auto transform = tf_buffer_->lookupTransform(base_frame_, frame_id_, tf2::TimePointZero);
+        return apply_transform(transform, local_point);
+      } catch (const std::exception & exc) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 3000,
+          "TF %s -> %s unavailable, falling back to static camera offsets: %s",
+          frame_id_.c_str(), base_frame_.c_str(), exc.what());
+      }
+    }
+
+    return LocalPoint{
+      camera_x_offset_ + local_point.x,
+      camera_y_offset_ + local_point.y,
+      camera_z_offset_ + local_point.z
+    };
+  }
+
+  static LocalPoint apply_transform(
+    const geometry_msgs::msg::TransformStamped & transform,
+    const LocalPoint & point)
+  {
+    const auto & q = transform.transform.rotation;
+    const double xx = q.x * q.x;
+    const double yy = q.y * q.y;
+    const double zz = q.z * q.z;
+    const double xy = q.x * q.y;
+    const double xz = q.x * q.z;
+    const double yz = q.y * q.z;
+    const double wx = q.w * q.x;
+    const double wy = q.w * q.y;
+    const double wz = q.w * q.z;
+
+    LocalPoint out;
+    out.x = (1.0 - 2.0 * (yy + zz)) * point.x + 2.0 * (xy - wz) * point.y +
+      2.0 * (xz + wy) * point.z + transform.transform.translation.x;
+    out.y = 2.0 * (xy + wz) * point.x + (1.0 - 2.0 * (xx + zz)) * point.y +
+      2.0 * (yz - wx) * point.z + transform.transform.translation.y;
+    out.z = 2.0 * (xz - wy) * point.x + 2.0 * (yz + wx) * point.y +
+      (1.0 - 2.0 * (xx + yy)) * point.z + transform.transform.translation.z;
+    return out;
   }
 
   static cv::Rect detection_rect(
@@ -940,6 +1003,7 @@ private:
   double camera_y_offset_{0.0};
   double camera_z_offset_{1.20};
   double camera_horizontal_fov_{1.20};
+  bool use_tf_transform_{true};
   std::vector<std::string> class_names_;
   GateBounds gates_[3];
   cv::Mat latest_depth_;
@@ -965,6 +1029,8 @@ private:
   rclcpp::Publisher<vision_msgs::msg::Detection2DArray>::SharedPtr detection_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr detection_points_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 };
 
 }  // namespace usv_perception

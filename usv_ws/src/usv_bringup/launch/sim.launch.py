@@ -1,7 +1,7 @@
 import os
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
@@ -43,15 +43,35 @@ def generate_launch_description():
         default_value='true',
         description='Move the simulated vessel and floating obstacle'
     )
+    usv_follow_arg = DeclareLaunchArgument(
+        'usv_follow',
+        default_value='true',
+        description='Move the USV slowly toward the fused tracked target'
+    )
     uav_arg = DeclareLaunchArgument(
         'uav',
         default_value='true',
-        description='Start the simulated ALS UAV and long-range recognizer'
+        description='Start the simulated ALS UAV and gated-camera recognizer'
     )
     yolo_model_arg = DeclareLaunchArgument(
         'yolo_model_path',
         default_value=default_yolo_model,
         description='Path to the YOLO ONNX model used by camera recognizers'
+    )
+    c3_mmwave_arg = DeclareLaunchArgument(
+        'c3_mmwave',
+        default_value='true',
+        description='Enable the C3 multi-height mmWave raw sensors and converters'
+    )
+    c3_mmwave_debug_arg = DeclareLaunchArgument(
+        'c3_mmwave_debug',
+        default_value='false',
+        description='Print decoded C3 mmWave detections'
+    )
+    rgbd_dehaze_arg = DeclareLaunchArgument(
+        'rgbd_dehaze',
+        default_value='true',
+        description='Start the C3 RGB-D dehaze pointcloud node for the USV depth camera'
     )
 
     gzserver = IncludeLaunchDescription(
@@ -73,7 +93,14 @@ def generate_launch_description():
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': Command(['xacro', ' ', xacro_file]),
+            'robot_description': Command([
+                'xacro',
+                ' ',
+                xacro_file,
+                ' ',
+                'enable_c3_mmwave:=',
+                LaunchConfiguration('c3_mmwave')
+            ]),
             'use_sim_time': True
         }]
     )
@@ -100,7 +127,17 @@ def generate_launch_description():
             '--frame-id', 'world',
             '--child-frame-id', 'base_footprint'
         ],
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': True}],
+        condition=UnlessCondition(LaunchConfiguration('usv_follow'))
+    )
+
+    usv_target_follower = Node(
+        package='usv_perception',
+        executable='usv_target_follower',
+        name='usv_target_follower',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('usv_follow'))
     )
 
     rviz_node = Node(
@@ -164,10 +201,10 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('uav'))
     )
 
-    uav_long_range_recognizer = Node(
+    uav_gated_camera_recognizer = Node(
         package='usv_perception',
         executable='gated_camera_recognizer',
-        name='uav_long_range_recognizer',
+        name='uav_gated_camera_recognizer',
         output='screen',
         parameters=[
             perception_config,
@@ -179,24 +216,122 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('uav'))
     )
 
+    def make_c3_mmwave_converter(
+        radar_id,
+        radar_height,
+        sea_clutter_height_scale,
+        sea_clutter_compete_min_height,
+        sea_clutter_random_stddev
+    ):
+        return Node(
+            package='lidar_robot',
+            executable='mmwave_scan_converter.py',
+            name=f'mmwave_scan_converter_{radar_id}',
+            output='screen',
+            parameters=[{
+                'use_sim_time': True,
+                'input_topic': f'/radar_{radar_id}/raw_scan',
+                'output_topic': f'/mmwave_{radar_id}/detections',
+                'frame_id': f'radar_{radar_id}_link',
+                'max_range': 800.0,
+                'min_range': 2.0,
+                'horizontal_fov_deg': 120.0,
+                'angular_resolution_deg': 1.5,
+                'subbeam_resolution_deg': 0.3,
+                'radar_height_m': radar_height,
+                'intensity_threshold': 0.10,
+                'target_base_rcs': 1.0,
+                'target_material_reflectivity': 0.85,
+                'target_random_stddev': 0.04,
+                'radial_velocity_noise_stddev': 0.05,
+                'range_attenuation_alpha': 0.0035,
+                'point_target_angle_noise_deg': 0.25,
+                'extended_target_angle_noise_deg': 0.10,
+                'center_weight_enabled': True,
+                'center_weight_sigma': 1.0,
+                'center_weight_min': 0.7,
+                'sea_clutter_enabled': True,
+                'sea_state': 0.65,
+                'sea_clutter_range_min': 5.0,
+                'sea_clutter_range_max': 800.0,
+                'sea_clutter_height_scale': sea_clutter_height_scale,
+                'sea_clutter_height_max': 2.0,
+                'sea_clutter_compete_min_height': sea_clutter_compete_min_height,
+                'sea_clutter_random_stddev': sea_clutter_random_stddev,
+                'max_detections': 80,
+            }],
+            condition=IfCondition(LaunchConfiguration('c3_mmwave'))
+        )
+
+    mmwave_converter_10m = make_c3_mmwave_converter('10m', 10.0, 0.25, 1.0, 0.03)
+    mmwave_converter_4m = make_c3_mmwave_converter('4m', 4.0, 0.35, 0.7, 0.04)
+    mmwave_converter_1p9m = make_c3_mmwave_converter('1p9m', 1.9, 0.50, 0.35, 0.05)
+    mmwave_converter_1p5m = make_c3_mmwave_converter('1p5m', 1.5, 0.60, 0.25, 0.06)
+    mmwave_converter_1m = make_c3_mmwave_converter('1m', 1.0, 0.70, 0.20, 0.07)
+
+    mmwave_debug_node = Node(
+        package='lidar_robot',
+        executable='mmwave_detection_debug.py',
+        name='mmwave_detection_debug',
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('c3_mmwave_debug'))
+    )
+
+    rgbd_dehaze_pointcloud = Node(
+        package='depth_image_to_pointcloud2',
+        executable='depth_image_to_pointcloud2',
+        name='depth_image_to_pointcloud2',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'rgb_topic': '/depth_camera/image_raw',
+            'depth_topic': '/depth_camera/depth/image_raw',
+            'camera_info_topic': '/depth_camera/camera_info',
+            'pointcloud_topic': '/depth_camera/dehazed_points',
+            'frame_stride': 3,
+            'depth_scale': 0.001,
+            'max_valid_depth': 60.0,
+            'show_images': False,
+            'dark_channel_radius': 7,
+            'omega': 0.92,
+            'min_transmission': 0.12,
+            'atmospheric_light_percent': 0.001,
+            'depth_compensation_strength': 0.25,
+            'max_depth_scale': 1.35,
+        }],
+        condition=IfCondition(LaunchConfiguration('rgbd_dehaze'))
+    )
+
     return LaunchDescription([
         gui_arg,
         rviz_arg,
         verbose_arg,
         perception_arg,
         dynamic_targets_arg,
+        usv_follow_arg,
         uav_arg,
         yolo_model_arg,
+        c3_mmwave_arg,
+        c3_mmwave_debug_arg,
+        rgbd_dehaze_arg,
         gzserver,
         gzclient,
         robot_state_publisher,
         spawn_entity,
         world_to_usv_tf,
+        usv_target_follower,
         wave_buoyancy_node,
         dynamic_target_controller,
         radar_sonar_tracker,
         gated_camera_recognizer,
         uav_patrol_controller,
-        uav_long_range_recognizer,
+        uav_gated_camera_recognizer,
+        mmwave_converter_10m,
+        mmwave_converter_4m,
+        mmwave_converter_1p9m,
+        mmwave_converter_1p5m,
+        mmwave_converter_1m,
+        mmwave_debug_node,
+        rgbd_dehaze_pointcloud,
         rviz_node
     ])

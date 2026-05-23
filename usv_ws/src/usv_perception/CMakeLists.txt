@@ -41,7 +41,7 @@ set(NODE_DEPS
 
 add_executable(gated_camera_recognizer src/gated_camera_recognizer.cpp)
 target_include_directories(gated_camera_recognizer PRIVATE include ${OpenCV_INCLUDE_DIRS} ${ONNXRUNTIME_INCLUDE_DIR})
-ament_target_dependencies(gated_camera_recognizer rclcpp sensor_msgs std_msgs vision_msgs)
+ament_target_dependencies(gated_camera_recognizer rclcpp geometry_msgs sensor_msgs std_msgs tf2_ros vision_msgs)
 target_link_libraries(gated_camera_recognizer ${OpenCV_LIBS} ${ONNXRUNTIME_LIBRARY})
 set_target_properties(gated_camera_recognizer PROPERTIES
   BUILD_RPATH "${ONNXRUNTIME_ROOT}/lib"
@@ -69,6 +69,10 @@ add_executable(wave_buoyancy_node src/wave_buoyancy_node.cpp)
 target_include_directories(wave_buoyancy_node PRIVATE include)
 ament_target_dependencies(wave_buoyancy_node ${NODE_DEPS})
 
+add_executable(usv_target_follower src/usv_target_follower.cpp)
+target_include_directories(usv_target_follower PRIVATE include)
+ament_target_dependencies(usv_target_follower ${NODE_DEPS})
+
 install(TARGETS
   gated_camera_recognizer
   dynamic_target_controller
@@ -76,6 +80,7 @@ install(TARGETS
   ros_image_recorder
   uav_patrol_controller
   wave_buoyancy_node
+  usv_target_follower
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -14,6 +15,7 @@
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "usv_perception/common.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -26,7 +28,9 @@ struct Detection
 {
   double x{0.0};
   double y{0.0};
+  double z{0.0};
   double confidence{0.0};
+  double class_id{-1.0};
   std::string source;
 };
 
@@ -39,6 +43,9 @@ struct Track
   double vy{0.0};
   int hits{1};
   int misses{0};
+  double confidence{0.0};
+  double class_id{-1.0};
+  std::string last_source;
   std::chrono::steady_clock::time_point last_update{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_predict{std::chrono::steady_clock::now()};
   std::set<std::string> sources;
@@ -54,8 +61,8 @@ struct Track
 
   void update(const Detection & det, const std::chrono::steady_clock::time_point & now)
   {
-    constexpr double alpha = 0.55;
-    constexpr double beta = 0.22;
+    const double alpha = std::clamp(0.25 + 0.45 * det.confidence, 0.25, 0.70);
+    const double beta = std::clamp(0.08 + 0.22 * det.confidence, 0.08, 0.30);
     const double raw_dt = std::chrono::duration<double>(now - last_update).count();
     const double dt = std::clamp(raw_dt, 0.03, 0.5);
     const double residual_x = det.x - x;
@@ -66,6 +73,9 @@ struct Track
     vy += beta * residual_y / dt;
     ++hits;
     misses = 0;
+    confidence = std::max(confidence * 0.92, det.confidence);
+    class_id = det.class_id >= 0.0 ? det.class_id : class_id;
+    last_source = det.source;
     last_update = now;
     last_predict = now;
     sources.insert(det.source);
@@ -80,6 +90,10 @@ public:
   {
     const std::string radar_topic = declare_parameter<std::string>("radar_topic", "/mmwave_radar/scan");
     const std::string sonar_topic = declare_parameter<std::string>("sonar_topic", "/sonar/range");
+    const std::string gated_points_topic =
+      declare_parameter<std::string>("gated_points_topic", "/gated_camera/detection_points");
+    const std::string uav_points_topic =
+      declare_parameter<std::string>("uav_points_topic", "/uav/gated_camera/detection_points");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     radar_x_offset_ = declare_parameter<double>("radar_x_offset", -0.35);
     radar_y_offset_ = declare_parameter<double>("radar_y_offset", 0.0);
@@ -89,6 +103,9 @@ public:
     max_tracking_range_ = declare_parameter<double>("max_tracking_range", 80.0);
     association_gate_ = declare_parameter<double>("association_gate", 2.8);
     track_timeout_ = declare_parameter<double>("track_timeout", 2.0);
+    camera_fusion_timeout_ = declare_parameter<double>("camera_fusion_timeout", 0.8);
+    uav_fusion_timeout_ = declare_parameter<double>("uav_fusion_timeout", 1.2);
+    min_camera_confidence_ = declare_parameter<double>("min_camera_confidence", 0.20);
 
     radar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       radar_topic, rclcpp::SensorDataQoS(),
@@ -96,11 +113,23 @@ public:
     sonar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       sonar_topic, rclcpp::SensorDataQoS(),
       std::bind(&RadarSonarTracker::on_sonar_scan, this, std::placeholders::_1));
+    gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+      gated_points_topic, rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+        on_detection_points(msg, "gated_camera", 0.82);
+      });
+    uav_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+      uav_points_topic, rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+        on_detection_points(msg, "uav_gated_camera", 0.72);
+      });
 
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("tracked_objects", 10);
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("tracked_object_poses", 10);
     text_pub_ = create_publisher<std_msgs::msg::String>("tracked_objects_text", 10);
-    RCLCPP_INFO(get_logger(), "Tracking radar=%s sonar=%s", radar_topic.c_str(), sonar_topic.c_str());
+    RCLCPP_INFO(
+      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s",
+      radar_topic.c_str(), sonar_topic.c_str(), gated_points_topic.c_str(), uav_points_topic.c_str());
   }
 
 private:
@@ -121,7 +150,7 @@ private:
     }
 
     if (count > 0) {
-      last_sonar_detection_ = Detection{sum_x / count, sum_y / count, 0.65, "sonar"};
+      last_sonar_detection_ = Detection{sum_x / count, sum_y / count, 0.0, 0.65, -1.0, "sonar"};
       last_sonar_time_ = std::chrono::steady_clock::now();
       has_sonar_detection_ = true;
     }
@@ -134,6 +163,20 @@ private:
     if (has_sonar_detection_ && std::chrono::duration<double>(now - last_sonar_time_).count() < 0.35) {
       detections.push_back(last_sonar_detection_);
     }
+    update_tracks(detections, now);
+    publish_tracks();
+  }
+
+  void on_detection_points(
+    const sensor_msgs::msg::PointCloud2::SharedPtr msg,
+    const std::string & source,
+    double source_weight)
+  {
+    const auto detections = parse_detection_cloud(*msg, source, source_weight);
+    if (detections.empty()) {
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
     update_tracks(detections, now);
     publish_tracks();
   }
@@ -199,9 +242,65 @@ private:
       const double count = static_cast<double>(cluster.size());
       const double spread = std::hypot(max_x - min_x, max_y - min_y);
       const double confidence = std::clamp(0.45 + 0.08 * count + 0.08 * spread, 0.45, 0.95);
-      detections.push_back(Detection{sum_x / count, sum_y / count, confidence, "mmwave_radar"});
+      detections.push_back(Detection{sum_x / count, sum_y / count, 0.0, confidence, -1.0, "mmwave_radar"});
     }
     return detections;
+  }
+
+  std::vector<Detection> parse_detection_cloud(
+    const sensor_msgs::msg::PointCloud2 & msg,
+    const std::string & source,
+    double source_weight) const
+  {
+    const auto offset_x = field_offset(msg, "x");
+    const auto offset_y = field_offset(msg, "y");
+    const auto offset_z = field_offset(msg, "z");
+    const auto offset_intensity = field_offset(msg, "intensity");
+    const auto offset_class_id = field_offset(msg, "class_id");
+    if (offset_x < 0 || offset_y < 0 || msg.point_step < 8) {
+      return {};
+    }
+
+    std::vector<Detection> detections;
+    const std::size_t point_count = static_cast<std::size_t>(msg.width) * static_cast<std::size_t>(msg.height);
+    detections.reserve(point_count);
+    for (std::size_t index = 0; index < point_count; ++index) {
+      const auto * base = msg.data.data() + index * msg.point_step;
+      const double x = read_float(base, offset_x);
+      const double y = read_float(base, offset_y);
+      const double z = offset_z >= 0 ? read_float(base, offset_z) : 0.0;
+      if (!std::isfinite(x) || !std::isfinite(y) || x < -2.0 ||
+        std::hypot(x, y) > max_tracking_range_)
+      {
+        continue;
+      }
+
+      const double raw_confidence = offset_intensity >= 0 ? read_float(base, offset_intensity) : 0.55;
+      const double confidence = std::clamp(raw_confidence * source_weight, min_camera_confidence_, 0.98);
+      if (confidence < min_camera_confidence_) {
+        continue;
+      }
+      const double class_id = offset_class_id >= 0 ? read_float(base, offset_class_id) : -1.0;
+      detections.push_back(Detection{x, y, z, confidence, class_id, source});
+    }
+    return detections;
+  }
+
+  static int field_offset(const sensor_msgs::msg::PointCloud2 & msg, const std::string & name)
+  {
+    for (const auto & field : msg.fields) {
+      if (field.name == name) {
+        return static_cast<int>(field.offset);
+      }
+    }
+    return -1;
+  }
+
+  static float read_float(const unsigned char * data, int offset)
+  {
+    float value = 0.0F;
+    std::memcpy(&value, data + offset, sizeof(float));
+    return value;
   }
 
   void finish_cluster(
@@ -246,6 +345,9 @@ private:
       track.id = next_track_id_++;
       track.x = det.x;
       track.y = det.y;
+      track.confidence = det.confidence;
+      track.class_id = det.class_id;
+      track.last_source = det.source;
       track.last_update = now;
       track.last_predict = now;
       track.sources.insert(det.source);
@@ -358,6 +460,9 @@ private:
              << ",\"vx\":" << track.vx
              << ",\"vy\":" << track.vy
              << ",\"speed\":" << speed
+             << ",\"confidence\":" << track.confidence
+             << ",\"class_id\":" << track.class_id
+             << ",\"last_source\":\"" << track.last_source << "\""
              << ",\"hits\":" << track.hits
              << ",\"sources\":[";
       int source_index = 0;
@@ -387,6 +492,9 @@ private:
   double max_tracking_range_{80.0};
   double association_gate_{2.8};
   double track_timeout_{2.0};
+  double camera_fusion_timeout_{0.8};
+  double uav_fusion_timeout_{1.2};
+  double min_camera_confidence_{0.20};
   int next_track_id_{1};
   bool has_sonar_detection_{false};
   Detection last_sonar_detection_;
@@ -394,6 +502,8 @@ private:
   std::vector<Track> tracks_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr radar_sub_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sonar_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gated_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr uav_points_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr text_pub_;

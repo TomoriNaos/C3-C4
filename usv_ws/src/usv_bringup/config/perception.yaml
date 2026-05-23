@@ -8,9 +8,14 @@ radar_sonar_tracker:
     sonar_x_offset: 0.65
     cluster_gap: 0.75
     min_cluster_points: 2
-    max_tracking_range: 80.0
-    association_gate: 2.8
-    track_timeout: 2.0
+    max_tracking_range: 115.0
+    association_gate: 4.5
+    track_timeout: 4.0
+    gated_points_topic: /gated_camera/detection_points
+    uav_points_topic: /uav/gated_camera/detection_points
+    camera_fusion_timeout: 0.8
+    uav_fusion_timeout: 1.2
+    min_camera_confidence: 0.20
 
 gated_camera_recognizer:
   ros__parameters:
@@ -30,19 +35,20 @@ gated_camera_recognizer:
     camera_y_offset: 0.0
     camera_z_offset: 1.20
     camera_horizontal_fov: 1.20
+    use_tf_transform: true
     min_contour_area: 450.0
     process_stride: 1
     gate_near: [2.0, 18.0]
     gate_mid: [12.0, 42.0]
     gate_far: [32.0, 85.0]
 
-uav_long_range_recognizer:
+uav_gated_camera_recognizer:
   ros__parameters:
-    image_topic: /uav/front_camera/image_raw
-    depth_topic: ""
-    output_prefix: uav/long_range
-    frame_id: uav_front_camera_link
-    detection_input: raw
+    image_topic: /uav/gated_camera/image_raw
+    depth_topic: /uav/gated_camera/depth/image_raw
+    output_prefix: uav/gated_camera
+    frame_id: uav_gated_camera_link
+    detection_input: range_view
     yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
     yolo_input_width: 640
     yolo_input_height: 640
@@ -53,7 +59,8 @@ uav_long_range_recognizer:
     camera_x_offset: 1.55
     camera_y_offset: 0.0
     camera_z_offset: 1.20
-    camera_horizontal_fov: 1.20
+    camera_horizontal_fov: 0.82
+    use_tf_transform: true
     min_contour_area: 650.0
     process_stride: 3
     gate_near: [10.0, 45.0]
@@ -62,26 +69,93 @@ uav_long_range_recognizer:
 
 dynamic_target_controller:
   ros__parameters:
-    update_rate: 12.0
+    update_rate: 4.0
     wave_amplitude: 0.10
-    motion_time_scale: 1.2
+    motion_time_scale: 1.0
+    tracked_target_name: moving_vessel
     vessel_name: moving_vessel
     fishing_boat_name: small_fishing_boat
     fishnet_buoy_name: fishnet_buoy
     obstacle_name: floating_obstacle
     debris_name: drift_debris
+    survey_boat_name: survey_boat
+    service_boat_name: service_boat
 
 uav_patrol_controller:
   ros__parameters:
     model_name: als_uav
-    update_rate: 4.0
+    update_rate: 8.0
     center_x: 14.0
     center_y: 0.0
-    altitude: 12.0
+    altitude: 24.0
     radius_x: 12.0
     radius_y: 8.0
     angular_speed: 0.060
-    camera_pitch: 0.18
+    patrol_speed: 0.70
+    camera_pitch: 0.30
+    target_tracking_enabled: true
+    target_model_name: moving_vessel
+    usv_model_name: wamv
+    model_states_topic: /model_states
+    remote_target_topic: /uav/remote_target_status
+    remote_target_confidence: 0.94
+    target_follow_backoff: 18.0
+    target_lateral_sweep: 13.0
+    target_timeout: 2.0
+
+usv_target_follower:
+  ros__parameters:
+    enabled: true
+    model_name: wamv
+    pose_topic: /tracked_object_poses
+    track_status_topic: /tracked_objects_text
+    remote_target_topic: /uav/remote_target_status
+    model_states_topic: /model_states
+    update_rate: 15.0
+    max_speed: 1.50
+    max_yaw_rate: 0.70
+    desired_standoff: 10.0
+    target_timeout: 5.0
+    track_status_timeout: 2.0
+    remote_target_timeout: 3.5
+    max_follow_range: 120.0
+    yaw_gain: 1.00
+    speed_gain: 0.18
+    waterline_z: 0.32
+    startup_delay: 3.0
+    target_lead_time: 1.8
+    max_lead_distance: 6.0
+    min_chase_speed: 0.45
+    far_range_speed_boost: 0.35
+    stale_target_speed_scale: 0.75
+    target_lock_timeout: 4.5
+    target_reacquire_gate: 9.0
+    turn_slowdown_gain: 0.35
+    follow_class_id: 1.0
+    prefer_follow_class: true
+    min_follow_confidence: 0.18
+    min_track_hits: 2
+    obstacle_lookahead: 34.0
+    obstacle_lateral_window: 13.0
+    obstacle_clearance: 5.5
+    hard_stop_distance: 8.0
+    hard_stop_lateral: 2.4
+    avoidance_gain: 0.85
+    obstacle_slowdown_gain: 0.38
+    min_avoidance_speed_scale: 0.50
+    centered_obstacle_bias: 1.0
+    use_model_state_obstacles: true
+    model_obstacle_timeout: 1.0
+    obstacle_model_names:
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - net_line_a
 
 wave_buoyancy_node:
   ros__parameters:

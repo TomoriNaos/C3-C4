@@ -7,6 +7,7 @@
                 "${workspaceFolder}/install/**",
                 "/opt/ros/humble/include/**",
                 "/usr/include/opencv4",
+                "/home/hu/onnxruntime-linux-x64-1.23.2/include",
                 "/usr/include/gazebo-11",
                 "/usr/include/sdformat-9.7",
                 "${workspaceFolder}/**"
@@ -21,9 +22,10 @@
                 "path": [
                     "${workspaceFolder}/src/usv_perception/include",
                     "${workspaceFolder}/install",
-                    "/opt/ros/humble/include",
-                    "/usr/include/opencv4",
-                    "/usr/include/gazebo-11",
+                "/opt/ros/humble/include",
+                "/usr/include/opencv4",
+                "/home/hu/onnxruntime-linux-x64-1.23.2/include",
+                "/usr/include/gazebo-11",
                     "/usr/include/sdformat-9.7",
                     "${workspaceFolder}"
                 ],

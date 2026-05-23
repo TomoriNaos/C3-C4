@@ -1,25 +1,22 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>usv_bringup</name>
+  <name>depth_image_to_pointcloud2</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="15094819150@163.com">hu</maintainer>
-  <license>TODO: License declaration</license>
+  <maintainer email="d_w_b@outlook.com">rosdev</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
   <depend>rclcpp</depend>
-
-  <exec_depend>robot_state_publisher</exec_depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>opencv</depend>
   <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_plugins</exec_depend>
   <exec_depend>rviz2</exec_depend>
-  <exec_depend>depth_image_to_pointcloud2</exec_depend>
-  <exec_depend>lidar_robot</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>usv_description</exec_depend>
-  <exec_depend>usv_perception</exec_depend>
-  <exec_depend>xacro</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
