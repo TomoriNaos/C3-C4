@@ -12,7 +12,6 @@
 #include "c3_drone_driver/msg/gimbal_visual_command.hpp"
 #include "c3_drone_driver/msg/tc_detection.hpp"
 #include "c3_drone_driver/msg/target_observation.hpp"
-#include "c3_drone_driver/srv/set_gimbal_mode.hpp"
 #include "c3_drone_driver/target_fusion_processor.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_msgs/msg/tf_message.hpp"
@@ -65,9 +64,6 @@ public:
 		config.confidence_weight_cluster = Config::GetOr<double>("confidence_weight_cluster", 0.2);
 		config.confidence_weight_stability = Config::GetOr<double>("confidence_weight_stability", 0.3);
 
-		mode_request_min_interval_s_ = declare_parameter<double>("mode_request_min_interval_s", 0.2);
-		gimbal_mode_service_name_ = declare_parameter<std::string>("gimbal_mode_service_name", "/gimbal/set_mode");
-
 		// target_fusion_processor实例化
 		processor_ = std::make_unique<TargetFusionProcessor>(config);
 		tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
@@ -118,9 +114,6 @@ public:
 		// 视觉命令发布接口
 		visual_cmd_pub_ = create_publisher<msg::GimbalVisualCommand>("/gimbal/visual_command", 10);
 		
-		// 云台模式请求客户端
-		gimbal_mode_client_ = create_client<srv::SetGimbalMode>(gimbal_mode_service_name_);
-
 		// 定时处理器
 		timer_ = create_wall_timer(
 			std::chrono::milliseconds(20),
@@ -131,46 +124,14 @@ public:
 
 	private:
 
-	/// 请求云台进入指定模式
-	void requestGimbalMode(uint8_t mode, const rclcpp::Time &stamp)
-	{
-		// 1.不是同一次请求，并且距离上次请求已经超过最小间隔，才发出新请求
-		if (last_requested_mode_.has_value() && *last_requested_mode_ == mode &&
-			last_mode_request_time_.nanoseconds() != 0 &&
-			(stamp - last_mode_request_time_).seconds() < mode_request_min_interval_s_)
-		{
-			return;
-		}
-
-		// 2.请求云台模式服务，如果服务不可用则跳过请求
-		if (!gimbal_mode_client_->service_is_ready())
-		{
-			RCLCPP_WARN_THROTTLE(
-				get_logger(), *get_clock(), 2000,
-				"Gimbal mode service not ready: %s", gimbal_mode_service_name_.c_str());
-			return;
-		}
-
-		auto req = std::make_shared<srv::SetGimbalMode::Request>();
-		req->mode = mode;
-		(void)gimbal_mode_client_->async_send_request(req);
-		last_requested_mode_ = mode;
-		last_mode_request_time_ = stamp;
-	}
-
 	void process()
 	{
-		const auto stamp = now();
-		const auto result = processor_->process(stamp);
+		const auto result = processor_->process(now());
 		if (!result.has_value()) return;
 
 		if (result->has_observation)
 		{
 			observation_pub_->publish(result->observation);
-			if (result->observation.status == msg::TargetObservation::STATUS_VALID)
-			{
-				requestGimbalMode(msg::GimbalState::MODE_DETECTING, stamp);
-			}
 		}
 
 		if (result->has_visual_command && !result->lost)
@@ -190,13 +151,7 @@ public:
 
 	rclcpp::Publisher<msg::TargetObservation>::SharedPtr observation_pub_;
 	rclcpp::Publisher<msg::GimbalVisualCommand>::SharedPtr visual_cmd_pub_;
-	rclcpp::Client<srv::SetGimbalMode>::SharedPtr gimbal_mode_client_;
 	rclcpp::TimerBase::SharedPtr timer_;
-
-	std::string gimbal_mode_service_name_{"/gimbal/set_mode"};
-	double mode_request_min_interval_s_{0.2};
-	rclcpp::Time last_mode_request_time_{0, 0, RCL_ROS_TIME};
-	std::optional<uint8_t> last_requested_mode_{};
 };
 
 } // namespace c3_drone_driver

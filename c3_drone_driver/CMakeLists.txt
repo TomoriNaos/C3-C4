@@ -102,7 +102,6 @@ target_link_libraries(target_processor_node ${c3_typesupport_target})
 target_link_libraries(target_processor_node ${OpenCV_LIBS})
 target_link_libraries(mavlink_bridge_node ${c3_typesupport_target})
 target_link_libraries(drone_main_controller_node ${c3_typesupport_target})
-target_link_libraries(drone_main_controller_node ${OpenCV_LIBS})
 target_link_libraries(motion_controller_node ${c3_typesupport_target})
 target_link_libraries(px4_pose_bridge_node ${c3_typesupport_target})
 if(px4_msgs_FOUND)
@@ -110,7 +109,6 @@ if(px4_msgs_FOUND)
 endif()
 target_link_libraries(target_processor_node target_fusion_processor_lib)
 target_link_libraries(target_fusion_processor_lib pose_estimator_lib)
-target_link_libraries(drone_main_controller_node pose_estimator_lib)
 
 install(TARGETS
   gimbal_controller_node
