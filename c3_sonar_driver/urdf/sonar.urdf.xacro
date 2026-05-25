@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<robot name="c3_ship_with_sonar" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="parent_link" default="ship_base_link"/>
+  <xacro:arg name="sonar_mount_xyz" default="1.2 0.0 -0.8"/>
+  <xacro:arg name="sonar_mount_rpy" default="0 0 0"/>
+
+  <link name="ship_base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="80.0"/>
+      <inertia ixx="10.0" ixy="0.0" ixz="0.0" iyy="10.0" iyz="0.0" izz="15.0"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="3.0 1.2 0.8"/>
+      </geometry>
+      <material name="ship_gray">
+        <color rgba="0.25 0.25 0.28 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="sonar_mount_joint" type="fixed">
+    <parent link="$(arg parent_link)"/>
+    <child link="sonar_link"/>
+    <origin xyz="$(arg sonar_mount_xyz)" rpy="$(arg sonar_mount_rpy)"/>
+  </joint>
+
+  <link name="sonar_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="2.0"/>
+      <inertia ixx="0.05" ixy="0.0" ixz="0.0" iyy="0.05" iyz="0.0" izz="0.05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.12" length="0.08"/>
+      </geometry>
+      <material name="sonar_blue">
+        <color rgba="0.1 0.35 0.75 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="sonar_optical_joint" type="fixed">
+    <parent link="sonar_link"/>
+    <child link="sonar_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
+  </joint>
+  <link name="sonar_optical_frame"/>
+</robot>

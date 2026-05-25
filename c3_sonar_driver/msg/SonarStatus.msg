@@ -1,0 +1,6 @@
+std_msgs/Header header
+uint64 t_usec
+
+bool sonar_active
+float32 estimated_sound_speed_mps
+float32 estimated_latency_ms

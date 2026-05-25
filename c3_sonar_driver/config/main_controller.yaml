@@ -1,0 +1,4 @@
+sonar_main_controller_node:
+  ros__parameters:
+    sonar_lifecycle_service_name: "/sonar_processor_node/change_state"
+    status_hz: 2.0
