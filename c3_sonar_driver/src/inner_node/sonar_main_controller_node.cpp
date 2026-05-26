@@ -95,7 +95,6 @@ namespace c3_sonar_driver
 			const auto stamp = now();
 			status.header.stamp = stamp;
 			status.t_usec = static_cast<uint64_t>(stamp.nanoseconds() / 1000ULL);
-			status.link_state = msg::SonarStatus::LINK_OK;
 			status.sonar_active = sonar_active_;
 			status.estimated_sound_speed_mps = 1500.0F;
 			status.estimated_latency_ms = 0.0F;

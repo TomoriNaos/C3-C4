@@ -3,6 +3,11 @@
   <xacro:arg name="parent_link" default="ship_base_link"/>
   <xacro:arg name="sonar_mount_xyz" default="1.2 0.0 -0.8"/>
   <xacro:arg name="sonar_mount_rpy" default="0 0 0"/>
+  <xacro:arg name="enable_dave_plugin" default="false"/>
+  <xacro:arg name="dave_pointcloud_topic" default="/multibeam_sonar_point_cloud"/>
+  <xacro:arg name="dave_image_topic" default="/sonar_image"/>
+  <xacro:arg name="dave_image_raw_topic" default="/sonar_image_raw"/>
+  <xacro:arg name="dave_max_distance" default="30.0"/>
 
   <link name="ship_base_link">
     <inertial>
@@ -50,4 +55,54 @@
     <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
   </joint>
   <link name="sonar_optical_frame"/>
+
+  <!-- DAVE multibeam sonar plugin template (Gazebo Classic). -->
+  <xacro:if value="$(arg enable_dave_plugin)">
+    <gazebo reference="sonar_link">
+      <sensor type="ray" name="c3_multibeam_ray">
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <update_rate>10</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>512</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.57</min_angle>
+              <max_angle>1.57</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.12</min_angle>
+              <max_angle>0.12</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.5</min>
+            <max>$(arg dave_max_distance)</max>
+            <resolution>0.01</resolution>
+          </range>
+        </ray>
+
+        <!-- Topic bridge from GPU ray to point cloud -->
+        <plugin name="ray_sonar_sensor" filename="libgazebo_ros_velodyne_gpu_laser.so">
+          <topicName>$(arg dave_pointcloud_topic)</topicName>
+          <frameName>sonar_optical_frame</frameName>
+        </plugin>
+
+        <!-- DAVE sonar image/intensity model plugin -->
+        <plugin name="sonar_controller" filename="libnps_multibeam_sonar_ray_ros_plugin.so">
+          <pointCloudTopicName>$(arg dave_pointcloud_topic)</pointCloudTopicName>
+          <sonarImageRawTopicName>$(arg dave_image_raw_topic)</sonarImageRawTopicName>
+          <sonarImageTopicName>$(arg dave_image_topic)</sonarImageTopicName>
+          <frameName>sonar_optical_frame</frameName>
+          <maxDistance>$(arg dave_max_distance)</maxDistance>
+          <sensorGain>0.02</sensorGain>
+          <raySkips>4</raySkips>
+          <debugFlag>0</debugFlag>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:if>
 </robot>

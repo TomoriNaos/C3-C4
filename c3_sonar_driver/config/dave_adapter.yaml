@@ -1,0 +1,6 @@
+dave_sonar_adapter_node:
+  ros__parameters:
+    input_cloud_topic: "/multibeam_sonar_point_cloud"
+    output_detect_topic: "/sonar/detect"
+    min_points_for_valid_detect: 20
+    default_confidence: 0.65

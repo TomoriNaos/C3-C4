@@ -1,0 +1,23 @@
+services:
+  dave-noetic-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: bridge
+    image: c3/dave-noetic-builder:latest
+    container_name: c3_dave_noetic_builder
+    ipc: host
+    networks:
+      - default
+    dns:
+      - 8.8.8.8
+      - 114.114.114.114
+    tty: true
+    stdin_open: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${DAVE_WS_HOST:-/data/code/dave_ws}:/workspaces/dave_ws:rw
+      - ${C3_SONAR_HOST:-/data/code/c3_sonar}:/workspaces/c3_sonar:rw

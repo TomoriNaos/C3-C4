@@ -57,10 +57,8 @@
 当前要求：只发送，不接收母船信息。
 
 基础发送：
-- `/sonar_link/heartbeat` (`std_msgs/Bool`)
 - `/sonar_link/contact` (`SonarContact`)
 - `/sonar_link/state` (`SonarStatus`)
-- `/sonar_link/command_ack` (`SonarCommandAck`，为后续扩展保留)
 
 除“点云+时间戳”外建议必须发送：
 1. `contact_id`：去重与关联跟踪
@@ -118,8 +116,3 @@ c3_sonar_driver/
     └── c3_ship_with_sonar.urdf.xacro
 ```
 
-# 8.后续对接点
-
-1. 在 `sonar_processor_node` 中落地 Mackenzie 声速估计，写入 `SonarStatus.estimated_sound_speed_mps`
-2. 在时延估计模块落地 SVD-HB GCC，写入 `SonarStatus.estimated_latency_ms`
-3. 后续如果启用双向链路，再为 `communicate_node` 增加 `*_rx` 输入并复用 ACK 机制
