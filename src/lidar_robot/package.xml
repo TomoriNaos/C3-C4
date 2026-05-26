@@ -13,10 +13,13 @@
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>urdf</depend>
   <depend>xacro</depend>
   <depend>gazebo_ros_pkgs</depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>gazebo_msgs</exec_depend>
+
 
 
 

@@ -6,7 +6,7 @@
                 <plugin name="mmwave_plugin" filename="libgazebo_ros_ray_sensor.so">
                     <ros>
                         <namespace>/</namespace>
-                        <remapping>~/out:=mmwave/scan</remapping>
+                        <remapping>~/out:=radar_2p5m/raw_scan</remapping>
                     </ros>
                     <output_type>sensor_msgs/LaserScan</output_type>
                     <frame_name>mmwave_link</frame_name>

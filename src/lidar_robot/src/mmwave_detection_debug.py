@@ -1,42 +1,51 @@
 #!/usr/bin/env python3
+import math
 import struct
-from functools import partial
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, PointField
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 
 class MmwaveDetectionDebug(Node):
     def __init__(self):
         super().__init__('mmwave_detection_debug')
 
-        self._subs = []
-        self.topic_map = {
-            '10m': '/mmwave_10m/detections',
-            '4m': '/mmwave_4m/detections',
-            '1p9m': '/mmwave_1p9m/detections',
-            '1p5m': '/mmwave_1p5m/detections',
-            '1m': '/mmwave_1m/detections',
-        }
+        self.declare_parameter('input_topic', '/mmwave/filtered_detections')
+        self.declare_parameter('radar_name', 'filtered')
+        self.declare_parameter('max_print_points', 20)
+        self.declare_parameter('print_global_fields', True)
 
-        for radar_name, topic_name in self.topic_map.items():
-            sub = self.create_subscription(
-                PointCloud2,
-                topic_name,
-                partial(self.callback, radar_name),
-                10,
-            )
-            self._subs.append(sub)
-            self.get_logger().info(f'Subscribed to {topic_name}')
+        self.input_topic = self.get_parameter('input_topic').value
+        self.radar_name = self.get_parameter('radar_name').value
+        self.max_print_points = int(self.get_parameter('max_print_points').value)
+        self.print_global_fields = bool(self.get_parameter('print_global_fields').value)
 
-    def callback(self, radar_name: str, msg: PointCloud2):
+        qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
+        self.sub = self.create_subscription(
+            PointCloud2,
+            self.input_topic,
+            self.callback,
+            qos,
+        )
+
+        self.get_logger().info(f'Subscribed to {self.input_topic}')
+
+    def callback(self, msg: PointCloud2):
         self.get_logger().info(
-            f'[{radar_name}] Received PointCloud2: '
+            f'[{self.radar_name}] Received PointCloud2: '
+            f'frame_id={msg.header.frame_id}, '
             f'width={msg.width}, point_step={msg.point_step}, row_step={msg.row_step}'
         )
 
-        field_map = {f.name: f.offset for f in msg.fields}
+        field_map = {f.name: f for f in msg.fields}
 
         required_fields = [
             'x', 'y', 'z',
@@ -47,26 +56,50 @@ class MmwaveDetectionDebug(Node):
 
         for name in required_fields:
             if name not in field_map:
-                self.get_logger().warn(f'[{radar_name}] Missing field: {name}')
+                self.get_logger().warn(f'[{self.radar_name}] Missing field: {name}')
                 return
 
-        for i in range(msg.width):
+        has_global_fields = all(name in field_map for name in [
+            'global_x',
+            'global_y',
+            'global_z',
+            'ship_x',
+            'ship_y',
+            'ship_yaw',
+            'imu_yaw_rate',
+            'compensated_radial_velocity',
+        ])
+
+        if self.print_global_fields and has_global_fields:
+            self.get_logger().info(
+                f'[{self.radar_name}] Global fields detected: '
+                f'global_x/global_y/global_z + ship pose + imu yaw_rate will be printed.'
+            )
+        elif self.print_global_fields and not has_global_fields:
+            self.get_logger().info(
+                f'[{self.radar_name}] No global fields detected. '
+                f'Only local radar fields will be printed.'
+            )
+
+        print_count = min(msg.width, self.max_print_points)
+
+        for i in range(print_count):
             base = i * msg.point_step
 
-            x = struct.unpack_from('f', msg.data, base + field_map['x'])[0]
-            y = struct.unpack_from('f', msg.data, base + field_map['y'])[0]
-            z = struct.unpack_from('f', msg.data, base + field_map['z'])[0]
-            power = struct.unpack_from('f', msg.data, base + field_map['power'])[0]
-            radial_velocity = struct.unpack_from('f', msg.data, base + field_map['radial_velocity'])[0]
-            snr = struct.unpack_from('f', msg.data, base + field_map['snr'])[0]
-            rcs = struct.unpack_from('f', msg.data, base + field_map['rcs'])[0]
-            rng = struct.unpack_from('f', msg.data, base + field_map['range'])[0]
-            azimuth_deg = struct.unpack_from('f', msg.data, base + field_map['azimuth_deg'])[0]
-            timestamp = struct.unpack_from('f', msg.data, base + field_map['timestamp'])[0]
-            source_id = struct.unpack_from('f', msg.data, base + field_map['source_id'])[0]
-            target_type = struct.unpack_from('f', msg.data, base + field_map['target_type'])[0]
-            beam_count = struct.unpack_from('f', msg.data, base + field_map['beam_count'])[0]
-            angular_extent_deg = struct.unpack_from('f', msg.data, base + field_map['angular_extent_deg'])[0]
+            x = self.read_float32(msg, field_map, base, 'x')
+            y = self.read_float32(msg, field_map, base, 'y')
+            z = self.read_float32(msg, field_map, base, 'z')
+            power = self.read_float32(msg, field_map, base, 'power')
+            radial_velocity = self.read_float32(msg, field_map, base, 'radial_velocity')
+            snr = self.read_float32(msg, field_map, base, 'snr')
+            rcs = self.read_float32(msg, field_map, base, 'rcs')
+            rng = self.read_float32(msg, field_map, base, 'range')
+            azimuth_deg = self.read_float32(msg, field_map, base, 'azimuth_deg')
+            timestamp = self.read_float32(msg, field_map, base, 'timestamp')
+            source_id = self.read_float32(msg, field_map, base, 'source_id')
+            target_type = self.read_float32(msg, field_map, base, 'target_type')
+            beam_count = self.read_float32(msg, field_map, base, 'beam_count')
+            angular_extent_deg = self.read_float32(msg, field_map, base, 'angular_extent_deg')
 
             if int(target_type) == 1:
                 target_type_name = 'point_target'
@@ -82,16 +115,60 @@ class MmwaveDetectionDebug(Node):
             else:
                 source_name = 'unknown'
 
-            self.get_logger().info(
-                f'[{radar_name}][{i:03d}] '
-                f'x={x:.2f}, y={y:.2f}, z={z:.2f}, '
+            local_text = (
+                f'[{self.radar_name}][{i:03d}] '
+                f'LOCAL radar: x={x:.2f}, y={y:.2f}, z={z:.2f}, '
                 f'range={rng:.2f} m, azimuth={azimuth_deg:.2f} deg, '
                 f'power={power:.3f}, snr={snr:.2f}, rcs={rcs:.2f}, '
-                f'vel={radial_velocity:.2f} m/s, time={timestamp:.3f}, '
+                f'raw_vel={radial_velocity:.2f} m/s, time={timestamp:.3f}, '
                 f'source={int(source_id)}({source_name}), '
                 f'target_type={int(target_type)}({target_type_name}), '
                 f'beam_count={beam_count:.0f}, angular_extent={angular_extent_deg:.2f} deg'
             )
+
+            self.get_logger().info(local_text)
+
+            if self.print_global_fields and has_global_fields:
+                global_x = self.read_float32(msg, field_map, base, 'global_x')
+                global_y = self.read_float32(msg, field_map, base, 'global_y')
+                global_z = self.read_float32(msg, field_map, base, 'global_z')
+                ship_x = self.read_float32(msg, field_map, base, 'ship_x')
+                ship_y = self.read_float32(msg, field_map, base, 'ship_y')
+                ship_yaw = self.read_float32(msg, field_map, base, 'ship_yaw')
+                imu_yaw_rate = self.read_float32(msg, field_map, base, 'imu_yaw_rate')
+                compensated_radial_velocity = self.read_float32(
+                    msg,
+                    field_map,
+                    base,
+                    'compensated_radial_velocity'
+                )
+
+                global_text = (
+                    f'[{self.radar_name}][{i:03d}] '
+                    f'GLOBAL odom: x={global_x:.2f}, y={global_y:.2f}, z={global_z:.2f}, '
+                    f'ship=({ship_x:.2f}, {ship_y:.2f}), '
+                    f'ship_yaw={math.degrees(ship_yaw):.2f} deg, '
+                    f'imu_yaw_rate={math.degrees(imu_yaw_rate):.2f} deg/s, '
+                    f'comp_vel={compensated_radial_velocity:.2f} m/s'
+                )
+
+                self.get_logger().info(global_text)
+
+        if msg.width > print_count:
+            self.get_logger().info(
+                f'[{self.radar_name}] Printed {print_count}/{msg.width} points. '
+                f'Increase max_print_points to print more.'
+            )
+
+    def read_float32(self, msg: PointCloud2, field_map, base: int, field_name: str) -> float:
+        field = field_map[field_name]
+
+        if field.datatype != PointField.FLOAT32:
+            self.get_logger().warn(
+                f'Field {field_name} datatype is {field.datatype}, expected FLOAT32.'
+            )
+
+        return struct.unpack_from('f', msg.data, base + field.offset)[0]
 
 
 def main(args=None):

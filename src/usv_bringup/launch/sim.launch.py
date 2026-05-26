@@ -5,6 +5,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -46,13 +47,18 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('gui'))
     )
 
+    robot_description = ParameterValue(
+        Command(['xacro', ' ', xacro_file]),
+        value_type=str
+    )
+
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': Command(['xacro', ' ', xacro_file]),
+            'robot_description': robot_description,
             'use_sim_time': True
         }]
     )
@@ -79,193 +85,157 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rviz'))
     )
 
-    mmwave_converter_10m = Node(
+    def make_mmwave_converter(name, input_topic, output_topic, source_id, yaw_deg):
+        return Node(
+            package='lidar_robot',
+            executable='mmwave_scan_converter.py',
+            name=name,
+            output='screen',
+            parameters=[{
+                'input_topic': input_topic,
+                'output_topic': output_topic,
+
+                # All converted detections are expressed in base_link.
+                'frame_id': 'base_link',
+
+                # Mounting pose of each radar in base_link.
+                # Must match the x/y/z/yaw in wamv_base.urdf.xacro.
+                'radar_x_in_base': -0.35,
+                'radar_y_in_base': 0.0,
+                'radar_z_in_base': 2.5,
+                'radar_yaw_in_base_deg': yaw_deg,
+                'source_id': float(source_id),
+
+                'max_range': 800.0,
+                'min_range': 2.0,
+                'horizontal_fov_deg': 120.0,
+                'angular_resolution_deg': 1.5,
+                'subbeam_resolution_deg': 0.15,
+                'radar_height_m': 2.5,
+                'intensity_threshold': 0.10,
+                'target_base_rcs': 1.0,
+                'target_material_reflectivity': 0.85,
+                'target_random_stddev': 0.04,
+                'radial_velocity_noise_stddev': 0.05,
+                'range_attenuation_alpha': 0.0035,
+                'point_target_angle_noise_deg': 0.25,
+                'extended_target_angle_noise_deg': 0.10,
+                'center_weight_enabled': True,
+                'center_weight_sigma': 1.0,
+                'center_weight_min': 0.7,
+                'sea_clutter_enabled': True,
+                'sea_state': 0.65,
+                'sea_clutter_range_min': 5.0,
+                'sea_clutter_range_max': 800.0,
+                'sea_clutter_height_scale': 0.42,
+                'sea_clutter_height_max': 2.0,
+                'sea_clutter_compete_min_height': 0.45,
+                'sea_clutter_random_stddev': 0.05,
+
+                # Each radar publishes to its own topic now.
+                # The merger node combines the four topics into one fused cloud.
+                'max_detections': 80,
+            }]
+        )
+
+    mmwave_converter_front = make_mmwave_converter(
+        'mmwave_scan_converter_front',
+        '/radar/front/raw_scan',
+        '/mmwave/detections/front',
+        1,
+        0.0,
+    )
+
+    mmwave_converter_left = make_mmwave_converter(
+        'mmwave_scan_converter_left',
+        '/radar/left/raw_scan',
+        '/mmwave/detections/left',
+        2,
+        90.0,
+    )
+
+    mmwave_converter_right = make_mmwave_converter(
+        'mmwave_scan_converter_right',
+        '/radar/right/raw_scan',
+        '/mmwave/detections/right',
+        3,
+        -90.0,
+    )
+
+    mmwave_converter_rear = make_mmwave_converter(
+        'mmwave_scan_converter_rear',
+        '/radar/rear/raw_scan',
+        '/mmwave/detections/rear',
+        4,
+        180.0,
+    )
+
+    mmwave_detections_merger = Node(
         package='lidar_robot',
-        executable='mmwave_scan_converter.py',
-        name='mmwave_scan_converter_10m',
+        executable='mmwave_detections_merger.py',
+        name='mmwave_detections_merger',
         output='screen',
         parameters=[{
-            'input_topic': '/radar_10m/raw_scan',
-            'output_topic': '/mmwave_10m/detections',
-            'frame_id': 'radar_10m_link',
-            'max_range': 800.0,
-            'min_range': 2.0,
-            'horizontal_fov_deg': 120.0,
-            'angular_resolution_deg': 1.5,
-            'subbeam_resolution_deg': 0.3,
-            'radar_height_m': 10.0,
-            'intensity_threshold': 0.10,
-            'target_base_rcs': 1.0,
-            'target_material_reflectivity': 0.85,
-            'target_random_stddev': 0.04,
-            'radial_velocity_noise_stddev': 0.05,
-            'range_attenuation_alpha': 0.0035,
-            'point_target_angle_noise_deg': 0.25,
-            'extended_target_angle_noise_deg': 0.10,
-            'center_weight_enabled': True,
-            'center_weight_sigma': 1.0,
-            'center_weight_min': 0.7,
-            'sea_clutter_enabled': True,
-            'sea_state': 0.65,
-            'sea_clutter_range_min': 5.0,
-            'sea_clutter_range_max': 800.0,
-            'sea_clutter_height_scale': 0.25,
-            'sea_clutter_height_max': 2.0,
-            'sea_clutter_compete_min_height': 1.0,
-            'sea_clutter_random_stddev': 0.03,
-            'max_detections': 80,
+            'front_topic': '/mmwave/detections/front',
+            'left_topic': '/mmwave/detections/left',
+            'right_topic': '/mmwave/detections/right',
+            'rear_topic': '/mmwave/detections/rear',
+            'output_topic': '/mmwave/detections_fused',
+            'frame_id': 'base_link',
+            'publish_rate_hz': 12.5,
+            'max_cloud_age_sec': 0.15,
         }]
     )
 
-    mmwave_converter_4m = Node(
+    mmwave_filter = Node(
         package='lidar_robot',
-        executable='mmwave_scan_converter.py',
-        name='mmwave_scan_converter_4m',
+        executable='mmwave_radar_node',
+        name='mmwave_radar_filter_node',
         output='screen',
         parameters=[{
-            'input_topic': '/radar_4m/raw_scan',
-            'output_topic': '/mmwave_4m/detections',
-            'frame_id': 'radar_4m_link',
-            'max_range': 800.0,
-            'min_range': 2.0,
-            'horizontal_fov_deg': 120.0,
-            'angular_resolution_deg': 1.5,
-            'subbeam_resolution_deg': 0.3,
-            'radar_height_m': 4.0,
-            'intensity_threshold': 0.10,
-            'target_base_rcs': 1.0,
-            'target_material_reflectivity': 0.85,
-            'target_random_stddev': 0.04,
-            'radial_velocity_noise_stddev': 0.05,
-            'range_attenuation_alpha': 0.0035,
-            'point_target_angle_noise_deg': 0.25,
-            'extended_target_angle_noise_deg': 0.10,
-            'center_weight_enabled': True,
-            'center_weight_sigma': 1.0,
-            'center_weight_min': 0.7,
-            'sea_clutter_enabled': True,
-            'sea_state': 0.65,
-            'sea_clutter_range_min': 5.0,
-            'sea_clutter_range_max': 800.0,
-            'sea_clutter_height_scale': 0.35,
-            'sea_clutter_height_max': 2.0,
-            'sea_clutter_compete_min_height': 0.7,
-            'sea_clutter_random_stddev': 0.04,
-            'max_detections': 80,
+            # IMPORTANT:
+            # The tracker must receive one fused observation frame,
+            # not four single-radar frames arriving one after another.
+            'input_topic': '/mmwave/detections_fused',
+            'output_topic': '/mmwave/filtered_detections',
         }]
     )
 
-    mmwave_converter_1p9m = Node(
+    moving_targets_cmd_vel = Node(
         package='lidar_robot',
-        executable='mmwave_scan_converter.py',
-        name='mmwave_scan_converter_1p9m',
+        executable='moving_targets_cmd_vel.py',
+        name='moving_targets_cmd_vel',
         output='screen',
         parameters=[{
-            'input_topic': '/radar_1p9m/raw_scan',
-            'output_topic': '/mmwave_1p9m/detections',
-            'frame_id': 'radar_1p9m_link',
-            'max_range': 800.0,
-            'min_range': 2.0,
-            'horizontal_fov_deg': 120.0,
-            'angular_resolution_deg': 1.5,
-            'subbeam_resolution_deg': 0.3,
-            'radar_height_m': 1.9,
-            'intensity_threshold': 0.10,
-            'target_base_rcs': 1.0,
-            'target_material_reflectivity': 0.85,
-            'target_random_stddev': 0.04,
-            'radial_velocity_noise_stddev': 0.05,
-            'range_attenuation_alpha': 0.0035,
-            'point_target_angle_noise_deg': 0.25,
-            'extended_target_angle_noise_deg': 0.10,
-            'center_weight_enabled': True,
-            'center_weight_sigma': 1.0,
-            'center_weight_min': 0.7,
-            'sea_clutter_enabled': True,
-            'sea_state': 0.65,
-            'sea_clutter_range_min': 5.0,
-            'sea_clutter_range_max': 800.0,
-            'sea_clutter_height_scale': 0.50,
-            'sea_clutter_height_max': 2.0,
-            'sea_clutter_compete_min_height': 0.35,
-            'sea_clutter_random_stddev': 0.05,
-            'max_detections': 80,
+            'update_rate_hz': 20.0,
         }]
     )
 
-    mmwave_converter_1p5m = Node(
+    mmwave_odom_imu_fusion = Node(
         package='lidar_robot',
-        executable='mmwave_scan_converter.py',
-        name='mmwave_scan_converter_1p5m',
+        executable='mmwave_odom_imu_fusion.py',
+        name='mmwave_odom_imu_fusion',
         output='screen',
         parameters=[{
-            'input_topic': '/radar_1p5m/raw_scan',
-            'output_topic': '/mmwave_1p5m/detections',
-            'frame_id': 'radar_1p5m_link',
-            'max_range': 800.0,
-            'min_range': 2.0,
-            'horizontal_fov_deg': 120.0,
-            'angular_resolution_deg': 1.5,
-            'subbeam_resolution_deg': 0.3,
-            'radar_height_m': 1.5,
-            'intensity_threshold': 0.10,
-            'target_base_rcs': 1.0,
-            'target_material_reflectivity': 0.85,
-            'target_random_stddev': 0.04,
-            'radial_velocity_noise_stddev': 0.05,
-            'range_attenuation_alpha': 0.0035,
-            'point_target_angle_noise_deg': 0.25,
-            'extended_target_angle_noise_deg': 0.10,
-            'center_weight_enabled': True,
-            'center_weight_sigma': 1.0,
-            'center_weight_min': 0.7,
-            'sea_clutter_enabled': True,
-            'sea_state': 0.65,
-            'sea_clutter_range_min': 5.0,
-            'sea_clutter_range_max': 800.0,
-            'sea_clutter_height_scale': 0.60,
-            'sea_clutter_height_max': 2.0,
-            'sea_clutter_compete_min_height': 0.25,
-            'sea_clutter_random_stddev': 0.06,
-            'max_detections': 80,
-        }]
-    )
+            # This node should run after filtering.
+            # It converts filtered base_link detections to odom/global coordinates.
+            'input_cloud_topic': '/mmwave/filtered_detections',
+            'output_cloud_topic': '/mmwave/global_detections',
+            'output_pose_topic': '/mmwave/global_targets',
+            'odom_topic': '/wamv/odom',
+            'imu_topic': '/wamv/imu/data',
+            'global_frame_id': 'odom',
 
-    mmwave_converter_1m = Node(
-        package='lidar_robot',
-        executable='mmwave_scan_converter.py',
-        name='mmwave_scan_converter_1m',
-        output='screen',
-        parameters=[{
-            'input_topic': '/radar_1m/raw_scan',
-            'output_topic': '/mmwave_1m/detections',
-            'frame_id': 'radar_1m_link',
-            'max_range': 800.0,
-            'min_range': 2.0,
-            'horizontal_fov_deg': 120.0,
-            'angular_resolution_deg': 1.5,
-            'subbeam_resolution_deg': 0.3,
-            'radar_height_m': 1.0,
-            'intensity_threshold': 0.10,
-            'target_base_rcs': 1.0,
-            'target_material_reflectivity': 0.85,
-            'target_random_stddev': 0.04,
-            'radial_velocity_noise_stddev': 0.05,
-            'range_attenuation_alpha': 0.0035,
-            'point_target_angle_noise_deg': 0.25,
-            'extended_target_angle_noise_deg': 0.10,
-            'center_weight_enabled': True,
-            'center_weight_sigma': 1.0,
-            'center_weight_min': 0.7,
-            'sea_clutter_enabled': True,
-            'sea_state': 0.65,
-            'sea_clutter_range_min': 5.0,
-            'sea_clutter_range_max': 800.0,
-            'sea_clutter_height_scale': 0.70,
-            'sea_clutter_height_max': 2.0,
-            'sea_clutter_compete_min_height': 0.20,
-            'sea_clutter_random_stddev': 0.07,
-            'max_detections': 80,
+            # The filtered detections are already in base_link,
+            # so keep this transform zero here to avoid applying radar offset twice.
+            'radar_x_in_base': 0.0,
+            'radar_y_in_base': 0.0,
+            'radar_z_in_base': 0.0,
+            'radar_yaw_in_base_deg': 0.0,
+
+            'use_imu_yaw': True,
+            'publish_only_target_source': False,
+            'max_state_age_sec': 1.0,
         }]
     )
 
@@ -278,9 +248,13 @@ def generate_launch_description():
         robot_state_publisher,
         spawn_entity,
         rviz_node,
-        mmwave_converter_10m,
-        mmwave_converter_4m,
-        mmwave_converter_1p9m,
-        mmwave_converter_1p5m,
-        mmwave_converter_1m,
+
+        mmwave_converter_front,
+        mmwave_converter_left,
+        mmwave_converter_right,
+        mmwave_converter_rear,
+        mmwave_detections_merger,
+        mmwave_filter,
+        mmwave_odom_imu_fusion,
+        moving_targets_cmd_vel,
     ])

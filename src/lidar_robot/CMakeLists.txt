@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(gazebo_ros_pkgs REQUIRED)
 find_package(rclpy REQUIRED)
@@ -18,16 +19,29 @@ find_package(rclpy REQUIRED)
 add_executable(lidar_depth_node src/lidar_depth_node.cpp)
 ament_target_dependencies(lidar_depth_node rclcpp sensor_msgs std_msgs)
 
+add_executable(mmwave_radar_node src/mmwave_radar_node.cpp)
+ament_target_dependencies(mmwave_radar_node rclcpp sensor_msgs std_msgs nav_msgs)
+
+
+
+
 install(TARGETS
   lidar_depth_node
+  mmwave_radar_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(PROGRAMS
   src/mmwave_scan_converter.py
+  src/mmwave_odom_imu_fusion.py
   src/mmwave_detection_debug.py
+  src/moving_targets_cmd_vel.py
+  src/mmwave_detections_merger.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
+
+
 
 
 install(DIRECTORY urdf launch

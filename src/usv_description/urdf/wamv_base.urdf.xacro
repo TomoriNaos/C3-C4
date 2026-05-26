@@ -95,261 +95,105 @@
     <mmwave_reflectivity>${reflectivity_pontoon}</mmwave_reflectivity>
   </gazebo>
 
+  <!-- ========================================================= -->
+  <!-- 4 x 120° mmWave radars for 360° coverage                  -->
+  <!-- Each radar publishes a LaserScan raw topic.               -->
+  <!-- ========================================================= -->
+  <xacro:macro name="mmwave_radar" params="name x y z yaw topic">
+    <link name="${name}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.18" length="0.09"/>
+        </geometry>
+        <material name="sensor_black"/>
+      </visual>
+    </link>
 
-    <link name="radar_10m_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.18" length="0.09"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="radar_10m_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="radar_10m_link"/>
-    <origin xyz="-0.35 0 10.0" rpy="0 0 0"/>
-  </joint>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 ${yaw}"/>
+    </joint>
 
-  <gazebo reference="radar_10m_link">
-    <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
-    <sensor type="ray" name="mmwave_raw_sensor_10m">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>400</samples>
-            <resolution>1</resolution>
-            <min_angle>-1.0472</min_angle>
-            <max_angle>1.0472</max_angle>
-          </horizontal>
-        </scan>
-        <range>
-          <min>1.0</min>
-          <max>800.0</max>
-          <resolution>0.5</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.08</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_mmwave_raw_10m" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=radar_10m/raw_scan</remapping>
-        </ros>
-        <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_10m_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
+    <gazebo reference="${name}_link">
+      <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
+      <sensor type="ray" name="${name}_raw_sensor">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>true</visualize>
+        <update_rate>15</update_rate>
+        <ray>
+          <scan>
+            <horizontal>
+              <!-- 120° FOV: -60° to +60° relative to this radar link -->
+              <samples>800</samples>
+              <resolution>1</resolution>
+              <min_angle>-1.0472</min_angle>
+              <max_angle>1.0472</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>1.0</min>
+            <max>800.0</max>
+            <resolution>0.5</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.08</stddev>
+          </noise>
+        </ray>
+        <plugin name="gazebo_ros_${name}" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <remapping>~/out:=${topic}</remapping>
+          </ros>
+          <output_type>sensor_msgs/LaserScan</output_type>
+          <frame_name>${name}_link</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
 
-  <link name="radar_4m_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.18" length="0.09"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="radar_4m_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="radar_4m_link"/>
-    <origin xyz="-0.35 0 4.0" rpy="0 0 0"/>
-  </joint>
+  <!-- Front radar: covers roughly -60° to +60° -->
+  <xacro:mmwave_radar
+    name="radar_front_2p5m"
+    x="-0.35"
+    y="0.0"
+    z="2.5"
+    yaw="0.0"
+    topic="radar/front/raw_scan"/>
 
-  <gazebo reference="radar_4m_link">
-    <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
-    <sensor type="ray" name="mmwave_raw_sensor_4m">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>400</samples>
-            <resolution>1</resolution>
-            <min_angle>-1.0472</min_angle>
-            <max_angle>1.0472</max_angle>
-          </horizontal>
-        </scan>
-        <range>
-          <min>1.0</min>
-          <max>800.0</max>
-          <resolution>0.5</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.08</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_mmwave_raw_4m" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=radar_4m/raw_scan</remapping>
-        </ros>
-        <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_4m_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
+  <!-- Left radar: covers roughly +30° to +150° -->
+  <xacro:mmwave_radar
+    name="radar_left_2p5m"
+    x="-0.35"
+    y="0.0"
+    z="2.5"
+    yaw="1.5707963"
+    topic="radar/left/raw_scan"/>
 
-  <link name="radar_1p9m_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.18" length="0.09"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="radar_1p9m_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="radar_1p9m_link"/>
-    <origin xyz="-0.35 0 1.9" rpy="0 0 0"/>
-  </joint>
+  <!-- Right radar: covers roughly -150° to -30° -->
+  <xacro:mmwave_radar
+    name="radar_right_2p5m"
+    x="-0.35"
+    y="0.0"
+    z="2.5"
+    yaw="-1.5707963"
+    topic="radar/right/raw_scan"/>
 
-  <gazebo reference="radar_1p9m_link">
-    <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
-    <sensor type="ray" name="mmwave_raw_sensor_1p9m">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>400</samples>
-            <resolution>1</resolution>
-            <min_angle>-1.0472</min_angle>
-            <max_angle>1.0472</max_angle>
-          </horizontal>
-        </scan>
-        <range>
-          <min>1.0</min>
-          <max>800.0</max>
-          <resolution>0.5</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.08</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_mmwave_raw_1p9m" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=radar_1p9m/raw_scan</remapping>
-        </ros>
-        <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_1p9m_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
+  <!-- Rear radar: covers roughly +120° to +240° / -240° to -120° -->
+  <xacro:mmwave_radar
+    name="radar_rear_2p5m"
+    x="-0.35"
+    y="0.0"
+    z="2.5"
+    yaw="3.1415926"
+    topic="radar/rear/raw_scan"/>
 
-  <link name="radar_1p5m_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.18" length="0.09"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="radar_1p5m_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="radar_1p5m_link"/>
-    <origin xyz="-0.35 0 1.5" rpy="0 0 0"/>
-  </joint>
 
-  <gazebo reference="radar_1p5m_link">
-    <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
-    <sensor type="ray" name="mmwave_raw_sensor_1p5m">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>400</samples>
-            <resolution>1</resolution>
-            <min_angle>-1.0472</min_angle>
-            <max_angle>1.0472</max_angle>
-          </horizontal>
-        </scan>
-        <range>
-          <min>1.0</min>
-          <max>800.0</max>
-          <resolution>0.5</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.08</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_mmwave_raw_1p5m" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=radar_1p5m/raw_scan</remapping>
-        </ros>
-        <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_1p5m_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
 
-  <link name="radar_1m_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.18" length="0.09"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="radar_1m_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="radar_1m_link"/>
-    <origin xyz="-0.35 0 1.0" rpy="0 0 0"/>
-  </joint>
 
-  <gazebo reference="radar_1m_link">
-    <mmwave_reflectivity>${reflectivity_sensor}</mmwave_reflectivity>
-    <sensor type="ray" name="mmwave_raw_sensor_1m">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>400</samples>
-            <resolution>1</resolution>
-            <min_angle>-1.0472</min_angle>
-            <max_angle>1.0472</max_angle>
-          </horizontal>
-        </scan>
-        <range>
-          <min>1.0</min>
-          <max>800.0</max>
-          <resolution>0.5</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.08</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_mmwave_raw_1m" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=radar_1m/raw_scan</remapping>
-        </ros>
-        <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>radar_1m_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
+    
 
 
 
@@ -451,5 +295,57 @@
         <radiation_type>ultrasound</radiation_type>
       </plugin>
     </sensor>
+  </gazebo>
+
+    <!-- IMU sensor mounted on the main USV body -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.08 0.04"/>
+      </geometry>
+      <material name="sensor_black"/>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.75" rpy="0 0 0"/>
+  </joint>
+
+  <gazebo reference="imu_link">
+    <material>Gazebo/Black</material>
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>100.0</update_rate>
+      <plugin name="gazebo_ros_imu_sensor" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <namespace>/wamv</namespace>
+          <remapping>~/out:=imu/data</remapping>
+        </ros>
+        <frame_name>imu_link</frame_name>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+
+  <gazebo>
+    <plugin name="usv_planar_move" filename="libgazebo_ros_planar_move.so">
+      <ros>
+        <namespace>/wamv</namespace>
+        <remapping>cmd_vel:=cmd_vel</remapping>
+        <remapping>odom:=odom</remapping>
+      </ros>
+      <command_topic>cmd_vel</command_topic>
+      <odometry_topic>odom</odometry_topic>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <update_rate>50.0</update_rate>
+    </plugin>
   </gazebo>
 </robot>
