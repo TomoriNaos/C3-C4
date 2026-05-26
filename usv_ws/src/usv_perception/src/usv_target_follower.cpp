@@ -80,6 +80,8 @@ public:
     turn_slowdown_gain_ = declare_parameter<double>("turn_slowdown_gain", 0.35);
 
     follow_class_id_ = declare_parameter<double>("follow_class_id", 1.0);
+    follow_class_ids_ = declare_parameter<std::vector<double>>(
+      "follow_class_ids", std::vector<double>{follow_class_id_});
     prefer_follow_class_ = declare_parameter<bool>("prefer_follow_class", true);
     min_follow_confidence_ = declare_parameter<double>("min_follow_confidence", 0.18);
     min_track_hits_ = declare_parameter<int>("min_track_hits", 2);
@@ -392,7 +394,15 @@ private:
 
   bool is_follow_class(const TrackObservation & track) const
   {
-    return follow_class_id_ >= 0.0 && std::abs(track.class_id - follow_class_id_) < 0.5;
+    if (follow_class_ids_.empty()) {
+      return follow_class_id_ >= 0.0 && std::abs(track.class_id - follow_class_id_) < 0.5;
+    }
+    for (const double class_id : follow_class_ids_) {
+      if (class_id >= 0.0 && std::abs(track.class_id - class_id) < 0.5) {
+        return true;
+      }
+    }
+    return false;
   }
 
   AvoidanceCommand compute_avoidance(
@@ -647,6 +657,7 @@ private:
   double target_reacquire_gate_{9.0};
   double turn_slowdown_gain_{0.35};
   double follow_class_id_{1.0};
+  std::vector<double> follow_class_ids_;
   double min_follow_confidence_{0.18};
   int min_track_hits_{2};
   double obstacle_lookahead_{34.0};

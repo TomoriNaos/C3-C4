@@ -22,6 +22,7 @@ public:
   DynamicTargetController()
   : Node("dynamic_target_controller"), start_time_(std::chrono::steady_clock::now())
   {
+    start_ros_seconds_ = get_clock()->now().seconds();
     const double update_rate = declare_parameter<double>("update_rate", 15.0);
     wave_amplitude_ = declare_parameter<double>("wave_amplitude", 0.10);
     motion_time_scale_ = declare_parameter<double>("motion_time_scale", 3.0);
@@ -32,7 +33,11 @@ public:
     debris_name_ = declare_parameter<std::string>("debris_name", "drift_debris");
     survey_boat_name_ = declare_parameter<std::string>("survey_boat_name", "survey_boat");
     service_boat_name_ = declare_parameter<std::string>("service_boat_name", "service_boat");
+    container_name_ = declare_parameter<std::string>("container_name", "floating_container");
+    platform_name_ = declare_parameter<std::string>("platform_name", "research_platform");
     tracked_target_name_ = declare_parameter<std::string>("tracked_target_name", vessel_name_);
+    annotation_mode_ = declare_parameter<bool>("annotation_mode", false);
+    annotation_scene_duration_ = declare_parameter<double>("annotation_scene_duration", 2.4);
 
     client_ = create_client<gazebo_msgs::srv::SetEntityState>("/set_entity_state");
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("simulated_targets", 10);
@@ -49,8 +54,20 @@ private:
     double y;
   };
 
-  double elapsed_seconds() const
+  struct AnnotationObject
   {
+    std::string name;
+    double base_z;
+    double base_x;
+    double base_y;
+  };
+
+  double elapsed_seconds()
+  {
+    const double ros_now = get_clock()->now().seconds();
+    if (std::isfinite(ros_now) && ros_now >= start_ros_seconds_) {
+      return ros_now - start_ros_seconds_;
+    }
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time_).count();
   }
 
@@ -65,6 +82,11 @@ private:
     }
 
     const double t = elapsed_seconds() * motion_time_scale_;
+    if (annotation_mode_) {
+      publish_annotation_targets(t);
+      return;
+    }
+
     std::vector<gazebo_msgs::msg::EntityState> targets;
     targets.reserve(7);
     targets.push_back(path_state(
@@ -96,6 +118,73 @@ private:
       service_boat_name_,
       {{95.0, 36.0}, {74.0, 22.0}, {53.0, 12.0}, {31.0, 5.0}, {12.0, -2.0}},
       0.38, 0.15, t, 75.0));
+
+    for (const auto & target : targets) {
+      set_target_state(target);
+    }
+    publish_markers(targets);
+  }
+
+  void publish_annotation_targets(double t)
+  {
+    const std::vector<AnnotationObject> subjects{
+      {vessel_name_, 0.42, 9.0, 0.0},
+      {fishing_boat_name_, 0.34, 7.4, 0.0},
+      {survey_boat_name_, 0.36, 8.3, 0.0},
+      {service_boat_name_, 0.38, 8.6, 0.0},
+      {fishnet_buoy_name_, 0.30, 5.3, 0.0},
+      {obstacle_name_, 0.24, 5.7, 0.0},
+      {debris_name_, 0.16, 6.2, 0.0},
+      {container_name_, 0.20, 6.8, 0.0},
+      {platform_name_, 0.45, 12.0, 0.0}};
+
+    std::vector<gazebo_msgs::msg::EntityState> targets;
+    targets.reserve(subjects.size());
+
+    const double scene_duration = std::max(0.8, annotation_scene_duration_);
+    const double local_t = std::fmod(t, scene_duration);
+    constexpr double two_pi = 6.28318530717958647692;
+    const int scene = static_cast<int>(std::floor(t / scene_duration)) %
+      (static_cast<int>(subjects.size()) + 3);
+    const double phase = std::clamp(local_t / scene_duration, 0.0, 1.0);
+
+    for (const auto & subject : subjects) {
+      targets.push_back(hidden_state(subject.name, subject.base_z));
+    }
+
+    auto set_by_name = [&](const AnnotationObject & subject, double yaw, double x_offset, double y_offset) {
+      for (auto & target : targets) {
+        if (target.name != subject.name) {
+          continue;
+        }
+        const double x = subject.base_x + x_offset + 0.10 * std::sin(two_pi * phase);
+        const double y = subject.base_y + y_offset + 0.10 * std::cos(two_pi * phase);
+        target = make_state(
+          subject.name, x, y, subject.base_z + wave_height(x, y, t, wave_amplitude_),
+          yaw, 0.0, 0.0);
+        return;
+      }
+    };
+
+    if (scene < static_cast<int>(subjects.size())) {
+      const auto & subject = subjects[static_cast<std::size_t>(scene)];
+      const double distance_offset = (scene % 2 == 0) ? 0.0 : 2.4;
+      const double lateral_offset = static_cast<double>((scene % 3) - 1) * 0.55;
+      set_by_name(subject, two_pi * phase, distance_offset, lateral_offset);
+    } else {
+      const int combo_group = scene - static_cast<int>(subjects.size());
+      if (combo_group == 0) {
+        set_by_name(subjects[0], two_pi * phase, 1.0, -1.25);
+        set_by_name(subjects[4], two_pi * phase + 1.8, -1.0, 1.45);
+      } else if (combo_group == 1) {
+        set_by_name(subjects[1], two_pi * phase, 1.6, 1.05);
+        set_by_name(subjects[5], two_pi * phase + 1.3, -1.0, -1.35);
+        set_by_name(subjects[6], two_pi * phase + 3.1, 3.0, -0.2);
+      } else {
+        set_by_name(subjects[8], two_pi * phase, 3.0, -0.85);
+        set_by_name(subjects[3], two_pi * phase + 2.4, -1.0, 1.45);
+      }
+    }
 
     for (const auto & target : targets) {
       set_target_state(target);
@@ -175,6 +264,11 @@ private:
     return state;
   }
 
+  static gazebo_msgs::msg::EntityState hidden_state(const std::string & name, double z)
+  {
+    return make_state(name, -80.0, 0.0, z, 0.0, 0.0, 0.0);
+  }
+
   void set_target_state(const gazebo_msgs::msg::EntityState & state)
   {
     auto req = std::make_shared<gazebo_msgs::srv::SetEntityState::Request>();
@@ -245,9 +339,14 @@ private:
   std::string debris_name_;
   std::string survey_boat_name_;
   std::string service_boat_name_;
+  std::string container_name_;
+  std::string platform_name_;
   std::string tracked_target_name_;
+  bool annotation_mode_{false};
+  double annotation_scene_duration_{2.4};
   bool warned_waiting_{false};
   std::chrono::steady_clock::time_point start_time_;
+  double start_ros_seconds_{0.0};
   rclcpp::Client<gazebo_msgs::srv::SetEntityState>::SharedPtr client_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::TimerBase::SharedPtr timer_;

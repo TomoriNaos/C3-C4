@@ -52,6 +52,10 @@ add_executable(dynamic_target_controller src/dynamic_target_controller.cpp)
 target_include_directories(dynamic_target_controller PRIVATE include)
 ament_target_dependencies(dynamic_target_controller ${NODE_DEPS})
 
+add_executable(ais_simulator src/ais_simulator.cpp)
+target_include_directories(ais_simulator PRIVATE include)
+ament_target_dependencies(ais_simulator ${NODE_DEPS})
+
 add_executable(radar_sonar_tracker src/radar_sonar_tracker.cpp)
 target_include_directories(radar_sonar_tracker PRIVATE include)
 ament_target_dependencies(radar_sonar_tracker ${NODE_DEPS})
@@ -73,14 +77,20 @@ add_executable(usv_target_follower src/usv_target_follower.cpp)
 target_include_directories(usv_target_follower PRIVATE include)
 ament_target_dependencies(usv_target_follower ${NODE_DEPS})
 
+add_executable(tracking_evaluator src/tracking_evaluator.cpp)
+target_include_directories(tracking_evaluator PRIVATE include)
+ament_target_dependencies(tracking_evaluator ${NODE_DEPS})
+
 install(TARGETS
   gated_camera_recognizer
   dynamic_target_controller
+  ais_simulator
   radar_sonar_tracker
   ros_image_recorder
   uav_patrol_controller
   wave_buoyancy_node
   usv_target_follower
+  tracking_evaluator
   DESTINATION lib/${PROJECT_NAME}
 )
 

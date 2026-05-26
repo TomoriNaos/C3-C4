@@ -33,6 +33,12 @@ public:
     every_n_ = std::max(1, static_cast<int>(declare_parameter<int>("every_n", 10)));
     max_images_ = std::max(0, static_cast<int>(declare_parameter<int>("max_images", 0)));
     extension_ = strip_extension_dot(declare_parameter<std::string>("extension", "jpg"));
+    crop_x_ = std::max(0, static_cast<int>(declare_parameter<int>("crop_x", 0)));
+    crop_y_ = std::max(0, static_cast<int>(declare_parameter<int>("crop_y", 0)));
+    crop_width_ = std::max(0, static_cast<int>(declare_parameter<int>("crop_width", 0)));
+    crop_height_ = std::max(0, static_cast<int>(declare_parameter<int>("crop_height", 0)));
+    resize_width_ = std::max(0, static_cast<int>(declare_parameter<int>("resize_width", 0)));
+    resize_height_ = std::max(0, static_cast<int>(declare_parameter<int>("resize_height", 0)));
 
     std::filesystem::create_directories(output_dir_);
     image_sub_ = create_subscription<sensor_msgs::msg::Image>(
@@ -87,6 +93,7 @@ private:
     cv::Mat bgr;
     try {
       bgr = image_msg_to_bgr(*msg);
+      bgr = postprocess_image(bgr);
     } catch (const std::exception & exc) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "%s", exc.what());
       return;
@@ -156,6 +163,26 @@ private:
     throw std::runtime_error("Unsupported image encoding: " + msg.encoding);
   }
 
+  cv::Mat postprocess_image(const cv::Mat & input) const
+  {
+    cv::Mat output = input;
+    if (crop_width_ > 0 && crop_height_ > 0) {
+      const int x = std::clamp(crop_x_, 0, std::max(0, input.cols - 1));
+      const int y = std::clamp(crop_y_, 0, std::max(0, input.rows - 1));
+      const int width = std::min(crop_width_, input.cols - x);
+      const int height = std::min(crop_height_, input.rows - y);
+      if (width > 0 && height > 0) {
+        output = input(cv::Rect(x, y, width, height)).clone();
+      }
+    }
+    if (resize_width_ > 0 && resize_height_ > 0) {
+      cv::Mat resized;
+      cv::resize(output, resized, cv::Size(resize_width_, resize_height_), 0.0, 0.0, cv::INTER_AREA);
+      output = resized;
+    }
+    return output;
+  }
+
   static cv::Mat depth_to_bgr(const cv::Mat & depth)
   {
     std::vector<float> positive_values;
@@ -212,6 +239,12 @@ private:
   std::string extension_{"jpg"};
   int every_n_{10};
   int max_images_{0};
+  int crop_x_{0};
+  int crop_y_{0};
+  int crop_width_{0};
+  int crop_height_{0};
+  int resize_width_{0};
+  int resize_height_{0};
   int frame_count_{0};
   int saved_count_{0};
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;

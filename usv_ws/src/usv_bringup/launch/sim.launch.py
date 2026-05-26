@@ -33,6 +33,11 @@ def generate_launch_description():
         default_value='false',
         description='Run gzserver with verbose logging'
     )
+    world_path_arg = DeclareLaunchArgument(
+        'world_path',
+        default_value=world_path,
+        description='Gazebo world file to load'
+    )
     perception_arg = DeclareLaunchArgument(
         'perception',
         default_value='true',
@@ -43,10 +48,25 @@ def generate_launch_description():
         default_value='true',
         description='Move the simulated vessel and floating obstacle'
     )
+    target_model_arg = DeclareLaunchArgument(
+        'target_model',
+        default_value='moving_vessel',
+        description='Gazebo model name used as the primary tracking target'
+    )
     usv_follow_arg = DeclareLaunchArgument(
         'usv_follow',
         default_value='true',
         description='Move the USV slowly toward the fused tracked target'
+    )
+    evaluation_arg = DeclareLaunchArgument(
+        'evaluation',
+        default_value='true',
+        description='Publish tracking and collision-risk evaluation metrics'
+    )
+    ais_arg = DeclareLaunchArgument(
+        'ais',
+        default_value='true',
+        description='Publish simulated AIS targets and fuse them in the tracker'
     )
     uav_arg = DeclareLaunchArgument(
         'uav',
@@ -77,7 +97,7 @@ def generate_launch_description():
     gzserver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([pkg_gazebo_ros, '/launch/gzserver.launch.py']),
         launch_arguments={
-            'world': world_path,
+            'world': LaunchConfiguration('world_path'),
             'verbose': LaunchConfiguration('verbose')
         }.items()
     )
@@ -164,8 +184,23 @@ def generate_launch_description():
         executable='dynamic_target_controller',
         name='dynamic_target_controller',
         output='screen',
-        parameters=[perception_config, {'use_sim_time': True}],
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'tracked_target_name': LaunchConfiguration('target_model')
+            }
+        ],
         condition=IfCondition(LaunchConfiguration('dynamic_targets'))
+    )
+
+    ais_simulator = Node(
+        package='usv_perception',
+        executable='ais_simulator',
+        name='ais_simulator',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('ais'))
     )
 
     radar_sonar_tracker = Node(
@@ -175,6 +210,15 @@ def generate_launch_description():
         output='screen',
         parameters=[perception_config, {'use_sim_time': True}],
         condition=IfCondition(LaunchConfiguration('perception'))
+    )
+
+    tracking_evaluator = Node(
+        package='usv_perception',
+        executable='tracking_evaluator',
+        name='tracking_evaluator',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('evaluation'))
     )
 
     gated_camera_recognizer = Node(
@@ -197,7 +241,13 @@ def generate_launch_description():
         executable='uav_patrol_controller',
         name='uav_patrol_controller',
         output='screen',
-        parameters=[perception_config, {'use_sim_time': True}],
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'target_model_name': LaunchConfiguration('target_model')
+            }
+        ],
         condition=IfCondition(LaunchConfiguration('uav'))
     )
 
@@ -306,9 +356,13 @@ def generate_launch_description():
         gui_arg,
         rviz_arg,
         verbose_arg,
+        world_path_arg,
         perception_arg,
         dynamic_targets_arg,
+        target_model_arg,
         usv_follow_arg,
+        evaluation_arg,
+        ais_arg,
         uav_arg,
         yolo_model_arg,
         c3_mmwave_arg,
@@ -322,7 +376,9 @@ def generate_launch_description():
         usv_target_follower,
         wave_buoyancy_node,
         dynamic_target_controller,
+        ais_simulator,
         radar_sonar_tracker,
+        tracking_evaluator,
         gated_camera_recognizer,
         uav_patrol_controller,
         uav_gated_camera_recognizer,

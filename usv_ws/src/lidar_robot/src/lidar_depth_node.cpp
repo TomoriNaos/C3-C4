@@ -110,6 +110,8 @@ private:
 
     std::vector<PointXYZ> current_points_vector;
     int gap_count = 0;
+    const auto min_cluster_size = static_cast<std::vector<PointXYZ>::size_type>(
+      std::max(0, min_cluster_size_));
 
     for (size_t i = 0; i < points.size(); ++i)
     {
@@ -151,7 +153,7 @@ private:
 
         if (gap_count > gap_max_)
         {
-          if (current_points_vector.size() >= min_cluster_size_)
+          if (current_points_vector.size() >= min_cluster_size)
           {
             Cluster cluster;
             cluster.points = current_points_vector;
@@ -172,7 +174,7 @@ private:
       }
     }
 
-    if (current_points_vector.size() >= min_cluster_size_)
+    if (current_points_vector.size() >= min_cluster_size)
     {
       Cluster cluster;
       cluster.points = current_points_vector;
@@ -189,9 +191,9 @@ private:
     // 再过滤一次：少于3个点的点簇视为噪点
     clusters.erase(
       std::remove_if(clusters.begin(), clusters.end(),
-        [this](const Cluster & c)
+        [min_cluster_size](const Cluster & c)
         {
-          return c.points.size() < min_cluster_size_;
+          return c.points.size() < min_cluster_size;
         }),
       clusters.end());
 

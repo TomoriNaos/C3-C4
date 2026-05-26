@@ -13,9 +13,12 @@ radar_sonar_tracker:
     track_timeout: 4.0
     gated_points_topic: /gated_camera/detection_points
     uav_points_topic: /uav/gated_camera/detection_points
+    ais_topic: /ais/targets
     camera_fusion_timeout: 0.8
     uav_fusion_timeout: 1.2
     min_camera_confidence: 0.20
+    ais_confidence: 0.88
+    min_ais_confidence: 0.45
 
 gated_camera_recognizer:
   ros__parameters:
@@ -28,7 +31,7 @@ gated_camera_recognizer:
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [buoy, fishing_boat]
+    class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, platform]
     confidence_threshold: 0.25
     base_frame: base_link
     camera_x_offset: 1.55
@@ -53,7 +56,7 @@ uav_gated_camera_recognizer:
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [buoy, fishing_boat]
+    class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, platform]
     confidence_threshold: 0.25
     base_frame: base_link
     camera_x_offset: 1.55
@@ -81,6 +84,23 @@ dynamic_target_controller:
     survey_boat_name: survey_boat
     service_boat_name: service_boat
 
+ais_simulator:
+  ros__parameters:
+    model_states_topic: /model_states
+    output_topic: /ais/targets
+    usv_model_name: wamv
+    target_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+      - cargo_ship_far
+      - anchored_tanker
+    mmsi_start: 413000100
+    publish_rate: 2.0
+    confidence: 0.90
+    max_range: 240.0
+
 uav_patrol_controller:
   ros__parameters:
     model_name: als_uav
@@ -99,6 +119,7 @@ uav_patrol_controller:
     model_states_topic: /model_states
     remote_target_topic: /uav/remote_target_status
     remote_target_confidence: 0.94
+    remote_target_class_id: 0.0
     target_follow_backoff: 18.0
     target_lateral_sweep: 13.0
     target_timeout: 2.0
@@ -131,7 +152,8 @@ usv_target_follower:
     target_lock_timeout: 4.5
     target_reacquire_gate: 9.0
     turn_slowdown_gain: 0.35
-    follow_class_id: 1.0
+    follow_class_id: 0.0
+    follow_class_ids: [0.0, 1.0]
     prefer_follow_class: true
     min_follow_confidence: 0.18
     min_track_hits: 2
@@ -165,3 +187,29 @@ wave_buoyancy_node:
     update_rate: 0.5
     vertical_force_scale: 18.0
     torque_scale: 5.0
+
+tracking_evaluator:
+  ros__parameters:
+    model_states_topic: /model_states
+    track_status_topic: /tracked_objects_text
+    usv_model_name: wamv
+    target_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+    obstacle_model_names:
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - net_line_a
+    match_gate: 7.0
+    eval_range: 140.0
+    track_timeout: 2.5
+    cpa_horizon: 120.0
+    publish_rate: 2.0

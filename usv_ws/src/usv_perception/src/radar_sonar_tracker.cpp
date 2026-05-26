@@ -94,6 +94,7 @@ public:
       declare_parameter<std::string>("gated_points_topic", "/gated_camera/detection_points");
     const std::string uav_points_topic =
       declare_parameter<std::string>("uav_points_topic", "/uav/gated_camera/detection_points");
+    const std::string ais_topic = declare_parameter<std::string>("ais_topic", "/ais/targets");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     radar_x_offset_ = declare_parameter<double>("radar_x_offset", -0.35);
     radar_y_offset_ = declare_parameter<double>("radar_y_offset", 0.0);
@@ -106,6 +107,8 @@ public:
     camera_fusion_timeout_ = declare_parameter<double>("camera_fusion_timeout", 0.8);
     uav_fusion_timeout_ = declare_parameter<double>("uav_fusion_timeout", 1.2);
     min_camera_confidence_ = declare_parameter<double>("min_camera_confidence", 0.20);
+    ais_confidence_ = declare_parameter<double>("ais_confidence", 0.88);
+    min_ais_confidence_ = declare_parameter<double>("min_ais_confidence", 0.45);
 
     radar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       radar_topic, rclcpp::SensorDataQoS(),
@@ -123,13 +126,16 @@ public:
       [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
         on_detection_points(msg, "uav_gated_camera", 0.72);
       });
+    ais_sub_ = create_subscription<std_msgs::msg::String>(
+      ais_topic, 10, std::bind(&RadarSonarTracker::on_ais_targets, this, std::placeholders::_1));
 
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("tracked_objects", 10);
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("tracked_object_poses", 10);
     text_pub_ = create_publisher<std_msgs::msg::String>("tracked_objects_text", 10);
     RCLCPP_INFO(
-      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s",
-      radar_topic.c_str(), sonar_topic.c_str(), gated_points_topic.c_str(), uav_points_topic.c_str());
+      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s ais=%s",
+      radar_topic.c_str(), sonar_topic.c_str(), gated_points_topic.c_str(), uav_points_topic.c_str(),
+      ais_topic.c_str());
   }
 
 private:
@@ -173,6 +179,17 @@ private:
     double source_weight)
   {
     const auto detections = parse_detection_cloud(*msg, source, source_weight);
+    if (detections.empty()) {
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    update_tracks(detections, now);
+    publish_tracks();
+  }
+
+  void on_ais_targets(const std_msgs::msg::String::SharedPtr msg)
+  {
+    const auto detections = parse_ais_targets(msg->data);
     if (detections.empty()) {
       return;
     }
@@ -301,6 +318,58 @@ private:
     float value = 0.0F;
     std::memcpy(&value, data + offset, sizeof(float));
     return value;
+  }
+
+  std::vector<Detection> parse_ais_targets(const std::string & text) const
+  {
+    std::vector<Detection> detections;
+    std::size_t pos = 0;
+    while (true) {
+      const auto start = text.find('{', pos);
+      if (start == std::string::npos) {
+        break;
+      }
+      const auto end = text.find('}', start);
+      if (end == std::string::npos) {
+        break;
+      }
+
+      const std::string block = text.substr(start, end - start + 1);
+      Detection det;
+      if (!extract_double(block, "\"x\":", det.x) || !extract_double(block, "\"y\":", det.y)) {
+        pos = end + 1;
+        continue;
+      }
+      extract_double(block, "\"class_id\":", det.class_id);
+      det.confidence = ais_confidence_;
+      extract_double(block, "\"confidence\":", det.confidence);
+      det.confidence = std::clamp(det.confidence, min_ais_confidence_, 0.98);
+      det.source = "ais";
+      if (std::isfinite(det.x) && std::isfinite(det.y) && det.x > -5.0 &&
+        std::hypot(det.x, det.y) <= max_tracking_range_)
+      {
+        detections.push_back(det);
+      }
+      pos = end + 1;
+    }
+    return detections;
+  }
+
+  static bool extract_double(const std::string & text, const std::string & key, double & out)
+  {
+    const auto key_pos = text.find(key);
+    if (key_pos == std::string::npos) {
+      return false;
+    }
+    const auto value_start = key_pos + key.size();
+    const auto value_end = text.find_first_of(",}", value_start);
+    const std::string token = text.substr(value_start, value_end - value_start);
+    try {
+      out = std::stod(token);
+      return true;
+    } catch (...) {
+      return false;
+    }
   }
 
   void finish_cluster(
@@ -495,6 +564,8 @@ private:
   double camera_fusion_timeout_{0.8};
   double uav_fusion_timeout_{1.2};
   double min_camera_confidence_{0.20};
+  double ais_confidence_{0.88};
+  double min_ais_confidence_{0.45};
   int next_track_id_{1};
   bool has_sonar_detection_{false};
   Detection last_sonar_detection_;
@@ -504,6 +575,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sonar_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gated_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr uav_points_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ais_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr text_pub_;
