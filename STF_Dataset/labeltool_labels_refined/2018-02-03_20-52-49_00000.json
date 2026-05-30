@@ -1,0 +1,42 @@
+{
+    "daytime": {
+        "day": false,
+        "night": true
+    },
+    "fog": {
+        "no": true,
+        "yes": {
+            "denseFog": false,
+            "lightFog": false
+        }
+    },
+    "infrastructure": {
+        "highway": false,
+        "inCity": true,
+        "suburban": false
+    },
+    "point_removed": 38,
+    "precipitation": {
+        "no": false,
+        "yes": {
+            "rain": true,
+            "snow": {
+                "heavySnow": false,
+                "lightSnow": false
+            }
+        }
+    },
+    "roadState": {
+        "dry": true,
+        "fullSnow": false,
+        "partialSnow": false,
+        "wet": false
+    },
+    "sidewalkState": {
+        "clean": true,
+        "partialSnow": false,
+        "snowCovered": false
+    },
+    "tunnel": false,
+    "twilight": false
+}
