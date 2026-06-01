@@ -94,6 +94,13 @@ public:
       declare_parameter<std::string>("gated_points_topic", "/gated_camera/detection_points");
     const std::string uav_points_topic =
       declare_parameter<std::string>("uav_points_topic", "/uav/gated_camera/detection_points");
+    const std::string pseudocolor_gated_points_topic =
+      declare_parameter<std::string>(
+        "pseudocolor_gated_points_topic", "/gated_camera/pseudocolor/detection_points");
+    const std::string stf_gated_points_topic =
+      declare_parameter<std::string>("stf_gated_points_topic", "/gated_camera/stf_detection_points");
+    const std::string bev_gated_points_topic =
+      declare_parameter<std::string>("bev_gated_points_topic", "/gated_camera/bev_detection_points");
     const std::string ais_topic = declare_parameter<std::string>("ais_topic", "/ais/targets");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     radar_x_offset_ = declare_parameter<double>("radar_x_offset", -0.35);
@@ -126,6 +133,27 @@ public:
       [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
         on_detection_points(msg, "uav_gated_camera", 0.72);
       });
+    if (!pseudocolor_gated_points_topic.empty()) {
+      pseudocolor_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        pseudocolor_gated_points_topic, rclcpp::SensorDataQoS(),
+        [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          on_detection_points(msg, "pseudocolor_gated_yolo", 0.78);
+        });
+    }
+    if (!stf_gated_points_topic.empty()) {
+      stf_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        stf_gated_points_topic, rclcpp::SensorDataQoS(),
+        [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          on_detection_points(msg, "stf_gated_slices", 0.68);
+        });
+    }
+    if (!bev_gated_points_topic.empty()) {
+      bev_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        bev_gated_points_topic, rclcpp::SensorDataQoS(),
+        [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          on_detection_points(msg, "gated_bev", 0.63);
+        });
+    }
     ais_sub_ = create_subscription<std_msgs::msg::String>(
       ais_topic, 10, std::bind(&RadarSonarTracker::on_ais_targets, this, std::placeholders::_1));
 
@@ -133,9 +161,11 @@ public:
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("tracked_object_poses", 10);
     text_pub_ = create_publisher<std_msgs::msg::String>("tracked_objects_text", 10);
     RCLCPP_INFO(
-      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s ais=%s",
+      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s pseudocolor=%s stf_gated=%s bev_gated=%s ais=%s",
       radar_topic.c_str(), sonar_topic.c_str(), gated_points_topic.c_str(), uav_points_topic.c_str(),
-      ais_topic.c_str());
+      pseudocolor_gated_points_topic.empty() ? "off" : pseudocolor_gated_points_topic.c_str(),
+      stf_gated_points_topic.empty() ? "off" : stf_gated_points_topic.c_str(),
+      bev_gated_points_topic.empty() ? "off" : bev_gated_points_topic.c_str(), ais_topic.c_str());
   }
 
 private:
@@ -575,6 +605,9 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sonar_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gated_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr uav_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pseudocolor_gated_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr stf_gated_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr bev_gated_points_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ais_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pose_pub_;

@@ -37,6 +37,7 @@ public:
     platform_name_ = declare_parameter<std::string>("platform_name", "research_platform");
     tracked_target_name_ = declare_parameter<std::string>("tracked_target_name", vessel_name_);
     annotation_mode_ = declare_parameter<bool>("annotation_mode", false);
+    annotation_occlusion_mode_ = declare_parameter<bool>("annotation_occlusion_mode", false);
     annotation_scene_duration_ = declare_parameter<double>("annotation_scene_duration", 2.4);
 
     client_ = create_client<gazebo_msgs::srv::SetEntityState>("/set_entity_state");
@@ -83,6 +84,10 @@ private:
 
     const double t = elapsed_seconds() * motion_time_scale_;
     if (annotation_mode_) {
+      if (annotation_occlusion_mode_) {
+        publish_occlusion_annotation_targets(t);
+        return;
+      }
       publish_annotation_targets(t);
       return;
     }
@@ -118,6 +123,193 @@ private:
       service_boat_name_,
       {{95.0, 36.0}, {74.0, 22.0}, {53.0, 12.0}, {31.0, 5.0}, {12.0, -2.0}},
       0.38, 0.15, t, 75.0));
+
+    for (const auto & target : targets) {
+      set_target_state(target);
+    }
+    publish_markers(targets);
+  }
+
+  void publish_occlusion_annotation_targets(double t)
+  {
+    const std::vector<AnnotationObject> subjects{
+      {vessel_name_, 0.42, 0.0, 0.0},
+      {fishing_boat_name_, 0.34, 0.0, 0.0},
+      {survey_boat_name_, 0.36, 0.0, 0.0},
+      {service_boat_name_, 0.38, 0.0, 0.0},
+      {fishnet_buoy_name_, 0.30, 0.0, 0.0},
+      {obstacle_name_, 0.24, 0.0, 0.0},
+      {debris_name_, 0.16, 0.0, 0.0},
+      {container_name_, 0.20, 0.0, 0.0},
+      {platform_name_, 0.45, 0.0, 0.0}};
+
+    std::vector<gazebo_msgs::msg::EntityState> targets;
+    targets.reserve(subjects.size());
+    for (const auto & subject : subjects) {
+      targets.push_back(hidden_state(subject.name, subject.base_z));
+    }
+
+    const double scene_duration = std::max(0.8, annotation_scene_duration_);
+    const int scene_index = static_cast<int>(std::floor(t / scene_duration));
+    const double local_t = std::fmod(t, scene_duration);
+    constexpr double two_pi = 6.28318530717958647692;
+    constexpr int scene_count = 18;
+    const int scene = scene_index % scene_count;
+    const int cycle = scene_index / scene_count;
+    const double phase = std::clamp(local_t / scene_duration, 0.0, 1.0);
+    const double centered_phase = phase - 0.5;
+    const double fast = std::sin(2.0 * two_pi * phase);
+    const double cycle_lateral_shift = 0.22 * std::sin(0.73 * static_cast<double>(cycle) + 0.41 * scene);
+    const double cycle_range_shift = 0.30 * std::cos(0.37 * static_cast<double>(cycle) + 0.29 * scene);
+
+    auto set_named = [&](
+        const std::string & name, double x, double y, double z, double yaw,
+        double along_motion = 0.0, double lateral_motion = 0.0, double yaw_motion = 0.0) {
+      const double animated_x =
+        x + cycle_range_shift + along_motion * centered_phase + 0.07 * std::sin(two_pi * phase + x);
+      const double animated_y =
+        y + cycle_lateral_shift + lateral_motion * centered_phase + 0.06 * std::cos(two_pi * phase + y);
+      const double animated_yaw = yaw + yaw_motion * centered_phase + 0.04 * fast;
+      const double vx = along_motion / scene_duration;
+      const double vy = lateral_motion / scene_duration;
+      for (auto & state : targets) {
+        if (state.name == name) {
+          state = make_state(
+            name, animated_x, animated_y,
+            z + wave_height(animated_x, animated_y, t, wave_amplitude_), animated_yaw, vx, vy);
+          return;
+        }
+      }
+    };
+
+    switch (scene) {
+      case 0:
+        set_named(vessel_name_, 12.8, 0.35, 0.42, 0.12, 0.70, -0.28, 0.25);
+        set_named(survey_boat_name_, 9.8, 0.08, 0.36, -0.08, 0.36, 0.18, 0.18);
+        set_named(obstacle_name_, 7.2, -0.34, 0.24, 0.0, 0.02, 0.10, 0.0);
+        set_named(debris_name_, 7.8, -2.10, 0.16, 0.16, 0.14, 0.36, 0.15);
+        set_named(fishnet_buoy_name_, 15.4, 1.32, 0.30, 0.0, -0.05, -0.08, 0.0);
+        break;
+      case 1:
+        set_named(container_name_, 7.0, 1.55, 0.20, -0.18, -0.08, -0.34, 0.18);
+        set_named(fishing_boat_name_, 10.6, 0.70, 0.34, 0.28, 0.52, -0.18, 0.35);
+        set_named(vessel_name_, 14.5, 0.25, 0.42, 0.02, 0.28, 0.08, 0.12);
+        set_named(fishnet_buoy_name_, 12.6, -1.42, 0.30, 0.0, 0.05, 0.08, 0.0);
+        set_named(platform_name_, 17.8, -0.72, 0.45, 0.0, -0.04, 0.06, 0.0);
+        break;
+      case 2:
+        set_named(service_boat_name_, 9.2, -0.68, 0.38, 0.16, 0.72, 0.16, 0.36);
+        set_named(survey_boat_name_, 11.4, -0.92, 0.36, -0.20, -0.20, 0.12, 0.20);
+        set_named(obstacle_name_, 8.1, -0.70, 0.24, 0.0, 0.00, -0.04, 0.0);
+        set_named(container_name_, 15.4, 1.10, 0.20, 0.20, -0.08, -0.14, 0.12);
+        set_named(fishnet_buoy_name_, 17.2, -1.78, 0.30, 0.0, 0.00, 0.12, 0.0);
+        break;
+      case 3:
+        set_named(platform_name_, 11.2, 0.16, 0.45, 0.0, 0.05, -0.06, 0.0);
+        set_named(vessel_name_, 13.4, 0.55, 0.42, 0.10, 0.34, -0.10, 0.16);
+        set_named(obstacle_name_, 8.4, -0.02, 0.24, 0.0, 0.02, 0.04, 0.0);
+        set_named(debris_name_, 7.2, 1.85, 0.16, -0.25, 0.24, -0.22, 0.22);
+        set_named(service_boat_name_, 16.2, -1.20, 0.38, -0.10, -0.15, 0.15, 0.12);
+        break;
+      case 4:
+        set_named(survey_boat_name_, 9.0, -1.10, 0.36, 0.35, 0.48, 0.22, 0.38);
+        set_named(fishnet_buoy_name_, 7.0, -0.92, 0.30, 0.0, 0.00, 0.10, 0.0);
+        set_named(container_name_, 12.0, -1.38, 0.20, -0.15, 0.18, 0.02, 0.16);
+        set_named(vessel_name_, 17.2, 1.55, 0.42, -0.05, -0.18, -0.10, 0.08);
+        set_named(debris_name_, 8.2, 1.95, 0.16, 0.10, 0.20, -0.18, 0.12);
+        break;
+      case 5:
+        set_named(container_name_, 8.2, 0.88, 0.20, -0.15, 0.24, 0.14, 0.45);
+        set_named(vessel_name_, 12.8, 1.28, 0.42, 0.18, 0.40, -0.12, 0.28);
+        set_named(fishnet_buoy_name_, 6.8, -1.62, 0.30, 0.0, 0.00, 0.08, 0.0);
+        set_named(service_boat_name_, 16.4, -0.45, 0.38, 0.18, -0.18, 0.20, 0.18);
+        set_named(obstacle_name_, 11.0, 1.65, 0.24, 0.0, 0.02, -0.12, 0.0);
+        break;
+      case 6:
+        set_named(debris_name_, 6.6, -0.72, 0.16, 0.15, 0.32, 0.12, 0.30);
+        set_named(fishing_boat_name_, 10.1, -1.10, 0.34, -0.12, 0.50, 0.16, 0.36);
+        set_named(obstacle_name_, 13.2, 1.16, 0.24, 0.0, -0.04, -0.08, 0.0);
+        set_named(platform_name_, 18.0, 1.82, 0.45, 0.0, 0.00, -0.08, 0.0);
+        set_named(vessel_name_, 15.5, -1.50, 0.42, 0.08, -0.18, 0.10, 0.10);
+        break;
+      case 7:
+        set_named(obstacle_name_, 7.4, 1.10, 0.24, 0.0, 0.02, -0.10, 0.0);
+        set_named(service_boat_name_, 10.8, 1.48, 0.38, 0.18, 0.58, -0.16, 0.34);
+        set_named(survey_boat_name_, 14.0, -0.88, 0.36, -0.12, -0.12, 0.12, 0.12);
+        set_named(debris_name_, 6.8, -2.20, 0.16, 0.0, 0.22, 0.20, 0.16);
+        set_named(container_name_, 17.4, 0.55, 0.20, 0.25, -0.10, -0.10, 0.08);
+        break;
+      case 8:
+        set_named(vessel_name_, 11.8, -1.45, 0.42, 0.22, 0.44, 0.20, 0.26);
+        set_named(platform_name_, 9.2, -1.02, 0.45, 0.0, 0.02, 0.08, 0.0);
+        set_named(fishnet_buoy_name_, 7.4, 1.62, 0.30, 0.0, 0.00, -0.08, 0.0);
+        set_named(container_name_, 15.2, 0.10, 0.20, 0.20, -0.12, -0.06, 0.12);
+        set_named(fishing_boat_name_, 18.4, -1.85, 0.34, -0.16, -0.18, 0.08, 0.10);
+        break;
+      case 9:
+        set_named(fishing_boat_name_, 9.0, 0.20, 0.34, -0.22, 0.52, -0.22, 0.42);
+        set_named(debris_name_, 6.8, 0.06, 0.16, 0.20, 0.22, 0.10, 0.18);
+        set_named(obstacle_name_, 12.5, -1.42, 0.24, 0.0, -0.04, 0.12, 0.0);
+        set_named(vessel_name_, 16.8, 1.12, 0.42, -0.10, -0.16, -0.12, 0.08);
+        set_named(service_boat_name_, 14.4, 0.40, 0.38, 0.18, 0.18, -0.16, 0.16);
+        break;
+      case 10:
+        set_named(service_boat_name_, 11.7, 0.50, 0.38, -0.20, 0.42, -0.16, 0.32);
+        set_named(fishnet_buoy_name_, 8.0, 0.42, 0.30, 0.0, 0.00, -0.08, 0.0);
+        set_named(container_name_, 7.4, -1.72, 0.20, 0.35, 0.18, 0.20, 0.20);
+        set_named(platform_name_, 17.4, 1.78, 0.45, 0.0, -0.02, -0.10, 0.0);
+        set_named(survey_boat_name_, 15.6, 0.10, 0.36, -0.10, -0.12, 0.08, 0.10);
+        break;
+      case 11:
+        set_named(survey_boat_name_, 9.8, -0.35, 0.36, 0.10, 0.46, 0.14, 0.40);
+        set_named(vessel_name_, 13.4, -0.70, 0.42, -0.10, 0.18, 0.10, 0.12);
+        set_named(debris_name_, 6.4, 1.52, 0.16, -0.15, 0.20, -0.20, 0.18);
+        set_named(obstacle_name_, 7.8, -1.90, 0.24, 0.0, 0.00, 0.12, 0.0);
+        set_named(fishnet_buoy_name_, 16.5, 1.05, 0.30, 0.0, -0.04, -0.08, 0.0);
+        break;
+      case 12:
+        set_named(vessel_name_, 10.8, 0.88, 0.42, 0.02, 0.52, -0.18, 0.26);
+        set_named(container_name_, 8.6, 0.58, 0.20, 0.16, 0.16, -0.04, 0.18);
+        set_named(service_boat_name_, 14.8, 0.15, 0.38, -0.14, -0.16, 0.10, 0.12);
+        set_named(debris_name_, 7.2, -1.92, 0.16, -0.24, 0.16, 0.20, 0.20);
+        set_named(obstacle_name_, 18.2, 1.65, 0.24, 0.0, -0.02, -0.12, 0.0);
+        break;
+      case 13:
+        set_named(platform_name_, 12.4, -0.48, 0.45, 0.0, 0.00, 0.06, 0.0);
+        set_named(fishing_boat_name_, 10.4, -0.72, 0.34, 0.24, 0.50, 0.16, 0.36);
+        set_named(vessel_name_, 16.0, -0.10, 0.42, -0.06, -0.10, 0.06, 0.08);
+        set_named(fishnet_buoy_name_, 8.0, 1.36, 0.30, 0.0, 0.00, -0.10, 0.0);
+        set_named(container_name_, 17.6, -1.82, 0.20, 0.24, -0.10, 0.12, 0.10);
+        break;
+      case 14:
+        set_named(service_boat_name_, 8.8, -1.35, 0.38, 0.32, 0.64, 0.28, 0.42);
+        set_named(obstacle_name_, 7.6, -1.22, 0.24, 0.0, 0.02, 0.10, 0.0);
+        set_named(survey_boat_name_, 12.8, -0.85, 0.36, -0.08, 0.10, 0.04, 0.12);
+        set_named(debris_name_, 8.8, 1.68, 0.16, 0.18, 0.24, -0.16, 0.22);
+        set_named(vessel_name_, 17.0, 0.98, 0.42, -0.12, -0.18, -0.08, 0.10);
+        break;
+      case 15:
+        set_named(fishing_boat_name_, 9.4, 1.12, 0.34, -0.16, 0.56, -0.24, 0.34);
+        set_named(fishnet_buoy_name_, 7.2, 0.98, 0.30, 0.0, 0.00, -0.08, 0.0);
+        set_named(vessel_name_, 13.8, 1.42, 0.42, 0.08, 0.26, -0.12, 0.14);
+        set_named(platform_name_, 17.8, -1.35, 0.45, 0.0, -0.04, 0.10, 0.0);
+        set_named(container_name_, 7.6, -2.05, 0.20, -0.22, 0.16, 0.18, 0.16);
+        break;
+      case 16:
+        set_named(survey_boat_name_, 10.8, 0.08, 0.36, 0.18, 0.48, -0.10, 0.32);
+        set_named(container_name_, 6.9, -0.18, 0.20, 0.28, 0.18, 0.10, 0.20);
+        set_named(vessel_name_, 15.2, -0.42, 0.42, -0.08, -0.14, 0.06, 0.08);
+        set_named(fishnet_buoy_name_, 13.0, 1.55, 0.30, 0.0, 0.02, -0.10, 0.0);
+        set_named(debris_name_, 9.2, -2.00, 0.16, -0.20, 0.14, 0.18, 0.18);
+        break;
+      default:
+        set_named(platform_name_, 10.4, 0.72, 0.45, 0.0, 0.00, -0.06, 0.0);
+        set_named(service_boat_name_, 12.2, 0.40, 0.38, -0.18, 0.44, -0.12, 0.28);
+        set_named(obstacle_name_, 7.5, 0.62, 0.24, 0.0, 0.00, 0.08, 0.0);
+        set_named(fishing_boat_name_, 16.4, -1.20, 0.34, 0.18, -0.16, 0.14, 0.10);
+        set_named(debris_name_, 7.0, -1.78, 0.16, 0.14, 0.22, 0.20, 0.20);
+        break;
+    }
 
     for (const auto & target : targets) {
       set_target_state(target);
@@ -343,6 +535,7 @@ private:
   std::string platform_name_;
   std::string tracked_target_name_;
   bool annotation_mode_{false};
+  bool annotation_occlusion_mode_{false};
   double annotation_scene_duration_{2.4};
   bool warned_waiting_{false};
   std::chrono::steady_clock::time_point start_time_;

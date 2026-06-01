@@ -13,6 +13,9 @@ radar_sonar_tracker:
     track_timeout: 4.0
     gated_points_topic: /gated_camera/detection_points
     uav_points_topic: /uav/gated_camera/detection_points
+    pseudocolor_gated_points_topic: /gated_camera/pseudocolor/detection_points
+    stf_gated_points_topic: /gated_camera/stf_detection_points
+    bev_gated_points_topic: /gated_camera/bev_detection_points
     ais_topic: /ais/targets
     camera_fusion_timeout: 0.8
     uav_fusion_timeout: 1.2
@@ -24,21 +27,80 @@ gated_camera_recognizer:
   ros__parameters:
     image_topic: /gated_camera/image_raw
     depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /gated_camera/camera_info
     output_prefix: gated_camera
     frame_id: gated_camera_link
     detection_input: raw
-    yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, platform]
+    # Current src/usv_bringup/models/best.onnx metadata:
+    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Keep this list in the exact model output order; the recognizer remaps names to global IDs.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
     confidence_threshold: 0.25
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
     base_frame: base_link
     camera_x_offset: 1.55
     camera_y_offset: 0.0
     camera_z_offset: 1.20
     camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
     use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 450.0
+    process_stride: 1
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 85.0]
+
+pseudocolor_gated_camera_recognizer:
+  ros__parameters:
+    image_topic: /gated_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /gated_camera/camera_info
+    output_prefix: gated_camera/pseudocolor
+    frame_id: gated_camera_link
+    detection_input: range_view
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    # Current src/usv_bringup/models/best1.onnx metadata:
+    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Keep this list in the exact model output order; the recognizer remaps names to global IDs.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.25
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
     min_contour_area: 450.0
     process_stride: 1
     gate_near: [2.0, 18.0]
@@ -49,26 +111,91 @@ uav_gated_camera_recognizer:
   ros__parameters:
     image_topic: /uav/gated_camera/image_raw
     depth_topic: /uav/gated_camera/depth/image_raw
+    camera_info_topic: /uav/gated_camera/camera_info
     output_prefix: uav/gated_camera
     frame_id: uav_gated_camera_link
     detection_input: range_view
-    yolo_model_path: "" # sim.launch.py sets the packaged ONNX path by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, platform]
+    # UAV uses the pseudo-color/range-view model by default.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
     confidence_threshold: 0.25
+    enable_dehaze: true
+    dehaze_strength: 0.55
+    dehaze_omega: 0.85
+    dehaze_min_transmission: 0.20
+    dehaze_depth_beta: 0.010
     base_frame: base_link
     camera_x_offset: 1.55
     camera_y_offset: 0.0
     camera_z_offset: 1.20
     camera_horizontal_fov: 0.82
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
     use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
     min_contour_area: 650.0
     process_stride: 3
     gate_near: [10.0, 45.0]
     gate_mid: [35.0, 110.0]
     gate_far: [90.0, 230.0]
+
+gated_slice_fusion_recognizer:
+  ros__parameters:
+    near_topic: /gated_camera/slice_near
+    mid_topic: /gated_camera/slice_mid
+    far_topic: /gated_camera/slice_far
+    output_prefix: gated_camera/stf_fusion
+    frame_id: gated_camera_link
+    base_frame: base_link
+    process_stride: 2
+    confidence_threshold: 0.22
+    min_contour_area: 260.0
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    # STF gated camera calibration: 1280x720, fx=fy=2322.4, cx=667.777, cy=261.144.
+    # Keep these at 0.0 in the Gazebo camera path so the node uses the simulated camera FOV.
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 85.0]
+    range_blend_with_size_prior: 0.25
+    default_object_height: 1.6
+
+gated_bev_detector:
+  ros__parameters:
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /depth_camera/camera_info
+    output_topic: /gated_camera/bev_detection_points
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.3962634
+    min_range: 2.0
+    max_range: 90.0
+    min_z: 0.45
+    max_z: 4.0
+    lateral_range: 35.0
+    cell_size: 0.65
+    pixel_stride: 4
+    min_cell_points: 2
+    min_cluster_cells: 3
+    min_cluster_points: 18
 
 dynamic_target_controller:
   ros__parameters:

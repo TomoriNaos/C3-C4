@@ -1,0 +1,18 @@
+train: train/images
+val: train/images
+test: train/images
+nc: 6
+names:
+- buoy
+- debris_container
+- fishing_boat
+- floating_obstacle
+- platform
+- vessel
+roboflow:
+  workspace: tomorinao
+  project: gated_camera
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/tomorinao/gated_camera/dataset/1
+path: /home/hu/yolo/gated_camera.v1i.yolov8

@@ -3,7 +3,7 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -17,6 +17,7 @@ def generate_launch_description():
     rviz_config = os.path.join(pkg_description, 'rviz', 'default.rviz')
     perception_config = os.path.join(pkg_bringup, 'config', 'perception.yaml')
     default_yolo_model = os.path.join(pkg_bringup, 'models', 'best.onnx')
+    default_pseudocolor_yolo_model = os.path.join(pkg_bringup, 'models', 'best1.onnx')
 
     gui_arg = DeclareLaunchArgument(
         'gui',
@@ -76,7 +77,12 @@ def generate_launch_description():
     yolo_model_arg = DeclareLaunchArgument(
         'yolo_model_path',
         default_value=default_yolo_model,
-        description='Path to the YOLO ONNX model used by camera recognizers'
+        description='Path to the normal/dehazed camera YOLO ONNX model'
+    )
+    pseudocolor_yolo_model_arg = DeclareLaunchArgument(
+        'pseudocolor_yolo_model_path',
+        default_value=default_pseudocolor_yolo_model,
+        description='Path to the pseudo-color gated YOLO ONNX model'
     )
     c3_mmwave_arg = DeclareLaunchArgument(
         'c3_mmwave',
@@ -92,6 +98,21 @@ def generate_launch_description():
         'rgbd_dehaze',
         default_value='true',
         description='Start the C3 RGB-D dehaze pointcloud node for the USV depth camera'
+    )
+    stf_gated_fusion_arg = DeclareLaunchArgument(
+        'stf_gated_fusion',
+        default_value='true',
+        description='Start the additional STF-style three-slice gated recognizer'
+    )
+    gated_bev_detection_arg = DeclareLaunchArgument(
+        'gated_bev_detection',
+        default_value='true',
+        description='Start the additional depth-to-BEV gated camera detector'
+    )
+    pseudocolor_gated_yolo_arg = DeclareLaunchArgument(
+        'pseudocolor_gated_yolo',
+        default_value='false',
+        description='Start a separate pseudo-color range-view YOLO recognizer using best1.onnx'
     )
 
     gzserver = IncludeLaunchDescription(
@@ -236,6 +257,48 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('perception'))
     )
 
+    pseudocolor_gated_camera_recognizer = Node(
+        package='usv_perception',
+        executable='gated_camera_recognizer',
+        name='pseudocolor_gated_camera_recognizer',
+        output='screen',
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'yolo_model_path': LaunchConfiguration('pseudocolor_yolo_model_path')
+            }
+        ],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('pseudocolor_gated_yolo'), "' == 'true'"
+        ]))
+    )
+
+    gated_slice_fusion_recognizer = Node(
+        package='usv_perception',
+        executable='gated_slice_fusion_recognizer',
+        name='gated_slice_fusion_recognizer',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('stf_gated_fusion'), "' == 'true'"
+        ]))
+    )
+
+    gated_bev_detector = Node(
+        package='usv_perception',
+        executable='gated_bev_detector',
+        name='gated_bev_detector',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('gated_bev_detection'), "' == 'true'"
+        ]))
+    )
+
     uav_patrol_controller = Node(
         package='usv_perception',
         executable='uav_patrol_controller',
@@ -260,7 +323,7 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'yolo_model_path': LaunchConfiguration('yolo_model_path')
+                'yolo_model_path': LaunchConfiguration('pseudocolor_yolo_model_path')
             }
         ],
         condition=IfCondition(LaunchConfiguration('uav'))
@@ -365,9 +428,13 @@ def generate_launch_description():
         ais_arg,
         uav_arg,
         yolo_model_arg,
+        pseudocolor_yolo_model_arg,
         c3_mmwave_arg,
         c3_mmwave_debug_arg,
         rgbd_dehaze_arg,
+        stf_gated_fusion_arg,
+        gated_bev_detection_arg,
+        pseudocolor_gated_yolo_arg,
         gzserver,
         gzclient,
         robot_state_publisher,
@@ -380,6 +447,9 @@ def generate_launch_description():
         radar_sonar_tracker,
         tracking_evaluator,
         gated_camera_recognizer,
+        pseudocolor_gated_camera_recognizer,
+        gated_slice_fusion_recognizer,
+        gated_bev_detector,
         uav_patrol_controller,
         uav_gated_camera_recognizer,
         mmwave_converter_10m,

@@ -90,9 +90,14 @@ ros2 launch usv_bringup sim.launch.py usv_follow:=false
 ros2 launch usv_bringup sim.launch.py uav:=false
 ros2 launch usv_bringup sim.launch.py c3_mmwave:=false
 ros2 launch usv_bringup sim.launch.py rgbd_dehaze:=false
+ros2 launch usv_bringup sim.launch.py pseudocolor_gated_yolo:=true
+ros2 launch usv_bringup sim.launch.py stf_gated_fusion:=false
+ros2 launch usv_bringup sim.launch.py gated_bev_detection:=false
 ros2 launch usv_bringup sim.launch.py ais:=false
 ros2 launch usv_bringup sim.launch.py evaluation:=false
 ros2 launch usv_bringup sim.launch.py target_model:=small_fishing_boat
+ros2 launch usv_bringup sim.launch.py yolo_model_path:=src/usv_bringup/models/best.onnx
+ros2 launch usv_bringup sim.launch.py pseudocolor_yolo_model_path:=src/usv_bringup/models/best1.onnx
 ```
 
 `target_model` 用来切换主跟踪目标，同时会影响动态目标高亮和无人机远程搜索目标。常用模型名：
@@ -109,20 +114,36 @@ service_boat
 1. `ocean_fog.world` 生成大雾海峡、水面、船舶、渔船、浮标、漂浮物、平台、集装箱和无人机。
 2. `dynamic_target_controller` 让多个目标沿航路点低速移动，默认主跟踪目标是 `moving_vessel`，不是固定转圈。
 3. 船上传感器发布毫米波雷达、声呐、深度相机、门控相机、ALS 点云；无人机发布机载门控相机和 ALS 点云。
-4. `gated_camera_recognizer` 用 RGB + Depth 做近/中/远门控切片，再用 ONNX Runtime 跑 YOLO，输出图像框、检测数组和 `PointCloud2` 目标点。
-5. `ais_simulator` 从 Gazebo 真值生成 `/ais/targets`，含 MMSI、相对位置、速度、SOG、COG、heading、类别和置信度。
-6. `radar_sonar_tracker` 融合毫米波雷达、声呐、船载门控目标点、无人机门控目标点和 AIS，输出稳定 track。
-7. `uav_patrol_controller` 默认飞到 `moving_vessel` 附近巡查，并把远程目标指引发布到 `/uav/remote_target_status`，给本船提供“远处先发现、指挥船追踪”的辅助。
-8. `usv_target_follower` 锁定船类目标，使用目标速度做短时前视预测，并根据前方障碍物偏航、减速或停车。
-9. `tracking_evaluator` 对比 Gazebo 真值和融合 track，发布误检率、漏检率、CPA、TCPA、最小距离和 ID 切换次数。
+4. `gated_camera_recognizer` 是普通/去雾图像识别链路：使用 `src/usv_bringup/models/best.onnx`，输出 `/gated_camera/detection_points`。
+5. `pseudocolor_gated_camera_recognizer` 是三切片伪彩色识别链路：把近/中/远门控响应合成 `range_view`，使用 `src/usv_bringup/models/best1.onnx`，输出 `/gated_camera/pseudocolor/detection_points`。当前 `best1.onnx` 误检严重，所以启动默认关闭；重新训练合格后用 `pseudocolor_gated_yolo:=true` 打开。
+6. `gated_bev_detector` 是非 YOLO 几何旁路：把深度图投影成船体坐标下的伪点云/BEV 网格，聚类后发布 `/gated_camera/bev_detection_points`。
+7. `gated_slice_fusion_recognizer` 是可选 STF 风格三切片响应旁路：不跑 ONNX，直接用三切片响应做目标性检测，输出 `/gated_camera/stf_detection_points`。
+8. `ais_simulator` 从 Gazebo 真值生成 `/ais/targets`，含 MMSI、相对位置、速度、SOG、COG、heading、类别和置信度。
+9. `radar_sonar_tracker` 融合毫米波雷达、声呐、普通图像 ONNX、伪彩色 ONNX、BEV 几何、STF 三切片响应、无人机门控目标点和 AIS，输出稳定 track；关闭的链路不会进入融合。
+10. `uav_patrol_controller` 默认飞到 `moving_vessel` 附近巡查，并把远程目标指引发布到 `/uav/remote_target_status`，给本船提供“远处先发现、指挥船追踪”的辅助。
+11. `usv_target_follower` 锁定船类目标，使用目标速度做短时前视预测，并根据前方障碍物偏航、减速或停车。
+12. `tracking_evaluator` 对比 Gazebo 真值和融合 track，发布误检率、漏检率、CPA、TCPA、最小距离和 ID 切换次数。
+
+STF 门控数据集的本地说明、三切片合成和 YOLO 转换方法见：
+
+```text
+docs/stf_dataset_local_usage.md
+docs/gated_non_yolo_recognition.md
+```
 
 ## 主要话题
 
 - 毫米波雷达：`/mmwave_radar/scan`
 - 窄束声呐：`/sonar/scan`
 - 船载门控图像：`/gated_camera/image_raw`
+- 船载去雾图像：`/gated_camera/dehazed`
+- 船载门控伪彩色图：`/gated_camera/range_view`
 - 船载门控识别图：`/gated_camera/annotated`
 - 船载门控目标点：`/gated_camera/detection_points`
+- 船载伪彩色识别图：`/gated_camera/pseudocolor/annotated`
+- 船载伪彩色目标点：`/gated_camera/pseudocolor/detection_points`
+- STF 三切片目标点：`/gated_camera/stf_detection_points`
+- BEV 几何目标点：`/gated_camera/bev_detection_points`
 - 无人机门控图像：`/uav/gated_camera/image_raw`
 - 无人机门控目标点：`/uav/gated_camera/detection_points`
 - 无人机远程目标：`/uav/remote_target_status`
@@ -134,6 +155,141 @@ service_boat
 - 实验评估指标：`/tracking_metrics`
 - 动态目标 Marker：`/simulated_targets`
 - 波浪浮力状态：`/wave_buoyancy/status`
+
+门控目标点云保持统一 `sensor_msgs/PointCloud2` 格式，每个目标是一行 point：
+
+```text
+x y z intensity class_id bbox_cx bbox_cy bbox_w bbox_h
+```
+
+其中 `x/y/z` 是船体坐标系下目标位置，`intensity` 是置信度，`class_id` 是类别 ID，`bbox_*` 是图像检测框。BEV 几何旁路没有图像框，`bbox_*` 会填 0。
+
+## 测试程序方法
+
+先确认两个 ONNX 是否能在对应图像域出框：
+
+```bash
+cd ~/usv_ws
+./scripts/build_clean_env.sh
+
+# 普通/去雾图像模型：best.onnx
+./scripts/test_yolo_onnx_images.py \
+  --model src/usv_bringup/models/best.onnx \
+  --images /home/hu/usv_captures/annotation_raw \
+  --limit 12 \
+  --save-dir /tmp/usv_onnx_test_normal
+
+# 伪彩色三切片模型：best1.onnx
+./scripts/test_yolo_onnx_images.py \
+  --model src/usv_bringup/models/best1.onnx \
+  --images /home/hu/usv_captures/pseudocolor_complex \
+  --limit 12 \
+  --save-dir /tmp/usv_onnx_test_pseudocolor
+```
+
+正常输出会显示每张图的 `detections`、最高置信度和类别名；标框结果保存在 `/tmp/usv_onnx_test_normal` 和 `/tmp/usv_onnx_test_pseudocolor`。
+
+如果要按 YOLO 标注文件计算检测质量，用下面两个命令。这个脚本使用和当前 C++ 识别节点一致的 ONNXRuntime + 直接 resize 预处理，所以更能反映程序实际效果：
+
+```bash
+# 普通图像数据集：/home/hu/yolo/vessel.v1i.yolov8
+./scripts/evaluate_yolo_onnx_dataset.py \
+  --model src/usv_bringup/models/best.onnx \
+  --data /home/hu/yolo/vessel.v1i.yolov8/data.yaml \
+  --split train \
+  --conf 0.25 \
+  --save-dir /home/hu/usv_ws/eval_outputs/normal_best_on_vessel
+
+# 伪彩色数据集：/home/hu/yolo/gated_camera.v1i.yolov8
+./scripts/evaluate_yolo_onnx_dataset.py \
+  --model src/usv_bringup/models/best1.onnx \
+  --data /home/hu/yolo/gated_camera.v1i.yolov8/data.yaml \
+  --split train \
+  --conf 0.25 \
+  --save-dir /home/hu/usv_ws/eval_outputs/pseudocolor_best1_on_gated
+```
+
+我这次检查到的结果：
+
+```text
+best.onnx  对普通图像 vessel.v1i.yolov8:
+  images=142, gt_boxes=299, predictions=0
+  precision=0.0000, recall=0.0000
+
+best1.onnx 对伪彩色图 gated_camera.v1i.yolov8:
+  images=76, gt_boxes=85, predictions=11646
+  TP=4, FP=11642, FN=81
+  precision=0.0003, recall=0.0471
+```
+
+可视化结果：
+
+```text
+/home/hu/usv_ws/eval_outputs/detection_accuracy_examples.jpg
+/home/hu/usv_ws/eval_outputs/normal_best_on_vessel/
+/home/hu/usv_ws/eval_outputs/pseudocolor_best1_on_gated/
+```
+
+图中颜色约定：绿色框是匹配到的 GT，红色框是漏检 GT，黄色框是匹配预测，紫色框是误检预测。当前普通图像模型几乎全漏检，伪彩色模型海量误检，这会直接导致目标跟踪不稳定。
+
+稳定测试时先启动默认融合；伪彩色 ONNX 默认关闭，避免误检污染跟踪：
+
+```bash
+./scripts/launch_sim_localhost.sh gui:=false rviz:=true
+```
+
+如果要专门测试伪彩色 ONNX，再显式打开：
+
+```bash
+./scripts/launch_sim_localhost.sh gui:=false rviz:=true pseudocolor_gated_yolo:=true
+```
+
+另开终端观察各路：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/usv_ws/install/setup.bash
+
+ros2 topic echo /gated_camera/status
+ros2 topic echo /gated_camera/pseudocolor/status
+ros2 topic echo /gated_camera/bev_detector/status
+ros2 topic echo /tracked_objects_text
+ros2 topic echo /tracking_metrics
+```
+
+分路排查时可以关掉某一路：
+
+```bash
+# 打开或关闭伪彩色 ONNX
+ros2 launch usv_bringup sim.launch.py pseudocolor_gated_yolo:=true
+ros2 launch usv_bringup sim.launch.py pseudocolor_gated_yolo:=false
+
+# 只关 BEV 几何
+ros2 launch usv_bringup sim.launch.py gated_bev_detection:=false
+
+# 只关 STF 响应旁路
+ros2 launch usv_bringup sim.launch.py stf_gated_fusion:=false
+```
+
+当前模型文件约定：
+
+```text
+src/usv_bringup/models/best.onnx   普通/去雾图像 ONNX
+src/usv_bringup/models/best1.onnx  伪彩色 range_view ONNX；无人机 range_view 也用这个
+```
+
+我检查到当前这两个 ONNX 的元数据都是 6 类：
+
+```text
+0 = buoy
+1 = debris_container
+2 = fishing_boat
+3 = floating_obstacle
+4 = platform
+5 = vessel
+```
+
+程序内部会按类别名映射到全局 `class_id`，现在 `class_names` 已按 ONNX 元数据顺序配置。以后如果重新导出模型，需要同步检查 `src/usv_bringup/config/perception.yaml` 里的 `class_names`，顺序必须和 ONNX 元数据一致。
 
 查看关键状态：
 
@@ -151,10 +307,21 @@ ros2 topic echo /tracking_metrics
 
 只有在后续发现两个视角差异很大，比如无人机俯视小目标明显优于船载平视，且共用模型效果下降时，再考虑分模型。
 
-当前六类标注建议顺序：
+当前 ONNX 输出顺序来自模型元数据，必须和 `perception.yaml` 的 `class_names` 保持一致：
 
 ```yaml
-class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, platform]
+class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+```
+
+程序内部再映射到全局跟踪 ID：
+
+```text
+vessel -> 0
+fishing_boat -> 1
+buoy -> 2
+floating_obstacle -> 3
+debris_container -> 4
+platform -> 5
 ```
 
 对应关系：
@@ -172,7 +339,7 @@ class_names: [vessel, fishing_boat, buoy, floating_obstacle, debris_container, p
 
 ![class reference](docs/model_reference/class_reference.svg)
 
-注意：如果继续使用旧的 2 类 `best.onnx`，而配置文件已经写成六类，类别文字可能不准确。论文实验要用六类指标时，需要用上面的六类重新标注、训练并导出新的 `best.onnx`。
+注意：当前 `best.onnx` 和 `best1.onnx` 的 ONNX 元数据都是 6 类 `{0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}`，`perception.yaml` 里也按这个模型输出顺序填写 `class_names`。如果你重新导出模型，必须把 `class_names` 改成新 ONNX 的实际输出顺序；程序会再把类别名映射到全局 `class_id`。
 
 ## 标注图片采集
 
@@ -200,22 +367,85 @@ cd ~/usv_ws
 
 这个采集场景现在按“模型样本架”的思路采集：`moving_vessel`、`small_fishing_boat`、`survey_boat`、`service_boat`、`fishnet_buoy`、`floating_obstacle`、`drift_debris`、`floating_container`、`research_platform` 会分别按 8 个朝向旋转采样，后面再补少量多目标组合图。它不追求每张图都有所有模型，而是优先覆盖每个物体的正面、侧面、背面和斜角形态。旧图片如果不需要，可以直接重新运行脚本，脚本会删除并重建输出目录。
 
+额外生成轻微遮挡增强图，不会改动上面的角度图目录：
+
+```bash
+./scripts/capture_occlusion_dataset.sh /home/hu/usv_captures/annotation_occlusion 96
+```
+
+遮挡增强图输出到：
+
+```text
+/home/hu/usv_captures/annotation_occlusion
+```
+
+这套图会模拟更像真实航道的遮挡：多艘船、浮标、漂浮物、集装箱、平台按不同距离分层摆放，并在采集过程中缓慢横移、前进和转向，依靠视线重叠形成局部遮挡，而不是单个物体硬贴在镜头前。脚本默认每 5 帧保存一张，减少连续重复图；遮挡比例大约控制在 10% 到 35%。标注时仍然按目标真实可见外轮廓框，不要把前景遮挡物一起框进目标框；遮挡物本身如果属于你的类别，也可以单独标一个框。
+
+如果要训练“伪彩色三切片门控图”的检测器，生成两类可标注图片：
+
+```bash
+./scripts/capture_pseudocolor_dataset.sh \
+  /home/hu/usv_captures/pseudocolor_single \
+  /home/hu/usv_captures/pseudocolor_complex \
+  96 96
+```
+
+输出：
+
+```text
+/home/hu/usv_captures/pseudocolor_single   单个物体、不同角度
+/home/hu/usv_captures/pseudocolor_complex  多目标、遮挡、复杂场景
+```
+
+这些图来自 `/gated_camera/range_view`，通道含义是近/中/远门控响应，不是普通 RGB 纹理。标注方法仍然是画目标 2D 框。
+
 标注建议：
 
 - 只标可见主体，不要把水面阴影和尾迹框进去。
 - 浮标类包含普通浮标、航标、渔网浮标。
 - `debris_container` 把漂浮木箱、漂浮集装箱统一到一类，后续数据多了再拆成 `debris` 和 `container`。
-- 训练后导出 ONNX：
+
+训练前先检查 Roboflow 导出和 Ultralytics 缓存是否一致：
+
+```bash
+python3 /home/hu/yolo/train_c3_gpu.py --check
+```
+
+当前两个本地数据集都应显示六类：
+
+```text
+/home/hu/yolo/gated_camera.v1i.yolov8:
+  buoy=4, debris_container=20, fishing_boat=11, floating_obstacle=12, platform=18, vessel=20
+
+/home/hu/yolo/vessel.v1i.yolov8:
+  buoy=38, debris_container=76, fishing_boat=50, floating_obstacle=45, platform=27, vessel=63
+```
+
+如果 `cache` 里只剩 `buoy`、`debris_container` 两类，说明以前的 `labels.cache` 是按旧的 2 类配置生成的；Ultralytics 会把 class 2-5 当成 corrupt label 忽略。现在 `train_c3_gpu.py` 已经在训练前自动删除旧 cache，并重新生成 6 类 cache。
+
+推荐训练命令：
+
+```bash
+cd /home/hu/yolo
+python3 train_c3_gpu.py --dataset all --epochs 200 --batch 8 --device 0 --export-onnx
+```
+
+更推荐放入预训练权重再训练，例如把 `yolov8n.pt` 放到 `/home/hu/yolo/yolov8n.pt`。如果没有这个文件，脚本会退回 `yolov8n.yaml` 从零训练；小数据集从零训练效果会很差，只适合检查流程，不适合最终检测模型。
+
+训练后也可以手动导出 ONNX：
 
 ```bash
 yolo export model=best.pt format=onnx imgsz=640 opset=12
 ```
 
-替换默认模型：
+替换模型时不要放错文件名：
 
 ```text
-src/usv_bringup/models/best.onnx
+src/usv_bringup/models/best.onnx   普通/去雾图像模型
+src/usv_bringup/models/best1.onnx  伪彩色三切片 range_view 模型
 ```
+
+普通相机做了去雾预处理后，原来的标注框仍然可以继续用，因为去雾不会改变目标几何位置；如果追求更高精度，建议用同一批原图生成“去雾后训练图”，直接复用原标签微调 `best.onnx`，不需要重新标注。伪彩色图的模型必须用伪彩色图训练，放到 `best1.onnx`。
 
 重新编译并启动：
 
@@ -468,15 +698,18 @@ scripts/
   build_clean_env.sh                 干净环境编译，解决旧 overlay 路径警告
   launch_sim_localhost.sh            用 127.0.0.1 启动仿真，减少 Gazebo multicast 网卡报错
   capture_annotation_dataset.sh      删除旧标注输出并采集角度覆盖图片
+  capture_occlusion_dataset.sh       单独采集轻微遮挡增强图片
 docs/
   model_reference/class_reference.svg 六类目标指示图
 src/usv_bringup/
   launch/sim.launch.py               主启动文件
   launch/annotation_capture.launch.py 专用标注采集启动文件
+  launch/annotation_occlusion_capture.launch.py 轻微遮挡增强采集启动文件
   worlds/ocean_fog.world             大雾海峡主场景
   worlds/annotation_targets.world     标注采集专用紧凑场景
   config/perception.yaml             感知、融合、控制、AIS、评估参数
-  models/best.onnx                   默认 YOLO ONNX 模型
+  models/best.onnx                   普通/去雾图像 YOLO ONNX 模型
+  models/best1.onnx                  伪彩色 range_view YOLO ONNX 模型
 src/usv_description/
   urdf/wamv_base.urdf.xacro          船体、雷达、声呐、相机、ALS、多高度 C3 雷达
   rviz/default.rviz                  RViz 默认显示配置

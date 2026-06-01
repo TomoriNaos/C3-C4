@@ -17,6 +17,7 @@
 #include <onnxruntime_cxx_api.h>
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
@@ -65,6 +66,14 @@ struct LocalPoint
   double z{0.0};
 };
 
+struct CameraIntrinsics
+{
+  double fx{0.0};
+  double fy{0.0};
+  double cx{0.0};
+  double cy{0.0};
+};
+
 class GatedCameraRecognizer : public rclcpp::Node
 {
 public:
@@ -76,6 +85,7 @@ public:
 
     image_topic_ = declare_parameter<std::string>("image_topic", "/gated_camera/image_raw");
     depth_topic_ = declare_parameter<std::string>("depth_topic", "/depth_camera/depth/image_raw");
+    camera_info_topic_ = declare_parameter<std::string>("camera_info_topic", "/gated_camera/camera_info");
     output_prefix_ = normalize_prefix(declare_parameter<std::string>("output_prefix", "gated_camera"));
     frame_id_ = declare_parameter<std::string>("frame_id", "gated_camera_link");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
@@ -83,6 +93,12 @@ public:
     yolo_model_path_ = declare_parameter<std::string>("yolo_model_path", "");
     confidence_threshold_ = declare_parameter<double>("confidence_threshold", 0.35);
     min_contour_area_ = declare_parameter<double>("min_contour_area", 450.0);
+    enable_dehaze_ = declare_parameter<bool>("enable_dehaze", true);
+    dehaze_strength_ = std::clamp(declare_parameter<double>("dehaze_strength", 0.65), 0.0, 1.0);
+    dehaze_omega_ = std::clamp(declare_parameter<double>("dehaze_omega", 0.88), 0.0, 1.0);
+    dehaze_min_transmission_ =
+      std::clamp(declare_parameter<double>("dehaze_min_transmission", 0.18), 0.02, 1.0);
+    dehaze_depth_beta_ = std::max(0.0, declare_parameter<double>("dehaze_depth_beta", 0.018));
     process_stride_ = std::max(1, static_cast<int>(declare_parameter<int>("process_stride", 3)));
     yolo_input_width_ = std::max(32, static_cast<int>(declare_parameter<int>("yolo_input_width", 640)));
     yolo_input_height_ = std::max(32, static_cast<int>(declare_parameter<int>("yolo_input_height", 640)));
@@ -91,7 +107,15 @@ public:
     camera_y_offset_ = declare_parameter<double>("camera_y_offset", 0.0);
     camera_z_offset_ = declare_parameter<double>("camera_z_offset", 1.20);
     camera_horizontal_fov_ = declare_parameter<double>("camera_horizontal_fov", 1.20);
+    camera_fx_ = declare_parameter<double>("camera_fx", 0.0);
+    camera_fy_ = declare_parameter<double>("camera_fy", 0.0);
+    camera_cx_ = declare_parameter<double>("camera_cx", 0.0);
+    camera_cy_ = declare_parameter<double>("camera_cy", 0.0);
+    camera_calibration_width_ = declare_parameter<double>("camera_calibration_width", 0.0);
+    camera_calibration_height_ = declare_parameter<double>("camera_calibration_height", 0.0);
+    depth_roi_shrink_ = std::clamp(declare_parameter<double>("depth_roi_shrink", 0.20), 0.0, 0.45);
     use_tf_transform_ = declare_parameter<bool>("use_tf_transform", true);
+    use_camera_info_ = declare_parameter<bool>("use_camera_info", true);
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
       {"vessel", "fishing_boat", "buoy", "fishnet_buoy", "floating_obstacle", "maritime_obstacle"});
@@ -109,10 +133,16 @@ public:
         depth_topic_, rclcpp::SensorDataQoS(),
         std::bind(&GatedCameraRecognizer::on_depth, this, std::placeholders::_1));
     }
+    if (use_camera_info_ && !camera_info_topic_.empty()) {
+      camera_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
+        camera_info_topic_, 10,
+        std::bind(&GatedCameraRecognizer::on_camera_info, this, std::placeholders::_1));
+    }
 
     near_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("slice_near"), 10);
     mid_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("slice_mid"), 10);
     far_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("slice_far"), 10);
+    dehazed_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("dehazed"), 10);
     range_view_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("range_view"), 10);
     annotated_pub_ = create_publisher<sensor_msgs::msg::Image>(topic("annotated"), 10);
     detection_pub_ = create_publisher<vision_msgs::msg::Detection2DArray>(topic("detections"), 10);
@@ -211,6 +241,20 @@ private:
     }
   }
 
+  void on_camera_info(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
+  {
+    if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0 || msg->width == 0 || msg->height == 0) {
+      return;
+    }
+    camera_info_fx_ = msg->k[0];
+    camera_info_fy_ = msg->k[4];
+    camera_info_cx_ = msg->k[2];
+    camera_info_cy_ = msg->k[5];
+    camera_info_width_ = static_cast<double>(msg->width);
+    camera_info_height_ = static_cast<double>(msg->height);
+    has_camera_info_ = true;
+  }
+
   void on_image(const sensor_msgs::msg::Image::SharedPtr msg)
   {
     ++frame_index_;
@@ -234,18 +278,23 @@ private:
       }
     }
 
+    cv::Mat recognition_bgr = enable_dehaze_ ? dehaze_bgr(bgr, depth) : bgr;
+    if (enable_dehaze_) {
+      dehazed_pub_->publish(bgr_to_msg(recognition_bgr, msg->header));
+    }
+
     cv::Mat near_slice;
     cv::Mat mid_slice;
     cv::Mat far_slice;
     cv::Mat range_view;
-    build_gated_view(bgr, depth, near_slice, mid_slice, far_slice, range_view);
+    build_gated_view(recognition_bgr, depth, near_slice, mid_slice, far_slice, range_view);
 
     near_pub_->publish(bgr_to_msg(near_slice, msg->header));
     mid_pub_->publish(bgr_to_msg(mid_slice, msg->header));
     far_pub_->publish(bgr_to_msg(far_slice, msg->header));
     range_view_pub_->publish(bgr_to_msg(range_view, msg->header));
 
-    const cv::Mat & detection_image = select_detection_image(bgr, near_slice, mid_slice, far_slice, range_view);
+    const cv::Mat & detection_image = select_detection_image(recognition_bgr, near_slice, mid_slice, far_slice, range_view);
     auto detections = detect_objects(detection_image, msg->header);
     const auto points = estimate_detection_points(detections, depth, detection_image.cols, detection_image.rows);
     const auto annotated = draw_detections(detection_image, detections, points);
@@ -261,6 +310,7 @@ private:
          << ", yolo=" << (yolo_loaded_ ? "onnx" : "off")
          << ", backend=" << yolo_backend_
          << ", input=" << detection_input_
+         << ", dehaze=" << (enable_dehaze_ ? "on" : "off")
          << ", max_score=" << last_yolo_max_score_;
     for (const auto & point : points) {
       text << " | " << point.label << "(" << point.x << "," << point.y << "," << point.z
@@ -335,6 +385,82 @@ private:
       }
     }
     return out;
+  }
+
+  cv::Mat dehaze_bgr(const cv::Mat & bgr, const cv::Mat & depth) const
+  {
+    if (bgr.empty() || dehaze_strength_ <= 0.0) {
+      return bgr;
+    }
+
+    cv::Mat float_bgr;
+    bgr.convertTo(float_bgr, CV_32FC3, 1.0 / 255.0);
+
+    std::vector<cv::Mat> channels;
+    cv::split(float_bgr, channels);
+    cv::Mat dark_channel;
+    cv::min(channels[0], channels[1], dark_channel);
+    cv::min(dark_channel, channels[2], dark_channel);
+    cv::erode(dark_channel, dark_channel, cv::Mat::ones(9, 9, CV_8UC1));
+
+    const cv::Scalar mean_color = cv::mean(float_bgr);
+    cv::Vec3f atmospheric(
+      static_cast<float>(std::clamp(mean_color[0] + 0.18, 0.55, 0.98)),
+      static_cast<float>(std::clamp(mean_color[1] + 0.18, 0.55, 0.98)),
+      static_cast<float>(std::clamp(mean_color[2] + 0.18, 0.55, 0.98)));
+
+    cv::Mat normalized_dark(bgr.rows, bgr.cols, CV_32FC1, cv::Scalar(0.0F));
+    for (int row = 0; row < bgr.rows; ++row) {
+      const cv::Vec3f * image_ptr = float_bgr.ptr<cv::Vec3f>(row);
+      float * out_ptr = normalized_dark.ptr<float>(row);
+      for (int col = 0; col < bgr.cols; ++col) {
+        const cv::Vec3f pixel = image_ptr[col];
+        const float b = pixel[0] / std::max(atmospheric[0], 0.01F);
+        const float g = pixel[1] / std::max(atmospheric[1], 0.01F);
+        const float r = pixel[2] / std::max(atmospheric[2], 0.01F);
+        out_ptr[col] = std::min({b, g, r});
+      }
+    }
+    cv::erode(normalized_dark, normalized_dark, cv::Mat::ones(9, 9, CV_8UC1));
+
+    cv::Mat transmission = 1.0F - static_cast<float>(dehaze_omega_) * normalized_dark;
+    if (!depth.empty() && depth.size() == bgr.size() && dehaze_depth_beta_ > 0.0) {
+      for (int row = 0; row < transmission.rows; ++row) {
+        const float * depth_ptr = depth.ptr<float>(row);
+        float * t_ptr = transmission.ptr<float>(row);
+        for (int col = 0; col < transmission.cols; ++col) {
+          const float d = depth_ptr[col];
+          if (std::isfinite(d) && d > 0.1F && d < 250.0F) {
+            const float depth_t = std::exp(-static_cast<float>(dehaze_depth_beta_) * d);
+            t_ptr[col] = std::min(t_ptr[col], std::max(depth_t, static_cast<float>(dehaze_min_transmission_)));
+          }
+        }
+      }
+    }
+
+    cv::GaussianBlur(transmission, transmission, cv::Size(0, 0), 2.0);
+
+    cv::Mat recovered(float_bgr.rows, float_bgr.cols, CV_32FC3);
+    for (int row = 0; row < float_bgr.rows; ++row) {
+      const cv::Vec3f * in_ptr = float_bgr.ptr<cv::Vec3f>(row);
+      const float * t_ptr = transmission.ptr<float>(row);
+      cv::Vec3f * out_ptr = recovered.ptr<cv::Vec3f>(row);
+      for (int col = 0; col < float_bgr.cols; ++col) {
+        const float t = std::max(static_cast<float>(dehaze_min_transmission_), t_ptr[col]);
+        cv::Vec3f value;
+        for (int channel = 0; channel < 3; ++channel) {
+          value[channel] = (in_ptr[col][channel] - atmospheric[channel]) / t + atmospheric[channel];
+          value[channel] = std::clamp(value[channel], 0.0F, 1.0F);
+        }
+        out_ptr[col] = value;
+      }
+    }
+
+    cv::Mat blended;
+    cv::addWeighted(recovered, dehaze_strength_, float_bgr, 1.0 - dehaze_strength_, 0.0, blended);
+    cv::Mat output;
+    blended.convertTo(output, CV_8UC3, 255.0);
+    return output;
   }
 
   vision_msgs::msg::Detection2DArray detect_objects(const cv::Mat & bgr, const std_msgs::msg::Header & header)
@@ -696,11 +822,7 @@ private:
       return {};
     }
 
-    const double focal_x = static_cast<double>(image_width) /
-      (2.0 * std::tan(std::max(camera_horizontal_fov_, 0.01) * 0.5));
-    const double focal_y = focal_x;
-    const double center_x = 0.5 * static_cast<double>(image_width - 1);
-    const double center_y = 0.5 * static_cast<double>(image_height - 1);
+    const CameraIntrinsics intrinsics = intrinsics_for_image(image_width, image_height);
 
     std::vector<DetectionPoint> points;
     for (const auto & detection : detections.detections) {
@@ -712,8 +834,8 @@ private:
 
       const double u = detection.bbox.center.position.x;
       const double v = detection.bbox.center.position.y;
-      const double lateral = (u - center_x) * static_cast<double>(depth_m) / focal_x;
-      const double vertical = (v - center_y) * static_cast<double>(depth_m) / focal_y;
+      const double lateral = (u - intrinsics.cx) * static_cast<double>(depth_m) / intrinsics.fx;
+      const double vertical = (v - intrinsics.cy) * static_cast<double>(depth_m) / intrinsics.fy;
 
       const LocalPoint local_point{depth_m, -lateral, -vertical};
       const LocalPoint base_point = transform_to_base(local_point);
@@ -800,18 +922,63 @@ private:
     return cv::Rect(left, top, std::max(0, right - left), std::max(0, bottom - top));
   }
 
-  static float median_depth(const cv::Rect & rect, const cv::Mat & depth)
+  CameraIntrinsics intrinsics_for_image(int image_width, int image_height) const
+  {
+    if (has_camera_info_) {
+      const double scale_x = image_width / std::max(camera_info_width_, 1.0);
+      const double scale_y = image_height / std::max(camera_info_height_, 1.0);
+      return CameraIntrinsics{
+        std::max(1.0, camera_info_fx_ * scale_x),
+        std::max(1.0, camera_info_fy_ * scale_y),
+        camera_info_cx_ * scale_x,
+        camera_info_cy_ * scale_y};
+    }
+
+    if (camera_fx_ > 0.0 && camera_fy_ > 0.0) {
+      const double scale_x = camera_calibration_width_ > 0.0 ?
+        image_width / camera_calibration_width_ : 1.0;
+      const double scale_y = camera_calibration_height_ > 0.0 ?
+        image_height / camera_calibration_height_ : 1.0;
+      const double default_cx = 0.5 * static_cast<double>(image_width - 1);
+      const double default_cy = 0.5 * static_cast<double>(image_height - 1);
+      return CameraIntrinsics{
+        std::max(1.0, camera_fx_ * scale_x),
+        std::max(1.0, camera_fy_ * scale_y),
+        camera_cx_ > 0.0 ? camera_cx_ * scale_x : default_cx,
+        camera_cy_ > 0.0 ? camera_cy_ * scale_y : default_cy};
+    }
+
+    const double focal_x = static_cast<double>(image_width) /
+      (2.0 * std::tan(std::max(camera_horizontal_fov_, 0.01) * 0.5));
+    return CameraIntrinsics{
+      std::max(1.0, focal_x),
+      std::max(1.0, focal_x),
+      0.5 * static_cast<double>(image_width - 1),
+      0.5 * static_cast<double>(image_height - 1)};
+  }
+
+  float median_depth(const cv::Rect & rect, const cv::Mat & depth) const
   {
     if (rect.width <= 0 || rect.height <= 0) {
       return 0.0F;
     }
 
-    const int sample_stride = std::max(1, static_cast<int>(std::sqrt(rect.area() / 300.0)));
+    cv::Rect sample_rect = rect;
+    if (depth_roi_shrink_ > 0.0 && rect.width > 6 && rect.height > 6) {
+      const int shrink_x = static_cast<int>(std::round(rect.width * depth_roi_shrink_));
+      const int shrink_y = static_cast<int>(std::round(rect.height * depth_roi_shrink_));
+      sample_rect.x += shrink_x;
+      sample_rect.y += shrink_y;
+      sample_rect.width = std::max(1, rect.width - 2 * shrink_x);
+      sample_rect.height = std::max(1, rect.height - 2 * shrink_y);
+    }
+
+    const int sample_stride = std::max(1, static_cast<int>(std::sqrt(sample_rect.area() / 300.0)));
     std::vector<float> values;
-    values.reserve(static_cast<std::size_t>(rect.area() / (sample_stride * sample_stride) + 1));
-    for (int row = rect.y; row < rect.y + rect.height; row += sample_stride) {
+    values.reserve(static_cast<std::size_t>(sample_rect.area() / (sample_stride * sample_stride) + 1));
+    for (int row = sample_rect.y; row < sample_rect.y + sample_rect.height; row += sample_stride) {
       const float * ptr = depth.ptr<float>(row);
-      for (int col = rect.x; col < rect.x + rect.width; col += sample_stride) {
+      for (int col = sample_rect.x; col < sample_rect.x + sample_rect.width; col += sample_stride) {
         const float value = ptr[col];
         if (std::isfinite(value) && value > 0.1F && value < 200.0F) {
           values.push_back(value);
@@ -918,11 +1085,25 @@ private:
 
   int class_index_for_label(const std::string & label) const
   {
-    const auto it = std::find(class_names_.begin(), class_names_.end(), label);
-    if (it == class_names_.end()) {
-      return -1;
+    if (label == "vessel") {
+      return 0;
     }
-    return static_cast<int>(std::distance(class_names_.begin(), it));
+    if (label == "fishing_boat") {
+      return 1;
+    }
+    if (label == "buoy" || label == "fishnet_buoy") {
+      return 2;
+    }
+    if (label == "floating_obstacle" || label == "maritime_obstacle") {
+      return 3;
+    }
+    if (label == "debris_container" || label == "debris" || label == "container") {
+      return 4;
+    }
+    if (label == "platform") {
+      return 5;
+    }
+    return -1;
   }
 
   static cv::Mat color_msg_to_bgr(const sensor_msgs::msg::Image & msg)
@@ -987,6 +1168,7 @@ private:
 
   std::string image_topic_;
   std::string depth_topic_;
+  std::string camera_info_topic_;
   std::string output_prefix_;
   std::string frame_id_;
   std::string base_frame_{"base_link"};
@@ -994,6 +1176,11 @@ private:
   std::string yolo_model_path_;
   double confidence_threshold_{0.35};
   double min_contour_area_{450.0};
+  bool enable_dehaze_{true};
+  double dehaze_strength_{0.65};
+  double dehaze_omega_{0.88};
+  double dehaze_min_transmission_{0.18};
+  double dehaze_depth_beta_{0.018};
   int process_stride_{3};
   int frame_index_{0};
   int yolo_input_width_{640};
@@ -1003,11 +1190,26 @@ private:
   double camera_y_offset_{0.0};
   double camera_z_offset_{1.20};
   double camera_horizontal_fov_{1.20};
+  double camera_fx_{0.0};
+  double camera_fy_{0.0};
+  double camera_cx_{0.0};
+  double camera_cy_{0.0};
+  double camera_calibration_width_{0.0};
+  double camera_calibration_height_{0.0};
+  double depth_roi_shrink_{0.20};
   bool use_tf_transform_{true};
+  bool use_camera_info_{true};
   std::vector<std::string> class_names_;
   GateBounds gates_[3];
   cv::Mat latest_depth_;
   bool has_depth_{false};
+  bool has_camera_info_{false};
+  double camera_info_fx_{0.0};
+  double camera_info_fy_{0.0};
+  double camera_info_cx_{0.0};
+  double camera_info_cy_{0.0};
+  double camera_info_width_{0.0};
+  double camera_info_height_{0.0};
   Ort::Env yolo_env_{ORT_LOGGING_LEVEL_WARNING, "gated_camera_recognizer"};
   Ort::SessionOptions yolo_session_options_;
   std::unique_ptr<Ort::Session> yolo_session_;
@@ -1021,9 +1223,11 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr near_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mid_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr far_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr dehazed_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr range_view_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr annotated_pub_;
   rclcpp::Publisher<vision_msgs::msg::Detection2DArray>::SharedPtr detection_pub_;
