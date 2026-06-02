@@ -1,7 +1,7 @@
 {
   "model": "src/usv_bringup/models/best.onnx",
-  "data": "/home/hu/yolo/vessel.v1i.yolov8/data.yaml",
-  "split": "train",
+  "data": "/home/hu/yolo/vessel.v2i.yolov8/data.yaml",
+  "split": "val",
   "dataset_names": [
     "buoy",
     "debris_container",
@@ -27,69 +27,69 @@
     "5": 5
   },
   "totals": {
-    "tp": 0,
-    "fp": 3,
-    "fn": 299,
-    "images": 142,
-    "boxes": 299,
-    "predictions": 3
+    "tp": 28,
+    "fp": 7,
+    "fn": 18,
+    "images": 28,
+    "boxes": 46,
+    "predictions": 35
   },
-  "precision_iou50": 0.0,
-  "recall_iou50": 0.0,
+  "precision_iou50": 0.8,
+  "recall_iou50": 0.6086956521739131,
   "per_class": {
     "buoy": {
-      "tp": 0,
+      "tp": 1,
       "fp": 0,
-      "fn": 38,
-      "gt": 38,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 2,
+      "gt": 3,
+      "pred": 1,
+      "precision": 1.0,
+      "recall": 0.3333333333333333
     },
     "debris_container": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 76,
-      "gt": 76,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "tp": 10,
+      "fp": 2,
+      "fn": 3,
+      "gt": 13,
+      "pred": 12,
+      "precision": 0.8333333333333334,
+      "recall": 0.7692307692307693
     },
     "fishing_boat": {
-      "tp": 0,
+      "tp": 7,
       "fp": 0,
-      "fn": 50,
-      "gt": 50,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 2,
+      "gt": 9,
+      "pred": 7,
+      "precision": 1.0,
+      "recall": 0.7777777777777778
     },
     "floating_obstacle": {
-      "tp": 0,
+      "tp": 7,
       "fp": 0,
-      "fn": 45,
-      "gt": 45,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 0,
+      "gt": 7,
+      "pred": 7,
+      "precision": 1.0,
+      "recall": 1.0
     },
     "platform": {
       "tp": 0,
-      "fp": 3,
-      "fn": 27,
-      "gt": 27,
-      "pred": 3,
+      "fp": 0,
+      "fn": 4,
+      "gt": 4,
+      "pred": 0,
       "precision": 0.0,
       "recall": 0.0
     },
     "vessel": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 63,
-      "gt": 63,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "tp": 3,
+      "fp": 5,
+      "fn": 7,
+      "gt": 10,
+      "pred": 8,
+      "precision": 0.375,
+      "recall": 0.3
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "model": "src/usv_bringup/models/best.onnx",
-  "data": "/home/hu/yolo/vessel.v1i.yolov8/data.yaml",
-  "split": "train",
+  "data": "/home/hu/yolo/vessel.v2i.yolov8/data.yaml",
+  "split": "val",
   "dataset_names": [
     "buoy",
     "debris_container",
@@ -27,69 +27,69 @@
     "5": 5
   },
   "totals": {
-    "tp": 0,
-    "fp": 2,
-    "fn": 299,
-    "images": 142,
-    "boxes": 299,
-    "predictions": 2
+    "tp": 22,
+    "fp": 3,
+    "fn": 24,
+    "images": 28,
+    "boxes": 46,
+    "predictions": 25
   },
-  "precision_iou50": 0.0,
-  "recall_iou50": 0.0,
+  "precision_iou50": 0.88,
+  "recall_iou50": 0.4782608695652174,
   "per_class": {
     "buoy": {
       "tp": 0,
       "fp": 0,
-      "fn": 38,
-      "gt": 38,
+      "fn": 3,
+      "gt": 3,
       "pred": 0,
       "precision": 0.0,
       "recall": 0.0
     },
     "debris_container": {
-      "tp": 0,
+      "tp": 9,
       "fp": 0,
-      "fn": 76,
-      "gt": 76,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 4,
+      "gt": 13,
+      "pred": 9,
+      "precision": 1.0,
+      "recall": 0.6923076923076923
     },
     "fishing_boat": {
-      "tp": 0,
+      "tp": 4,
       "fp": 0,
-      "fn": 50,
-      "gt": 50,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 5,
+      "gt": 9,
+      "pred": 4,
+      "precision": 1.0,
+      "recall": 0.4444444444444444
     },
     "floating_obstacle": {
-      "tp": 0,
+      "tp": 7,
       "fp": 0,
-      "fn": 45,
-      "gt": 45,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "fn": 0,
+      "gt": 7,
+      "pred": 7,
+      "precision": 1.0,
+      "recall": 1.0
     },
     "platform": {
       "tp": 0,
-      "fp": 2,
-      "fn": 27,
-      "gt": 27,
-      "pred": 2,
+      "fp": 0,
+      "fn": 4,
+      "gt": 4,
+      "pred": 0,
       "precision": 0.0,
       "recall": 0.0
     },
     "vessel": {
-      "tp": 0,
-      "fp": 0,
-      "fn": 63,
-      "gt": 63,
-      "pred": 0,
-      "precision": 0.0,
-      "recall": 0.0
+      "tp": 2,
+      "fp": 3,
+      "fn": 8,
+      "gt": 10,
+      "pred": 5,
+      "precision": 0.4,
+      "recall": 0.2
     }
   }
 }

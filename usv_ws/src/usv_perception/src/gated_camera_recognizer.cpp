@@ -148,6 +148,7 @@ public:
     detection_pub_ = create_publisher<vision_msgs::msg::Detection2DArray>(topic("detections"), 10);
     detection_points_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(topic("detection_points"), 10);
     status_pub_ = create_publisher<std_msgs::msg::String>(topic("status"), 10);
+    detection_details_pub_ = create_publisher<std_msgs::msg::String>(topic("detection_details"), 10);
 
     RCLCPP_INFO(
       get_logger(), "Gated recognizer image=%s depth=%s output=%s frame=%s backend=%s",
@@ -318,6 +319,10 @@ private:
     }
     status.data = text.str();
     status_pub_->publish(status);
+
+    std_msgs::msg::String details;
+    details.data = detection_details_json(detections, points, msg->header, detection_image.cols, detection_image.rows);
+    detection_details_pub_->publish(details);
   }
 
   void build_gated_view(
@@ -1083,6 +1088,108 @@ private:
     return detection.results.empty() ? 0.0F : static_cast<float>(detection.results.front().hypothesis.score);
   }
 
+  static std::string json_escape(const std::string & text)
+  {
+    std::ostringstream out;
+    for (const char ch : text) {
+      switch (ch) {
+        case '\\':
+          out << "\\\\";
+          break;
+        case '"':
+          out << "\\\"";
+          break;
+        case '\n':
+          out << "\\n";
+          break;
+        case '\r':
+          out << "\\r";
+          break;
+        case '\t':
+          out << "\\t";
+          break;
+        default:
+          out << ch;
+          break;
+      }
+    }
+    return out.str();
+  }
+
+  std::string detection_details_json(
+    const vision_msgs::msg::Detection2DArray & detections,
+    const std::vector<DetectionPoint> & points,
+    const std_msgs::msg::Header & header,
+    int image_width,
+    int image_height) const
+  {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(3);
+    out << "{";
+    out << "\"stamp\":{\"sec\":" << header.stamp.sec << ",\"nanosec\":" << header.stamp.nanosec << "},";
+    out << "\"frame_id\":\"" << json_escape(header.frame_id) << "\",";
+    out << "\"output_prefix\":\"" << json_escape(output_prefix_) << "\",";
+    out << "\"image_topic\":\"" << json_escape(image_topic_) << "\",";
+    out << "\"depth_topic\":\"" << json_escape(depth_topic_) << "\",";
+    out << "\"model_path\":\"" << json_escape(yolo_model_path_) << "\",";
+    out << "\"backend\":\"" << json_escape(yolo_backend_) << "\",";
+    out << "\"detection_input\":\"" << json_escape(detection_input_) << "\",";
+    out << "\"confidence_threshold\":" << confidence_threshold_ << ",";
+    out << "\"nms_threshold\":" << yolo_nms_threshold_ << ",";
+    out << "\"dehaze_enabled\":" << (enable_dehaze_ ? "true" : "false") << ",";
+    out << "\"image_width\":" << image_width << ",";
+    out << "\"image_height\":" << image_height << ",";
+    out << "\"detection_count\":" << detections.detections.size() << ",";
+    out << "\"point_count\":" << points.size() << ",";
+    out << "\"max_model_score\":" << last_yolo_max_score_ << ",";
+    out << "\"detections\":[";
+    for (std::size_t i = 0; i < detections.detections.size(); ++i) {
+      const auto & detection = detections.detections[i];
+      const auto rect = detection_rect(detection, image_width, image_height);
+      const auto label = detection_label(detection);
+      const auto score = detection_score(detection);
+      if (i > 0) {
+        out << ",";
+      }
+      out << "{";
+      out << "\"index\":" << i << ",";
+      out << "\"label\":\"" << json_escape(label) << "\",";
+      out << "\"global_class_id\":" << class_index_for_label(label) << ",";
+      out << "\"score\":" << score << ",";
+      out << "\"bbox\":{\"cx\":" << detection.bbox.center.position.x
+          << ",\"cy\":" << detection.bbox.center.position.y
+          << ",\"w\":" << detection.bbox.size_x
+          << ",\"h\":" << detection.bbox.size_y
+          << ",\"x1\":" << rect.x
+          << ",\"y1\":" << rect.y
+          << ",\"x2\":" << rect.x + rect.width
+          << ",\"y2\":" << rect.y + rect.height << "}";
+      out << "}";
+    }
+    out << "],\"points\":[";
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const auto & point = points[i];
+      if (i > 0) {
+        out << ",";
+      }
+      out << "{";
+      out << "\"index\":" << i << ",";
+      out << "\"label\":\"" << json_escape(point.label) << "\",";
+      out << "\"class_id\":" << point.class_id << ",";
+      out << "\"score\":" << point.score << ",";
+      out << "\"x\":" << point.x << ",";
+      out << "\"y\":" << point.y << ",";
+      out << "\"z\":" << point.z << ",";
+      out << "\"bbox_cx\":" << point.bbox_cx << ",";
+      out << "\"bbox_cy\":" << point.bbox_cy << ",";
+      out << "\"bbox_w\":" << point.bbox_w << ",";
+      out << "\"bbox_h\":" << point.bbox_h;
+      out << "}";
+    }
+    out << "]}";
+    return out.str();
+  }
+
   int class_index_for_label(const std::string & label) const
   {
     if (label == "vessel") {
@@ -1233,6 +1340,7 @@ private:
   rclcpp::Publisher<vision_msgs::msg::Detection2DArray>::SharedPtr detection_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr detection_points_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr detection_details_pub_;
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 };
