@@ -1,0 +1,95 @@
+{
+  "model": "src/usv_bringup/models/best.onnx",
+  "data": "/home/hu/yolo/vessel.v1i.yolov8/data.yaml",
+  "split": "train",
+  "dataset_names": [
+    "buoy",
+    "debris_container",
+    "fishing_boat",
+    "floating_obstacle",
+    "platform",
+    "vessel"
+  ],
+  "model_names": [
+    "buoy",
+    "debris_container",
+    "fishing_boat",
+    "floating_obstacle",
+    "platform",
+    "vessel"
+  ],
+  "model_to_dataset_class": {
+    "0": 0,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5
+  },
+  "totals": {
+    "tp": 0,
+    "fp": 18,
+    "fn": 299,
+    "images": 142,
+    "boxes": 299,
+    "predictions": 18
+  },
+  "precision_iou50": 0.0,
+  "recall_iou50": 0.0,
+  "per_class": {
+    "buoy": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 38,
+      "gt": 38,
+      "pred": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "debris_container": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 76,
+      "gt": 76,
+      "pred": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "fishing_boat": {
+      "tp": 0,
+      "fp": 2,
+      "fn": 50,
+      "gt": 50,
+      "pred": 2,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "floating_obstacle": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 45,
+      "gt": 45,
+      "pred": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "platform": {
+      "tp": 0,
+      "fp": 13,
+      "fn": 27,
+      "gt": 27,
+      "pred": 13,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "vessel": {
+      "tp": 0,
+      "fp": 3,
+      "fn": 63,
+      "gt": 63,
+      "pred": 3,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  }
+}

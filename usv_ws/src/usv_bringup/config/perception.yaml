@@ -19,7 +19,7 @@ radar_sonar_tracker:
     ais_topic: /ais/targets
     camera_fusion_timeout: 0.8
     uav_fusion_timeout: 1.2
-    min_camera_confidence: 0.20
+    min_camera_confidence: 0.10
     ais_confidence: 0.88
     min_ais_confidence: 0.45
 
@@ -81,7 +81,7 @@ pseudocolor_gated_camera_recognizer:
     # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
     # Keep this list in the exact model output order; the recognizer remaps names to global IDs.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.25
+    confidence_threshold: 0.10
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -121,7 +121,7 @@ uav_gated_camera_recognizer:
     yolo_nms_threshold: 0.45
     # UAV uses the pseudo-color/range-view model by default.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.25
+    confidence_threshold: 0.10
     enable_dehaze: true
     dehaze_strength: 0.55
     dehaze_omega: 0.85
@@ -282,7 +282,7 @@ usv_target_follower:
     follow_class_id: 0.0
     follow_class_ids: [0.0, 1.0]
     prefer_follow_class: true
-    min_follow_confidence: 0.18
+    min_follow_confidence: 0.12
     min_track_hits: 2
     obstacle_lookahead: 34.0
     obstacle_lateral_window: 13.0
