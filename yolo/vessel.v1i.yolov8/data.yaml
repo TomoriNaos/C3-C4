@@ -1,0 +1,14 @@
+path: /home/hu/yolo/vessel.v1i.yolov8
+train: train/images
+val: train/images
+test: train/images
+
+nc: 6
+names: ['buoy', 'debris_container', 'fishing_boat', 'floating_obstacle', 'platform', 'vessel']
+
+roboflow:
+  workspace: tomorinao
+  project: vessel-8ddw4
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/tomorinao/vessel-8ddw4/dataset/1
