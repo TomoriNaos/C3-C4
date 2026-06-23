@@ -37,7 +37,7 @@ struct BevDetection
   float y{0.0F};
   float z{0.8F};
   float confidence{0.0F};
-  float class_id{5.0F};
+  float class_id{3.0F};
 };
 
 class GatedBevDetector : public rclcpp::Node

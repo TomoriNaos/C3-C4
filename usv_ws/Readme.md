@@ -2,12 +2,120 @@
 
 本工程用于琼州海峡大雾低能见度场景下的无人船多模态感知仿真。系统在 ROS 2 Humble + Gazebo Classic 中融合普通相机、门控相机、深度相机、毫米波雷达、声呐、无人机观测和 AIS，实现海上目标识别、融合跟踪、跟随与避障评估。
 
+## 从零部署
+
+最终上传/交付时只需要保留两个目录：
+
+```text
+project_root/
+├── usv_ws/    # ROS 2 仿真、感知、融合、跟踪代码
+└── yolo/      # 普通相机和门控相机 YOLO 数据集、训练结果
+```
+
+下面命令默认你站在 `project_root`，或者把 `USV_WS`、`YOLO_DIR` 换成自己的实际目录：
+
+```bash
+export USV_WS=$PWD/usv_ws
+export YOLO_DIR=$PWD/yolo
+```
+
+推荐环境：
+
+```text
+Ubuntu 22.04
+ROS 2 Humble
+Gazebo Classic 11
+Python 3.10
+ONNX Runtime 1.23.2
+```
+
+安装基础依赖：
+
+```bash
+sudo apt update
+sudo apt install -y \
+  git wget python3-pip python3-colcon-common-extensions python3-rosdep \
+  ros-humble-desktop \
+  ros-humble-gazebo-ros-pkgs \
+  ros-humble-gazebo-plugins \
+  ros-humble-xacro \
+  ros-humble-robot-state-publisher \
+  ros-humble-tf2-ros \
+  ros-humble-rviz2 \
+  ros-humble-cv-bridge \
+  ros-humble-vision-msgs
+```
+
+初始化 `rosdep`：
+
+```bash
+sudo rosdep init || true
+rosdep update
+```
+
+安装 ONNX Runtime。推荐放在用户目录，例如 `~/onnxruntime-linux-x64-1.23.2`：
+
+```bash
+cd ~
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-x64-1.23.2.tgz
+tar -xzf onnxruntime-linux-x64-1.23.2.tgz
+```
+
+如果 ONNX Runtime 在其他目录，编译时指定：
+
+```bash
+colcon build --symlink-install --cmake-args -DONNXRUNTIME_ROOT=/your/onnxruntime/path
+```
+
+### VRX / WAM-V 资源
+
+本工程内置了简化 WAM-V URDF 和自定义海上目标，主仿真不直接 `find_package(vrx)`；但新机器经常缺 WAM-V/VRX/Gazebo 海上模型资源，建议部署时下载 VRX。两种方式二选一。
+
+方式 1：完整编译 VRX 工作区：
+
+```bash
+mkdir -p ~/vrx_ws/src
+cd ~/vrx_ws/src
+git clone -b humble https://github.com/osrf/vrx.git
+cd ~/vrx_ws
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+```
+
+方式 2：只下载 VRX Gazebo models：
+
+```bash
+mkdir -p ~/.gazebo/models
+cd /tmp
+wget -q https://github.com/osrf/vrx/archive/humble.tar.gz -O vrx.tar.gz
+mkdir -p vrx_models
+tar -xzf vrx.tar.gz -C vrx_models --strip-components=2 vrx-humble/models
+cp -r vrx_models/* ~/.gazebo/models/
+```
+
+如果编译了 VRX，新终端按顺序 source：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/vrx_ws/install/setup.bash
+source ${USV_WS}/install/setup.bash
+```
+
+获取并编译本工程：
+
+```bash
+cd ${USV_WS}
+rosdep install --from-paths src --ignore-src -r -y
+./scripts/build_clean_env.sh
+source install/setup.bash
+```
+
 ## 快速使用
 
 编译：
 
 ```bash
-cd /home/hu/usv_ws
+cd ${USV_WS}
 ./scripts/build_clean_env.sh
 source install/setup.bash
 ```
@@ -56,50 +164,70 @@ ros2 launch usv_bringup sim.launch.py ais:=false
 5 vessel
 ```
 
-注意：ONNX 类别序号和融合点云里的 `class_id` 不完全一样。程序会按标签名 remap 到跟踪用全局 ID：
-
-```text
-0 vessel
-1 fishing_boat
-2 buoy
-3 floating_obstacle
-4 debris_container
-5 platform
-```
-
-所以 `usv_target_follower.follow_class_ids: [0.0, 1.0]` 表示跟随船类目标 `vessel/fishing_boat`。
-
-训练截图目录：
-
-```text
-/home/hu/usv_captures/annotation_raw          普通相机截图
-/home/hu/usv_captures/annotation_occlusion    普通相机遮挡截图
-/home/hu/usv_captures/pseudocolor_single      门控伪彩色单目标截图
-/home/hu/usv_captures/pseudocolor_complex     门控伪彩色复杂场景截图
-```
+点云输出里的 `class_id` 已经和 ONNX 类别顺序保持一致。
+所以 `usv_target_follower.follow_class_ids: [5.0, 2.0]` 表示跟随船类目标 `vessel/fishing_boat`。
 
 YOLO 数据和训练结果目录：
 
 ```text
-/home/hu/yolo/vessel.v2i.yolov8               普通相机 Roboflow 数据
-/home/hu/yolo/gated_camera.v3i.yolov8         门控相机 Roboflow 数据
-/home/hu/yolo/runs/detect/c3_gpu_train_vessel 普通相机训练结果
-/home/hu/yolo/runs/detect/c3_gpu_train_gated_camera 门控相机训练结果
+../yolo/vessel.v2i.yolov8                       普通相机 Roboflow 数据
+../yolo/gated_camera.v3i.yolov8                  门控相机 Roboflow 数据
+../yolo/runs/detect/c3_gpu_train_vessel          普通相机训练结果
+../yolo/runs/detect/c3_gpu_train_gated_camera    门控相机训练结果
 ```
+
+当前标注审查结果：
+
+```text
+普通相机数据 `../yolo/vessel.v2i.yolov8`
+  train: 99 images, 218 boxes
+  valid: 28 images, 46 boxes
+  test : 15 images, 35 boxes
+
+门控相机数据 `../yolo/gated_camera.v3i.yolov8`
+  train: 118 images, 321 boxes
+  valid: 34 images, 100 boxes
+  test : 17 images, 26 boxes
+```
+
+`train/valid/test` 都没有发现空标签、类别越界或归一化 bbox 越界。`valid` 集类别分布：
+
+| 数据集 | buoy | debris_container | fishing_boat | floating_obstacle | platform | vessel |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 普通相机 valid | 3 | 13 | 9 | 7 | 4 | 10 |
+| 门控相机 valid | 12 | 28 | 14 | 18 | 10 | 18 |
+
+因此当前门控检测准确率不是“只标了某一个类别/某个模型”得出的；门控数据中 6 类都有样本。
 
 训练过程图可看：
 
 ```text
-/home/hu/yolo/runs/detect/c3_gpu_train_vessel/results.png
-/home/hu/yolo/runs/detect/c3_gpu_train_vessel/confusion_matrix_normalized.png
-/home/hu/yolo/runs/detect/c3_gpu_train_vessel/val_batch0_pred.jpg
+../yolo/runs/detect/c3_gpu_train_vessel/results.png
+../yolo/runs/detect/c3_gpu_train_vessel/confusion_matrix_normalized.png
+../yolo/runs/detect/c3_gpu_train_vessel/val_batch0_pred.jpg
 
-/home/hu/yolo/runs/detect/c3_gpu_train_gated_camera/results.png
-/home/hu/yolo/runs/detect/c3_gpu_train_gated_camera/confusion_matrix_normalized.png
-/home/hu/yolo/runs/detect/c3_gpu_train_gated_camera/val_batch0_pred.jpg
+../yolo/runs/detect/c3_gpu_train_gated_camera/results.png
+../yolo/runs/detect/c3_gpu_train_gated_camera/confusion_matrix_normalized.png
+../yolo/runs/detect/c3_gpu_train_gated_camera/val_batch0_pred.jpg
 ```
 
 ## 检测准确度
+
+检测准确度不是从训练日志手抄出来的，而是用当前工程里的实际 ONNX 模型直接推理统计：
+
+```text
+普通相机:
+  模型 src/usv_bringup/models/best.onnx
+  数据 ../yolo/vessel.v2i.yolov8/data.yaml
+  split valid
+
+门控相机:
+  模型 src/usv_bringup/models/best1.onnx
+  数据 ../yolo/gated_camera.v3i.yolov8/data.yaml
+  split valid
+```
+
+评估脚本是 `scripts/evaluate_yolo_onnx_dataset.py`。它读取 ONNX metadata 的类别名，并和 `data.yaml` 的类别名对齐，然后按 IoU=0.50 统计 TP、FP、FN、Precision、Recall 和 F1。
 
 我用当前最新数据集的 `valid` split 重新评估，并按 F1 扫描置信度后选择：
 
@@ -136,11 +264,11 @@ eval_outputs/current_accuracy/camera_threshold_sweep_summary.jpg
 复现评估：
 
 ```bash
-cd /home/hu/usv_ws
+cd ${USV_WS}
 
 python3 scripts/evaluate_yolo_onnx_dataset.py \
   --model src/usv_bringup/models/best.onnx \
-  --data /home/hu/yolo/vessel.v2i.yolov8/data.yaml \
+  --data ${YOLO_DIR}/vessel.v2i.yolov8/data.yaml \
   --split val \
   --conf 0.15 \
   --save-examples 24 \
@@ -148,7 +276,7 @@ python3 scripts/evaluate_yolo_onnx_dataset.py \
 
 python3 scripts/evaluate_yolo_onnx_dataset.py \
   --model src/usv_bringup/models/best1.onnx \
-  --data /home/hu/yolo/gated_camera.v3i.yolov8/data.yaml \
+  --data ${YOLO_DIR}/gated_camera.v3i.yolov8/data.yaml \
   --split val \
   --conf 0.20 \
   --save-examples 24 \
@@ -184,6 +312,44 @@ python3 scripts/evaluate_yolo_onnx_dataset.py \
 /uav/gated_camera/annotated
 ```
 
+### PointCloud2 字段
+
+检测点云是 `sensor_msgs/msg/PointCloud2`，每个点 `point_step=36` 字节，字段全部是 `FLOAT32`：
+
+| 字段 | offset | 含义 |
+| --- | ---: | --- |
+| `x` | 0 | 目标相对 `base_link` 的前向距离，单位 m |
+| `y` | 4 | 目标相对 `base_link` 的横向距离，左正右负，单位 m |
+| `z` | 8 | 目标高度，单位 m |
+| `intensity` | 12 | 检测置信度，也就是 score/confidence |
+| `class_id` | 16 | 类别编号，和 ONNX 类别顺序一致 |
+| `bbox_cx` | 20 | 图像 bbox 中心点 x，像素坐标 |
+| `bbox_cy` | 24 | 图像 bbox 中心点 y，像素坐标 |
+| `bbox_w` | 28 | 图像 bbox 宽度，像素 |
+| `bbox_h` | 32 | 图像 bbox 高度，像素 |
+
+`class_id` 编号：
+
+```text
+0 buoy
+1 debris_container
+2 fishing_boat
+3 floating_obstacle
+4 platform
+5 vessel
+```
+
+有 bbox 的点云：
+
+```text
+/gated_camera/detection_points
+/gated_camera/pseudocolor/detection_points
+/uav/gated_camera/detection_points
+/gated_camera/stf_detection_points
+```
+
+`/gated_camera/bev_detection_points` 是 BEV 几何旁路，没有图像检测框，因此 `bbox_cx/bbox_cy/bbox_w/bbox_h` 固定为 `0`。
+
 新增的 `detection_details` 是 `std_msgs/String` JSON，尽量详细输出实时检测数据，包括：
 
 ```text
@@ -202,11 +368,15 @@ image_width / image_height
 detection_count / point_count
 max_model_score
 detections[]:
+  index
   label
-  global_class_id
+  class_id
   score
-  bbox cx/cy/w/h/x1/y1/x2/y2
+  bbox:
+    cx/cy/w/h     目标框中心、宽、高，像素坐标
+    x1/y1/x2/y2   目标框左上角和右下角，像素坐标
 points[]:
+  index
   label
   class_id
   score
@@ -277,39 +447,46 @@ ros2 launch usv_bringup sim.launch.py target_model:=survey_boat
 ros2 launch usv_bringup sim.launch.py target_model:=service_boat
 ```
 
-当前代码没有实时手动切换目标的服务。运行中会自动在融合轨迹中重选目标，优先选择 `class_id=0(vessel)` 和 `class_id=1(fishing_boat)`，无人机远程发现目标会提高优先级。
+当前代码没有实时手动切换目标的服务。运行中会自动在融合轨迹中重选目标，优先选择 `class_id=5(vessel)` 和 `class_id=2(fishing_boat)`，无人机远程发现目标会提高优先级。
 
 ## 工程结构
 
 ```text
-/home/hu/usv_ws
-├── Readme.md
-├── docs
-│   ├── gated_non_yolo_recognition.md
-│   ├── stf_dataset_local_usage.md
-│   └── model_reference/class_reference.svg
-├── eval_outputs/current_accuracy
-│   ├── camera_detection_accuracy_summary.jpg
-│   ├── normal_camera_accuracy_sheet.jpg
-│   ├── gated_camera_accuracy_sheet.jpg
-│   └── camera_threshold_sweep_summary.jpg
-├── scripts
-│   ├── build_clean_env.sh
-│   ├── launch_sim_localhost.sh
-│   ├── evaluate_yolo_onnx_dataset.py
-│   ├── test_yolo_onnx_images.py
-│   ├── capture_annotation_dataset.sh
-│   ├── capture_occlusion_dataset.sh
-│   ├── capture_pseudocolor_dataset.sh
-│   ├── publish_stf_slices.py
-│   ├── stf_to_yolo_gated.py
-│   └── coco_to_yolo_subset.py
-└── src
-    ├── usv_bringup
-    ├── usv_description
-    ├── usv_perception
-    ├── lidar_robot
-    └── depth_image_to_pointcloud2
+project_root/
+├── yolo
+│   ├── vessel.v2i.yolov8
+│   ├── gated_camera.v3i.yolov8
+│   └── runs/detect
+└── usv_ws
+    ├── Readme.md
+    ├── 点云信息.png
+    ├── class_reference.png
+    ├── docs
+    │   ├── gated_non_yolo_recognition.md
+    │   ├── stf_dataset_local_usage.md
+    │   └── model_reference/class_reference.svg
+    ├── eval_outputs/current_accuracy
+    │   ├── camera_detection_accuracy_summary.jpg
+    │   ├── normal_camera_accuracy_sheet.jpg
+    │   ├── gated_camera_accuracy_sheet.jpg
+    │   └── camera_threshold_sweep_summary.jpg
+    ├── scripts
+    │   ├── build_clean_env.sh
+    │   ├── launch_sim_localhost.sh
+    │   ├── evaluate_yolo_onnx_dataset.py
+    │   ├── test_yolo_onnx_images.py
+    │   ├── capture_annotation_dataset.sh
+    │   ├── capture_occlusion_dataset.sh
+    │   ├── capture_pseudocolor_dataset.sh
+    │   ├── publish_stf_slices.py
+    │   ├── stf_to_yolo_gated.py
+    │   └── coco_to_yolo_subset.py
+    └── src
+        ├── usv_bringup
+        ├── usv_description
+        ├── usv_perception
+        ├── lidar_robot
+        └── depth_image_to_pointcloud2
 ```
 
 核心文件：
@@ -330,18 +507,3 @@ ros2 launch usv_bringup sim.launch.py target_model:=service_boat
 | `src/usv_description/urdf/wamv_base.urdf.xacro` | WAM-V 船体和传感器描述 |
 | `src/lidar_robot/src/mmwave_scan_converter.py` | C3 多高度毫米波转换 |
 | `src/depth_image_to_pointcloud2/src/depth_image_to_pointcloud2_node.cpp` | RGB-D 去雾和点云输出 |
-
-## 清理说明
-
-已删除生成性目录，便于上传 git：
-
-```text
-build/
-install/
-log/
-scripts/__pycache__/
-src/**/__pycache__/
-旧的 eval_outputs/archive_*
-```
-
-如果重新编译，`build/ install/ log/` 会再次生成；上传前可再次删除。

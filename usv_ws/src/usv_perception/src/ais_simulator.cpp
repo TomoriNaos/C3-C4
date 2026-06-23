@@ -99,7 +99,7 @@ private:
       const double sog = std::hypot(last_model_states_.twist[i].linear.x, last_model_states_.twist[i].linear.y);
       const double cog = std::atan2(last_model_states_.twist[i].linear.y, last_model_states_.twist[i].linear.x);
       const double heading = yaw_from_quaternion(last_model_states_.pose[i]);
-      const double class_id = name == "small_fishing_boat" ? 1.0 : 0.0;
+      const double class_id = name == "small_fishing_boat" ? 2.0 : 5.0;
 
       if (published++ > 0) {
         status << ",";

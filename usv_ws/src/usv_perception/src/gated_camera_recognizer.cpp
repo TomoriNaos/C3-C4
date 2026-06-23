@@ -1154,7 +1154,7 @@ private:
       out << "{";
       out << "\"index\":" << i << ",";
       out << "\"label\":\"" << json_escape(label) << "\",";
-      out << "\"global_class_id\":" << class_index_for_label(label) << ",";
+      out << "\"class_id\":" << class_index_for_label(label) << ",";
       out << "\"score\":" << score << ",";
       out << "\"bbox\":{\"cx\":" << detection.bbox.center.position.x
           << ",\"cy\":" << detection.bbox.center.position.y
@@ -1192,22 +1192,22 @@ private:
 
   int class_index_for_label(const std::string & label) const
   {
-    if (label == "vessel") {
+    if (label == "buoy" || label == "fishnet_buoy") {
       return 0;
     }
-    if (label == "fishing_boat") {
+    if (label == "debris_container" || label == "debris" || label == "container") {
       return 1;
     }
-    if (label == "buoy" || label == "fishnet_buoy") {
+    if (label == "fishing_boat") {
       return 2;
     }
     if (label == "floating_obstacle" || label == "maritime_obstacle") {
       return 3;
     }
-    if (label == "debris_container" || label == "debris" || label == "container") {
+    if (label == "platform") {
       return 4;
     }
-    if (label == "platform") {
+    if (label == "vessel") {
       return 5;
     }
     return -1;

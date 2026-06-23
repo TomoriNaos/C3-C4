@@ -417,16 +417,25 @@ private:
 
   int class_id_for_label(const std::string & label) const
   {
-    if (label == "vessel") {
+    if (label == "buoy" || label == "fishnet_buoy") {
       return 0;
     }
-    if (label == "buoy") {
+    if (label == "debris_container" || label == "debris" || label == "container") {
+      return 1;
+    }
+    if (label == "fishing_boat") {
       return 2;
     }
-    if (label == "floating_obstacle") {
+    if (label == "floating_obstacle" || label == "maritime_obstacle") {
       return 3;
     }
-    return 5;
+    if (label == "platform") {
+      return 4;
+    }
+    if (label == "vessel") {
+      return 5;
+    }
+    return -1;
   }
 
   cv::Mat draw_detections(

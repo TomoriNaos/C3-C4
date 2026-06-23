@@ -46,7 +46,7 @@ public:
     model_states_topic_ = declare_parameter<std::string>("model_states_topic", "/model_states");
     remote_target_topic_ = declare_parameter<std::string>("remote_target_topic", "/uav/remote_target_status");
     remote_target_confidence_ = declare_parameter<double>("remote_target_confidence", 0.94);
-    remote_target_class_id_ = declare_parameter<double>("remote_target_class_id", 0.0);
+    remote_target_class_id_ = declare_parameter<double>("remote_target_class_id", 5.0);
     target_follow_backoff_ = declare_parameter<double>("target_follow_backoff", 18.0);
     target_lateral_sweep_ = declare_parameter<double>("target_lateral_sweep", 13.0);
     target_timeout_ = declare_parameter<double>("target_timeout", 2.0);
@@ -448,7 +448,7 @@ private:
   double patrol_speed_{0.45};
   double camera_pitch_{0.30};
   double remote_target_confidence_{0.94};
-  double remote_target_class_id_{0.0};
+  double remote_target_class_id_{5.0};
   double target_follow_backoff_{18.0};
   double target_lateral_sweep_{13.0};
   double target_timeout_{2.0};

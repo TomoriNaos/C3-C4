@@ -37,7 +37,7 @@ gated_camera_recognizer:
     yolo_nms_threshold: 0.45
     # Current src/usv_bringup/models/best.onnx metadata:
     # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
-    # Keep this list in the exact model output order; the recognizer remaps names to global IDs.
+    # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
     confidence_threshold: 0.15
     enable_dehaze: true
@@ -79,7 +79,7 @@ pseudocolor_gated_camera_recognizer:
     yolo_nms_threshold: 0.45
     # Current src/usv_bringup/models/best1.onnx metadata:
     # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
-    # Keep this list in the exact model output order; the recognizer remaps names to global IDs.
+    # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
     confidence_threshold: 0.20
     enable_dehaze: true
@@ -246,7 +246,7 @@ uav_patrol_controller:
     model_states_topic: /model_states
     remote_target_topic: /uav/remote_target_status
     remote_target_confidence: 0.94
-    remote_target_class_id: 0.0
+    remote_target_class_id: 5.0
     target_follow_backoff: 18.0
     target_lateral_sweep: 13.0
     target_timeout: 2.0
@@ -279,8 +279,8 @@ usv_target_follower:
     target_lock_timeout: 4.5
     target_reacquire_gate: 9.0
     turn_slowdown_gain: 0.35
-    follow_class_id: 0.0
-    follow_class_ids: [0.0, 1.0]
+    follow_class_id: 5.0
+    follow_class_ids: [5.0, 2.0]
     prefer_follow_class: true
     min_follow_confidence: 0.12
     min_track_hits: 2

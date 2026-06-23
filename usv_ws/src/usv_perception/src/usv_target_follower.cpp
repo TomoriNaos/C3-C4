@@ -79,7 +79,7 @@ public:
     target_reacquire_gate_ = declare_parameter<double>("target_reacquire_gate", 9.0);
     turn_slowdown_gain_ = declare_parameter<double>("turn_slowdown_gain", 0.35);
 
-    follow_class_id_ = declare_parameter<double>("follow_class_id", 1.0);
+    follow_class_id_ = declare_parameter<double>("follow_class_id", 5.0);
     follow_class_ids_ = declare_parameter<std::vector<double>>(
       "follow_class_ids", std::vector<double>{follow_class_id_});
     prefer_follow_class_ = declare_parameter<bool>("prefer_follow_class", true);
@@ -211,7 +211,7 @@ private:
       obstacle.x = rel_x;
       obstacle.y = rel_y;
       obstacle.confidence = 0.85;
-      obstacle.class_id = 0.0;
+      obstacle.class_id = 3.0;
       obstacle.hits = 3;
       obstacle.last_source = "gazebo_model_state";
       obstacle.stamp = now;
@@ -656,7 +656,7 @@ private:
   double target_lock_timeout_{4.5};
   double target_reacquire_gate_{9.0};
   double turn_slowdown_gain_{0.35};
-  double follow_class_id_{1.0};
+  double follow_class_id_{5.0};
   std::vector<double> follow_class_ids_;
   double min_follow_confidence_{0.18};
   int min_track_hits_{2};
