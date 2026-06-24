@@ -93,6 +93,7 @@ public:
     yolo_model_path_ = declare_parameter<std::string>("yolo_model_path", "");
     confidence_threshold_ = declare_parameter<double>("confidence_threshold", 0.35);
     min_contour_area_ = declare_parameter<double>("min_contour_area", 450.0);
+    enable_yolo_empty_contour_fallback_ = declare_parameter<bool>("enable_yolo_empty_contour_fallback", true);
     enable_dehaze_ = declare_parameter<bool>("enable_dehaze", true);
     dehaze_strength_ = std::clamp(declare_parameter<double>("dehaze_strength", 0.65), 0.0, 1.0);
     dehaze_omega_ = std::clamp(declare_parameter<double>("dehaze_omega", 0.88), 0.0, 1.0);
@@ -531,6 +532,9 @@ private:
         candidate.box.y + candidate.box.height,
         class_id,
         candidate.score));
+    }
+    if (detections.detections.empty() && enable_yolo_empty_contour_fallback_) {
+      return detect_with_contours(bgr, header);
     }
     } catch (const Ort::Exception & exc) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO ONNX Runtime inference failed: %s", exc.what());
@@ -1283,6 +1287,7 @@ private:
   std::string yolo_model_path_;
   double confidence_threshold_{0.35};
   double min_contour_area_{450.0};
+  bool enable_yolo_empty_contour_fallback_{true};
   bool enable_dehaze_{true};
   double dehaze_strength_{0.65};
   double dehaze_omega_{0.88};

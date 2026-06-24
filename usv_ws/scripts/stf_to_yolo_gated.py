@@ -29,7 +29,7 @@ DEFAULT_CLASS_MAP = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert a Seeing Through Fog gated subset to YOLO format.")
-    parser.add_argument("--dataset", default="/home/hu/STF_Dataset", help="STF subset root directory.")
+    parser.add_argument("--dataset", default=str(Path.home() / "STF_Dataset"), help="STF subset root directory.")
     parser.add_argument("--out", required=True, help="Output YOLO directory.")
     parser.add_argument("--labels-dir", default="gated_labels_TMPv2", help="KITTI-style label directory under dataset.")
     parser.add_argument("--split", default="train", choices=["train", "val", "test"], help="Output split name.")

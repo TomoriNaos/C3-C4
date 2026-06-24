@@ -23,6 +23,91 @@ radar_sonar_tracker:
     ais_confidence: 0.88
     min_ais_confidence: 0.45
 
+c3_multimodal_buffer_fusion:
+  ros__parameters:
+    base_frame: base_link
+    usv_model_name: wamv
+    radar_topics:
+      - /mmwave/front/h10m/detections
+      - /mmwave/right/h10m/detections
+      - /mmwave/back/h10m/detections
+      - /mmwave/left/h10m/detections
+      - /mmwave/front/h4m/detections
+      - /mmwave/right/h4m/detections
+      - /mmwave/back/h4m/detections
+      - /mmwave/left/h4m/detections
+      - /mmwave/front/h1p9m/detections
+      - /mmwave/right/h1p9m/detections
+      - /mmwave/back/h1p9m/detections
+      - /mmwave/left/h1p9m/detections
+      - /mmwave/front/h1p5m/detections
+      - /mmwave/right/h1p5m/detections
+      - /mmwave/back/h1p5m/detections
+      - /mmwave/left/h1p5m/detections
+      - /mmwave/front/h1m/detections
+      - /mmwave/right/h1m/detections
+      - /mmwave/back/h1m/detections
+      - /mmwave/left/h1m/detections
+    sonar_scan_topics:
+      - /sonar/scan
+      - /sonar/right_scan
+      - /sonar/back_scan
+      - /sonar/left_scan
+    sonar_scan_yaws: [0.0, -1.57079632679, 3.14159265359, 1.57079632679]
+    normal_camera_topic: /gated_camera/detection_points
+    gated_camera_topic: /gated_camera/pseudocolor/detection_points
+    stf_camera_topic: /gated_camera/stf_detection_points
+    bev_topic: /gated_camera/bev_detection_points
+    uav_gated_topic: /uav/gated_camera/detection_points
+    depth_camera_detection_topic: /depth_camera/detection_points
+    depth_topic: /depth_camera/dehazed_points
+    model_states_topic: /model_states
+    buffer_keep_s: 0.65
+    sync_tolerance_s: 0.35
+    publish_rate_hz: 8.0
+    max_points_per_cloud: 2500
+    max_range_m: 160.0
+    radar_min_range_m: 6.0
+    close_range_m: 30.0
+    heatmap_resolution_m: 1.0
+    heatmap_x_min: 0.0
+    heatmap_x_max: 150.0
+    heatmap_y_min: -75.0
+    heatmap_y_max: 75.0
+    heatmap_threshold: 0.55
+    heatmap_source_cell_cap: 1.25
+    detected_suppression_radius: 9.0
+    confirmation_radius: 10.0
+    semantic_confirmation_radius: 15.0
+    enable_spatial_fallback_confirmation: false
+    spatial_confirmation_min_points: 8
+    spatial_confirmation_min_sources: 2
+    enable_sim_truth_confirmation: true
+    sim_truth_confirmation_radius: 16.0
+    object_association_radius: 14.0
+    detected_object_timeout_s: 30.0
+    ekf_process_noise: 0.35
+    ekf_measurement_noise: 0.9
+    drone_goal_altitude: 24.0
+    enable_nn_heatmap_bypass: false
+    nn_heatmap_topic: /c3/nn/heatmap_goal
+    evaluation_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - net_line_a
+    evaluation_target_model_names:
+      - moving_vessel
+
 gated_camera_recognizer:
   ros__parameters:
     image_topic: /gated_camera/image_raw
@@ -39,7 +124,8 @@ gated_camera_recognizer:
     # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.15
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -59,7 +145,7 @@ gated_camera_recognizer:
     use_tf_transform: true
     use_camera_info: true
     depth_roi_shrink: 0.20
-    min_contour_area: 450.0
+    min_contour_area: 260.0
     process_stride: 1
     gate_near: [2.0, 18.0]
     gate_mid: [12.0, 42.0]
@@ -81,7 +167,8 @@ pseudocolor_gated_camera_recognizer:
     # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.20
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -101,11 +188,11 @@ pseudocolor_gated_camera_recognizer:
     use_tf_transform: true
     use_camera_info: true
     depth_roi_shrink: 0.20
-    min_contour_area: 450.0
+    min_contour_area: 260.0
     process_stride: 1
     gate_near: [2.0, 18.0]
     gate_mid: [12.0, 42.0]
-    gate_far: [32.0, 85.0]
+    gate_far: [32.0, 88.0]
 
 uav_gated_camera_recognizer:
   ros__parameters:
@@ -121,7 +208,8 @@ uav_gated_camera_recognizer:
     yolo_nms_threshold: 0.45
     # UAV uses the pseudo-color/range-view model by default.
     class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.20
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
     enable_dehaze: true
     dehaze_strength: 0.55
     dehaze_omega: 0.85
@@ -141,11 +229,48 @@ uav_gated_camera_recognizer:
     use_tf_transform: true
     use_camera_info: true
     depth_roi_shrink: 0.20
-    min_contour_area: 650.0
-    process_stride: 3
+    min_contour_area: 360.0
+    process_stride: 1
     gate_near: [10.0, 45.0]
     gate_mid: [35.0, 110.0]
     gate_far: [90.0, 230.0]
+
+depth_camera_recognizer:
+  ros__parameters:
+    image_topic: /depth_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /depth_camera/camera_info
+    output_prefix: depth_camera
+    frame_id: depth_camera_link
+    detection_input: raw
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 260.0
+    process_stride: 1
 
 gated_slice_fusion_recognizer:
   ros__parameters:
@@ -230,7 +355,7 @@ ais_simulator:
 
 uav_patrol_controller:
   ros__parameters:
-    model_name: als_uav
+    model_name: scout_uav
     update_rate: 8.0
     center_x: 14.0
     center_y: 0.0
@@ -250,6 +375,9 @@ uav_patrol_controller:
     target_follow_backoff: 18.0
     target_lateral_sweep: 13.0
     target_timeout: 2.0
+    external_goal_topic: /c3/drone/goal
+    external_goal_timeout: 4.0
+    external_goal_speed: 1.6
 
 usv_target_follower:
   ros__parameters:

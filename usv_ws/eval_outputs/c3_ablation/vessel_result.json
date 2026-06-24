@@ -1,0 +1,51 @@
+{
+  "scope": "moving_vessel stable snapshot",
+  "source_stamp": 29.604,
+  "target_ground_truth": {
+    "name": "moving_vessel",
+    "class_id": 5,
+    "x": 22.680463123534423,
+    "y": -18.350808771852314
+  },
+  "target_distance_m": 29.174570949357538,
+  "target_metrics": {
+    "ground_truth": 1,
+    "true_positive": 1,
+    "false_negative": 0,
+    "miss_rate": 0.0,
+    "snapshot_recall": 1.0,
+    "note": "A stable-frame target-specific result, not a full-scene or full-run average."
+  },
+  "effective_modalities": {
+    "radar": {
+      "points": 979,
+      "best": 1.7268282413482663,
+      "candidate": [
+        20.5,
+        -21.5
+      ],
+      "nearest_gt_distance": 3.830381811847981,
+      "hit": true,
+      "class_hint": "unknown",
+      "nearest_gt_name": "moving_vessel"
+    },
+    "integrated": {
+      "points": 982,
+      "best": 1.7268282413482663,
+      "candidate": [
+        20.5,
+        -21.5
+      ],
+      "nearest_gt_distance": 3.830381811847981,
+      "hit": true,
+      "class_hint": "unknown",
+      "nearest_gt_name": "moving_vessel"
+    }
+  },
+  "runtime": {
+    "single_frame_processing_ms": 0.658,
+    "stable_window_mean_processing_ms": 0.9928888888888887,
+    "process_memory_mb": 48.461,
+    "integrated_points": 982
+  }
+}

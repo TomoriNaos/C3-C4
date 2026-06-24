@@ -205,6 +205,7 @@
           </material>
         </visual>
         <collision name="hull_collision">
+          <pose>0 0 -0.18 0 0 0</pose>
           <geometry><box><size>2.4 0.75 0.65</size></box></geometry>
         </collision>
         <collision name="radar_reflector_collision">
@@ -678,7 +679,7 @@
       </link>
     </model>
 
-    <model name="als_uav">
+    <model name="scout_uav">
       <static>false</static>
       <pose>29 0 12 0 0 3.1416</pose>
       <link name="base_link">
@@ -757,7 +758,7 @@
             <diffuse>0.03 0.03 0.03 0.85</diffuse>
           </material>
         </visual>
-        <visual name="als_pod_visual">
+        <visual name="gated_pod_visual">
           <pose>0.16 0 -0.20 0 0 0</pose>
           <geometry><box><size>0.32 0.24 0.18</size></box></geometry>
           <material>
@@ -799,45 +800,6 @@
           </plugin>
         </sensor>
 
-        <sensor type="ray" name="uav_als_lidar">
-          <pose>0.12 0 -0.22 0 0.58 0</pose>
-          <visualize>false</visualize>
-          <always_on>true</always_on>
-          <update_rate>4.0</update_rate>
-          <ray>
-            <scan>
-              <horizontal>
-                <samples>240</samples>
-                <resolution>1</resolution>
-                <min_angle>-0.70</min_angle>
-                <max_angle>0.70</max_angle>
-              </horizontal>
-              <vertical>
-                <samples>16</samples>
-                <resolution>1</resolution>
-                <min_angle>-0.34</min_angle>
-                <max_angle>0.18</max_angle>
-              </vertical>
-            </scan>
-            <range>
-              <min>2.0</min>
-              <max>260.0</max>
-              <resolution>0.08</resolution>
-            </range>
-            <noise>
-              <type>gaussian</type>
-              <mean>0.0</mean>
-              <stddev>0.04</stddev>
-            </noise>
-          </ray>
-          <plugin name="gazebo_ros_uav_als" filename="libgazebo_ros_ray_sensor.so">
-            <ros>
-              <remapping>~/out:=uav/als/points</remapping>
-            </ros>
-            <output_type>sensor_msgs/PointCloud2</output_type>
-            <frame_name>uav_als_link</frame_name>
-          </plugin>
-        </sensor>
       </link>
     </model>
 

@@ -13,13 +13,11 @@ class MmwaveDetectionDebug(Node):
         super().__init__('mmwave_detection_debug')
 
         self._subs = []
-        self.topic_map = {
-            '10m': '/mmwave_10m/detections',
-            '4m': '/mmwave_4m/detections',
-            '1p9m': '/mmwave_1p9m/detections',
-            '1p5m': '/mmwave_1p5m/detections',
-            '1m': '/mmwave_1m/detections',
-        }
+        self.topic_map = {}
+        for height in ('h10m', 'h4m', 'h1p9m', 'h1p5m', 'h1m'):
+            for sector in ('front', 'right', 'back', 'left'):
+                name = f'{height}_{sector}'
+                self.topic_map[name] = f'/mmwave/{sector}/{height}/detections'
 
         for radar_name, topic_name in self.topic_map.items():
             sub = self.create_subscription(

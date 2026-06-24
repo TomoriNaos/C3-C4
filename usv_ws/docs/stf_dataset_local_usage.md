@@ -1,4 +1,4 @@
-# `/home/hu/STF_Dataset` 本地数据说明
+# `~/STF_Dataset` 本地数据说明
 
 STF 是真实门控相机数据集子集，主要价值是提供真实 gated NIR 三切片外观、标签和相机标定。它不是海上船舶数据集，不能直接证明当前海上 6 类模型的最终效果。
 
@@ -7,7 +7,7 @@ STF 是真实门控相机数据集子集，主要价值是提供真实 gated NIR
 ## 目录内容
 
 ```text
-/home/hu/STF_Dataset
+~/STF_Dataset
 ├── gated0_rect8                 312 张 PNG，1280x720，8-bit 灰度
 ├── gated1_rect8                 312 张 PNG，1280x720，8-bit 灰度
 ├── gated2_rect8                 312 张 PNG，1280x720，8-bit 灰度
@@ -107,10 +107,10 @@ STF 内参只适合离线 STF 实验和真实 gated 数据训练时使用。
 把三切片合成伪彩色图，并生成 YOLO 标签：
 
 ```bash
-cd /home/hu/usv_ws
+cd ${USV_WS}
 python3 scripts/stf_to_yolo_gated.py \
-  --dataset /home/hu/STF_Dataset \
-  --out /home/hu/STF_YOLO_pseudo \
+  --dataset ~/STF_Dataset \
+  --out ~/STF_YOLO_pseudo \
   --class-mode mapped \
   --val-every 5
 ```
@@ -127,8 +127,8 @@ obstacle
 
 ```bash
 python3 scripts/stf_to_yolo_gated.py \
-  --dataset /home/hu/STF_Dataset \
-  --out /home/hu/STF_YOLO_objectness \
+  --dataset ~/STF_Dataset \
+  --out ~/STF_YOLO_objectness \
   --class-mode generic \
   --val-every 5
 ```
@@ -136,7 +136,7 @@ python3 scripts/stf_to_yolo_gated.py \
 输出：
 
 ```text
-/home/hu/STF_YOLO_pseudo
+~/STF_YOLO_pseudo
 ├── images/train
 ├── images/val
 ├── labels/train
@@ -145,7 +145,7 @@ python3 scripts/stf_to_yolo_gated.py \
 └── summary.json
 ```
 
-这里的“转 YOLO”只是为了方便训练和验证，不代表后续只能用 YOLO。做 BEV、Pseudo-LiDAR、Gated3D 时，也可以直接读取三张灰度切片和原始标签。
+这里的“转 YOLO”只是为了方便训练和验证，不代表后续只能用 YOLO。做 BEV、伪深度点云、Gated3D 时，也可以直接读取三张灰度切片和原始标签。
 
 ## 离线发布 STF 切片
 
@@ -153,7 +153,7 @@ python3 scripts/stf_to_yolo_gated.py \
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/hu/usv_ws/install/setup.bash
+source ${USV_WS}/install/setup.bash
 
 ros2 run usv_perception gated_slice_fusion_recognizer
 ```
@@ -161,9 +161,9 @@ ros2 run usv_perception gated_slice_fusion_recognizer
 另开终端：
 
 ```bash
-cd /home/hu/usv_ws
+cd ${USV_WS}
 python3 scripts/publish_stf_slices.py \
-  --dataset /home/hu/STF_Dataset \
+  --dataset ~/STF_Dataset \
   --rate 2.0 \
   --limit 30
 ```
@@ -184,7 +184,7 @@ STF 可以继续用于下面几件事：
 ```text
 1. 预训练 gated_object 检测器，再用海上仿真图微调 6 类。
 2. 训练 Gated3D/3D-CNN，让网络直接学习 near/mid/far 切片轴。
-3. 做 Pseudo-LiDAR/BEV 的道路域预训练，再迁移到海上几何目标。
+3. 做伪深度点云/BEV 的道路域预训练，再迁移到海上几何目标。
 4. 用 STF 的 3D 标签检查图像框到空间点的投影误差。
 5. 做真实雾天 gated 图像的去噪、归一化、强度增强实验。
 ```

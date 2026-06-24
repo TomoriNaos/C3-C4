@@ -79,36 +79,6 @@ Visualization Manager:
       Use Fixed Frame: true
       Value: true
     - Class: rviz_default_plugins/PointCloud2
-      Name: USV ALS PointCloud
-      Enabled: true
-      Topic:
-        Value: /als/points
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Depth: 5
-      Style: Points
-      Size (m): 0.04
-      Color Transformer: FlatColor
-      Color: 80; 255; 160
-      Queue Size: 5
-      Value: true
-    - Class: rviz_default_plugins/PointCloud2
-      Name: UAV ALS PointCloud
-      Enabled: true
-      Topic:
-        Value: /uav/als/points
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Depth: 5
-      Style: Points
-      Size (m): 0.06
-      Color Transformer: FlatColor
-      Color: 255; 120; 70
-      Queue Size: 5
-      Value: true
-    - Class: rviz_default_plugins/PointCloud2
       Name: Gated Detection Points
       Enabled: true
       Topic:
@@ -119,6 +89,23 @@ Visualization Manager:
         Depth: 5
       Style: Spheres
       Size (m): 0.35
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Min Intensity: 0
+      Max Intensity: 1
+      Queue Size: 10
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: C3 Integrated Cloud
+      Enabled: true
+      Topic:
+        Value: /c3/buffer/integrated_cloud
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Spheres
+      Size (m): 0.25
       Color Transformer: Intensity
       Channel Name: intensity
       Min Intensity: 0
@@ -151,7 +138,7 @@ Visualization Manager:
       Name: UAV Marker
       Enabled: true
       Marker Topic:
-        Value: /uav/als/status_marker
+        Value: /uav/status_marker
         Reliability Policy: Reliable
         Durability Policy: Volatile
         History Policy: Keep Last
@@ -196,6 +183,19 @@ Visualization Manager:
       Normalize Range: true
       Min Value: 0
       Max Value: 1
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Name: C3 Heatmap
+      Enabled: true
+      Topic:
+        Value: /c3/heatmap/image
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Normalize Range: true
+      Min Value: 0
+      Max Value: 255
       Value: true
   Enabled: true
   Global Options:

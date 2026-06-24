@@ -15,7 +15,6 @@
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>depth_image_to_pointcloud2</exec_depend>
-  <exec_depend>lidar_robot</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>usv_description</exec_depend>
   <exec_depend>usv_perception</exec_depend>

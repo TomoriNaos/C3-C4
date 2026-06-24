@@ -17,6 +17,8 @@ class MmwaveScanConverter(Node):
         self.declare_parameter('input_topic', '/radar/raw_scan')
         self.declare_parameter('output_topic', '/mmwave/detections')
         self.declare_parameter('frame_id', 'radar_link')
+        self.declare_parameter('output_frame_id', 'base_link')
+        self.declare_parameter('mount_yaw_rad', 0.0)
 
         # 粗检测层参数
         self.declare_parameter('max_range', 800.0)
@@ -132,7 +134,10 @@ class MmwaveScanConverter(Node):
         detections.sort(key=lambda p: p[5], reverse=True)
         detections = detections[:max_detections]
 
-        cloud = self.create_cloud(msg.header, detections)
+        output_header = Header()
+        output_header.stamp = msg.header.stamp
+        output_header.frame_id = self.get_parameter('output_frame_id').value
+        cloud = self.create_cloud(output_header, detections)
         self.pub.publish(cloud)
 
     def build_group_target_candidate(self, group):
@@ -327,9 +332,15 @@ class MmwaveScanConverter(Node):
         elevation = candidate['elevation']
 
         horizontal_range = rng * math.cos(elevation)
-        x = horizontal_range * math.cos(azimuth)
-        y = horizontal_range * math.sin(azimuth)
+        local_x = horizontal_range * math.cos(azimuth)
+        local_y = horizontal_range * math.sin(azimuth)
+        mount_yaw = float(self.get_parameter('mount_yaw_rad').value)
+        cos_yaw = math.cos(mount_yaw)
+        sin_yaw = math.sin(mount_yaw)
+        x = cos_yaw * local_x - sin_yaw * local_y
+        y = sin_yaw * local_x + cos_yaw * local_y
         z = candidate['z']
+        azimuth_world = math.atan2(y, x)
 
         return (
             x,
@@ -340,7 +351,7 @@ class MmwaveScanConverter(Node):
             candidate['snr'],
             candidate['rcs'],
             candidate['range'],
-            math.degrees(candidate['azimuth']),
+            math.degrees(azimuth_world),
             timestamp,
             candidate['source'],
             candidate.get('target_type', 0.0),

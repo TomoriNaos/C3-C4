@@ -15,7 +15,7 @@ from sensor_msgs.msg import Image
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Replay STF gated slices as ROS image topics.")
-    parser.add_argument("--dataset", default="/home/hu/STF_Dataset", help="STF subset root directory.")
+    parser.add_argument("--dataset", default=str(Path.home() / "STF_Dataset"), help="STF subset root directory.")
     parser.add_argument("--rate", type=float, default=2.0, help="Publish rate in Hz.")
     parser.add_argument("--limit", type=int, default=0, help="Optional number of frames to publish.")
     parser.add_argument("--loop", action="store_true", help="Loop after the last frame.")

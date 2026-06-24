@@ -15,7 +15,7 @@
     <color rgba="0.08 0.22 0.34 1.0"/>
   </material>
 
-  <xacro:macro name="c3_raw_mmwave_sensor" params="name height topic">
+  <xacro:macro name="c3_raw_mmwave_sensor" params="name height yaw topic">
     <link name="${name}_link">
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -28,7 +28,7 @@
     <joint name="${name}_joint" type="fixed">
       <parent link="base_link"/>
       <child link="${name}_link"/>
-      <origin xyz="-0.35 0 ${height}" rpy="0 0 0"/>
+      <origin xyz="-0.35 0 ${height}" rpy="0 0 ${yaw}"/>
     </joint>
 
     <gazebo reference="${name}_link">
@@ -39,10 +39,10 @@
         <ray>
           <scan>
             <horizontal>
-              <samples>400</samples>
+              <samples>300</samples>
               <resolution>1</resolution>
-              <min_angle>-1.0472</min_angle>
-              <max_angle>1.0472</max_angle>
+              <min_angle>-0.785398</min_angle>
+              <max_angle>0.785398</max_angle>
             </horizontal>
           </scan>
           <range>
@@ -197,11 +197,26 @@
   </gazebo>
 
   <xacro:if value="$(arg enable_c3_mmwave)">
-    <xacro:c3_raw_mmwave_sensor name="radar_10m" height="10.0" topic="radar_10m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_4m" height="4.0" topic="radar_4m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p9m" height="1.9" topic="radar_1p9m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p5m" height="1.5" topic="radar_1p5m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1m" height="1.0" topic="radar_1m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_10m_front" height="10.0" yaw="0.0" topic="radar/front/h10m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_10m_right" height="10.0" yaw="-1.570796" topic="radar/right/h10m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_10m_back" height="10.0" yaw="3.141593" topic="radar/back/h10m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_10m_left" height="10.0" yaw="1.570796" topic="radar/left/h10m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_4m_front" height="4.0" yaw="0.0" topic="radar/front/h4m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_4m_right" height="4.0" yaw="-1.570796" topic="radar/right/h4m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_4m_back" height="4.0" yaw="3.141593" topic="radar/back/h4m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_4m_left" height="4.0" yaw="1.570796" topic="radar/left/h4m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p9m_front" height="1.9" yaw="0.0" topic="radar/front/h1p9m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p9m_right" height="1.9" yaw="-1.570796" topic="radar/right/h1p9m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p9m_back" height="1.9" yaw="3.141593" topic="radar/back/h1p9m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p9m_left" height="1.9" yaw="1.570796" topic="radar/left/h1p9m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_front" height="1.5" yaw="0.0" topic="radar/front/h1p5m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_right" height="1.5" yaw="-1.570796" topic="radar/right/h1p5m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_back" height="1.5" yaw="3.141593" topic="radar/back/h1p5m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_left" height="1.5" yaw="1.570796" topic="radar/left/h1p5m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1m_front" height="1.0" yaw="0.0" topic="radar/front/h1m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1m_right" height="1.0" yaw="-1.570796" topic="radar/right/h1m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1m_back" height="1.0" yaw="3.141593" topic="radar/back/h1m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_1m_left" height="1.0" yaw="1.570796" topic="radar/left/h1m/raw_scan"/>
   </xacro:if>
 
   <link name="depth_camera_link">
@@ -291,63 +306,8 @@
     </sensor>
   </gazebo>
 
-  <link name="als_lidar_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.12" length="0.12"/>
-      </geometry>
-      <material name="sensor_black"/>
-    </visual>
-  </link>
-  <joint name="als_lidar_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="als_lidar_link"/>
-    <origin xyz="0.15 0 1.72" rpy="0 0 0"/>
-  </joint>
-
-  <gazebo reference="als_lidar_link">
-    <sensor type="ray" name="als_lidar">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>false</visualize>
-      <update_rate>5</update_rate>
-      <ray>
-        <scan>
-          <horizontal>
-            <samples>240</samples>
-            <resolution>1</resolution>
-            <min_angle>-${pi}</min_angle>
-            <max_angle>${pi}</max_angle>
-          </horizontal>
-          <vertical>
-            <samples>8</samples>
-            <resolution>1</resolution>
-            <min_angle>-0.28</min_angle>
-            <max_angle>0.12</max_angle>
-          </vertical>
-        </scan>
-        <range>
-          <min>0.3</min>
-          <max>90.0</max>
-          <resolution>0.03</resolution>
-        </range>
-        <noise>
-          <type>gaussian</type>
-          <mean>0.0</mean>
-          <stddev>0.015</stddev>
-        </noise>
-      </ray>
-      <plugin name="gazebo_ros_als_lidar" filename="libgazebo_ros_ray_sensor.so">
-        <ros>
-          <remapping>~/out:=als/points</remapping>
-        </ros>
-        <output_type>sensor_msgs/PointCloud2</output_type>
-        <frame_name>als_lidar_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
-
-  <link name="sonar_link">
+  <xacro:macro name="sonar_sector_sensor" params="name yaw topic">
+  <link name="${name}_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 ${pi / 2.0} 0"/>
       <geometry>
@@ -356,39 +316,45 @@
       <material name="sensor_black"/>
     </visual>
   </link>
-  <joint name="sonar_joint" type="fixed">
+  <joint name="${name}_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="sonar_link"/>
-    <origin xyz="0.65 0 -0.28" rpy="0 ${pi / 2.0} 0"/>
+    <child link="${name}_link"/>
+    <origin xyz="0.65 0 -0.28" rpy="0 0 ${yaw}"/>
   </joint>
 
-  <gazebo reference="sonar_link">
-    <sensor type="ray" name="sonar_sensor">
+  <gazebo reference="${name}_link">
+    <sensor type="ray" name="${name}_sensor">
       <pose>0 0 0 0 0 0</pose>
       <visualize>false</visualize>
       <update_rate>6</update_rate>
       <ray>
         <scan>
           <horizontal>
-            <samples>9</samples>
+            <samples>91</samples>
             <resolution>1</resolution>
-            <min_angle>-0.16</min_angle>
-            <max_angle>0.16</max_angle>
+            <min_angle>-0.785398</min_angle>
+            <max_angle>0.785398</max_angle>
           </horizontal>
         </scan>
         <range>
-          <min>0.2</min>
+          <min>4.0</min>
           <max>60.0</max>
           <resolution>0.03</resolution>
         </range>
       </ray>
-      <plugin name="gazebo_ros_sonar" filename="libgazebo_ros_ray_sensor.so">
+      <plugin name="gazebo_ros_${name}" filename="libgazebo_ros_ray_sensor.so">
         <ros>
-          <remapping>~/out:=sonar/scan</remapping>
+          <remapping>~/out:=${topic}</remapping>
         </ros>
         <output_type>sensor_msgs/LaserScan</output_type>
-        <frame_name>sonar_link</frame_name>
+        <frame_name>${name}_link</frame_name>
       </plugin>
     </sensor>
   </gazebo>
+  </xacro:macro>
+
+  <xacro:sonar_sector_sensor name="sonar_front" yaw="0.0" topic="sonar/scan"/>
+  <xacro:sonar_sector_sensor name="sonar_right" yaw="-1.570796" topic="sonar/right_scan"/>
+  <xacro:sonar_sector_sensor name="sonar_back" yaw="3.141593" topic="sonar/back_scan"/>
+  <xacro:sonar_sector_sensor name="sonar_left" yaw="1.570796" topic="sonar/left_scan"/>
 </robot>

@@ -19,7 +19,7 @@ find_package(visualization_msgs REQUIRED)
 
 set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_ROOT}" CACHE PATH "ONNX Runtime installation root")
 if(NOT ONNXRUNTIME_ROOT)
-  set(ONNXRUNTIME_ROOT "/home/hu/onnxruntime-linux-x64-1.23.2")
+  set(ONNXRUNTIME_ROOT "$ENV{HOME}/onnxruntime-linux-x64-1.23.2")
 endif()
 set(ONNXRUNTIME_INCLUDE_DIR "${ONNXRUNTIME_ROOT}/include")
 set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so")
@@ -69,10 +69,9 @@ add_executable(radar_sonar_tracker src/radar_sonar_tracker.cpp)
 target_include_directories(radar_sonar_tracker PRIVATE include)
 ament_target_dependencies(radar_sonar_tracker ${NODE_DEPS})
 
-add_executable(ros_image_recorder src/ros_image_recorder.cpp)
-target_include_directories(ros_image_recorder PRIVATE include ${OpenCV_INCLUDE_DIRS})
-ament_target_dependencies(ros_image_recorder rclcpp sensor_msgs)
-target_link_libraries(ros_image_recorder ${OpenCV_LIBS})
+add_executable(c3_multimodal_buffer_fusion src/c3_multimodal_buffer_fusion.cpp)
+target_include_directories(c3_multimodal_buffer_fusion PRIVATE include)
+ament_target_dependencies(c3_multimodal_buffer_fusion ${NODE_DEPS})
 
 add_executable(uav_patrol_controller src/uav_patrol_controller.cpp)
 target_include_directories(uav_patrol_controller PRIVATE include)
@@ -97,11 +96,17 @@ install(TARGETS
   dynamic_target_controller
   ais_simulator
   radar_sonar_tracker
-  ros_image_recorder
+  c3_multimodal_buffer_fusion
   uav_patrol_controller
   wave_buoyancy_node
   usv_target_follower
   tracking_evaluator
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/mmwave_scan_converter.py
+  scripts/mmwave_detection_debug.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

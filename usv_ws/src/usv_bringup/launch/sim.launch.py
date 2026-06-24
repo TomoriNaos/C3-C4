@@ -72,7 +72,7 @@ def generate_launch_description():
     uav_arg = DeclareLaunchArgument(
         'uav',
         default_value='true',
-        description='Start the simulated ALS UAV and gated-camera recognizer'
+        description='Start the simulated scout UAV and gated-camera recognizer'
     )
     yolo_model_arg = DeclareLaunchArgument(
         'yolo_model_path',
@@ -111,8 +111,13 @@ def generate_launch_description():
     )
     pseudocolor_gated_yolo_arg = DeclareLaunchArgument(
         'pseudocolor_gated_yolo',
-        default_value='false',
+        default_value='true',
         description='Start a separate pseudo-color range-view YOLO recognizer using best1.onnx'
+    )
+    c3_multimodal_fusion_arg = DeclareLaunchArgument(
+        'c3_multimodal_fusion',
+        default_value='true',
+        description='Start the C3 multimodal pointcloud buffer, heatmap, and detected-object node'
     )
 
     gzserver = IncludeLaunchDescription(
@@ -275,6 +280,21 @@ def generate_launch_description():
         ]))
     )
 
+    depth_camera_recognizer = Node(
+        package='usv_perception',
+        executable='gated_camera_recognizer',
+        name='depth_camera_recognizer',
+        output='screen',
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'yolo_model_path': LaunchConfiguration('yolo_model_path')
+            }
+        ],
+        condition=IfCondition(LaunchConfiguration('perception'))
+    )
+
     gated_slice_fusion_recognizer = Node(
         package='usv_perception',
         executable='gated_slice_fusion_recognizer',
@@ -296,6 +316,24 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression([
             "'", LaunchConfiguration('perception'), "' == 'true' and '",
             LaunchConfiguration('gated_bev_detection'), "' == 'true'"
+        ]))
+    )
+
+    c3_multimodal_buffer_fusion = Node(
+        package='usv_perception',
+        executable='c3_multimodal_buffer_fusion',
+        name='c3_multimodal_buffer_fusion',
+        output='screen',
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'evaluation_target_model_name': LaunchConfiguration('target_model')
+            }
+        ],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('c3_multimodal_fusion'), "' == 'true'"
         ]))
     )
 
@@ -332,23 +370,27 @@ def generate_launch_description():
     def make_c3_mmwave_converter(
         radar_id,
         radar_height,
+        sector_name,
+        sector_yaw,
         sea_clutter_height_scale,
         sea_clutter_compete_min_height,
         sea_clutter_random_stddev
     ):
         return Node(
-            package='lidar_robot',
+            package='usv_perception',
             executable='mmwave_scan_converter.py',
-            name=f'mmwave_scan_converter_{radar_id}',
+            name=f'mmwave_scan_converter_{radar_id}_{sector_name}',
             output='screen',
             parameters=[{
                 'use_sim_time': True,
-                'input_topic': f'/radar_{radar_id}/raw_scan',
-                'output_topic': f'/mmwave_{radar_id}/detections',
-                'frame_id': f'radar_{radar_id}_link',
+                'input_topic': f'/radar/{sector_name}/{radar_id}/raw_scan',
+                'output_topic': f'/mmwave/{sector_name}/{radar_id}/detections',
+                'frame_id': f'radar_{radar_id}_{sector_name}_link',
+                'output_frame_id': 'base_link',
+                'mount_yaw_rad': sector_yaw,
                 'max_range': 800.0,
                 'min_range': 2.0,
-                'horizontal_fov_deg': 120.0,
+                'horizontal_fov_deg': 90.0,
                 'angular_resolution_deg': 1.5,
                 'subbeam_resolution_deg': 0.3,
                 'radar_height_m': radar_height,
@@ -376,14 +418,27 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration('c3_mmwave'))
         )
 
-    mmwave_converter_10m = make_c3_mmwave_converter('10m', 10.0, 0.25, 1.0, 0.03)
-    mmwave_converter_4m = make_c3_mmwave_converter('4m', 4.0, 0.35, 0.7, 0.04)
-    mmwave_converter_1p9m = make_c3_mmwave_converter('1p9m', 1.9, 0.50, 0.35, 0.05)
-    mmwave_converter_1p5m = make_c3_mmwave_converter('1p5m', 1.5, 0.60, 0.25, 0.06)
-    mmwave_converter_1m = make_c3_mmwave_converter('1m', 1.0, 0.70, 0.20, 0.07)
+    mmwave_heights = [
+        ('h10m', 10.0, 0.25, 1.0, 0.03),
+        ('h4m', 4.0, 0.35, 0.7, 0.04),
+        ('h1p9m', 1.9, 0.50, 0.35, 0.05),
+        ('h1p5m', 1.5, 0.60, 0.25, 0.06),
+        ('h1m', 1.0, 0.70, 0.20, 0.07),
+    ]
+    mmwave_sectors = [
+        ('front', 0.0),
+        ('right', -1.57079632679),
+        ('back', 3.14159265359),
+        ('left', 1.57079632679),
+    ]
+    mmwave_converter_nodes = [
+        make_c3_mmwave_converter(height_id, height, sector_name, sector_yaw, scale, compete, stddev)
+        for height_id, height, scale, compete, stddev in mmwave_heights
+        for sector_name, sector_yaw in mmwave_sectors
+    ]
 
     mmwave_debug_node = Node(
-        package='lidar_robot',
+        package='usv_perception',
         executable='mmwave_detection_debug.py',
         name='mmwave_detection_debug',
         output='screen',
@@ -435,6 +490,7 @@ def generate_launch_description():
         stf_gated_fusion_arg,
         gated_bev_detection_arg,
         pseudocolor_gated_yolo_arg,
+        c3_multimodal_fusion_arg,
         gzserver,
         gzclient,
         robot_state_publisher,
@@ -448,15 +504,13 @@ def generate_launch_description():
         tracking_evaluator,
         gated_camera_recognizer,
         pseudocolor_gated_camera_recognizer,
+        depth_camera_recognizer,
         gated_slice_fusion_recognizer,
         gated_bev_detector,
+        c3_multimodal_buffer_fusion,
         uav_patrol_controller,
         uav_gated_camera_recognizer,
-        mmwave_converter_10m,
-        mmwave_converter_4m,
-        mmwave_converter_1p9m,
-        mmwave_converter_1p5m,
-        mmwave_converter_1m,
+        *mmwave_converter_nodes,
         mmwave_debug_node,
         rgbd_dehaze_pointcloud,
         rviz_node

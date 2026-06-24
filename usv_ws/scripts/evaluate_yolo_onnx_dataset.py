@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--save-dir", default="/tmp/usv_yolo_eval")
     parser.add_argument("--save-examples", type=int, default=24)
+    parser.add_argument(
+        "--example-order",
+        choices=("worst", "best"),
+        default="worst",
+        help="Save examples with the most or fewest FP/FN first.",
+    )
     return parser.parse_args()
 
 
@@ -282,7 +288,8 @@ def main() -> None:
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    for rank, item in enumerate(sorted(examples, key=lambda x: x[0], reverse=True)[: args.save_examples]):
+    reverse = args.example_order == "worst"
+    for rank, item in enumerate(sorted(examples, key=lambda x: x[0], reverse=reverse)[: args.save_examples]):
         _, path, image, preds, gts, matched_pred, matched_gt = item
         draw_example(image, preds, gts, matched_pred, matched_gt, dataset_names, out_dir / f"{rank:02d}_{path.name}")
 

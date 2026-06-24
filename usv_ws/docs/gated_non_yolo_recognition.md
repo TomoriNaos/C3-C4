@@ -26,7 +26,7 @@ tracking_evaluator:
 
 ```text
 输入:
-  depth image 或 pseudo-lidar point cloud
+  depth image 或伪深度点云
   camera_info 内参
   camera -> base_link 外参
 
@@ -60,7 +60,7 @@ tracking_evaluator:
 海面目标高度小，水面反射和漂浮噪声会影响点云。
 ```
 
-## 2. Pseudo-LiDAR / 3D 点云检测
+## 2. 伪深度点云 / 3D 点云检测
 
 如果只用门控相机和深度图，可以把每个像素投影成点：
 
