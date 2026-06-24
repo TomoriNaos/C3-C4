@@ -2,3 +2,5 @@
 /install/
 /log/
 /.idea/
+/src/usv_bringup/
+/src/usv_description/
