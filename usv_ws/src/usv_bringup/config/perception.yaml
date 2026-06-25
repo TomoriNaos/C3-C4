@@ -1,0 +1,474 @@
+radar_sonar_tracker:
+  ros__parameters:
+    radar_topic: /mmwave_radar/scan
+    sonar_topic: /sonar/scan
+    base_frame: base_link
+    radar_x_offset: -0.35
+    radar_y_offset: 0.0
+    sonar_x_offset: 0.65
+    cluster_gap: 0.75
+    min_cluster_points: 2
+    max_tracking_range: 115.0
+    association_gate: 4.5
+    track_timeout: 4.0
+    gated_points_topic: /gated_camera/detection_points
+    uav_points_topic: /uav/gated_camera/detection_points
+    pseudocolor_gated_points_topic: /gated_camera/pseudocolor/detection_points
+    stf_gated_points_topic: /gated_camera/stf_detection_points
+    bev_gated_points_topic: /gated_camera/bev_detection_points
+    ais_topic: /ais/targets
+    camera_fusion_timeout: 0.8
+    uav_fusion_timeout: 1.2
+    min_camera_confidence: 0.15
+    ais_confidence: 0.88
+    min_ais_confidence: 0.45
+
+c3_multimodal_buffer_fusion:
+  ros__parameters:
+    base_frame: base_link
+    usv_model_name: wamv
+    radar_topics:
+      - /mmwave/front/h10m/detections
+      - /mmwave/right/h10m/detections
+      - /mmwave/back/h10m/detections
+      - /mmwave/left/h10m/detections
+      - /mmwave/front/h4m/detections
+      - /mmwave/right/h4m/detections
+      - /mmwave/back/h4m/detections
+      - /mmwave/left/h4m/detections
+      - /mmwave/front/h1p9m/detections
+      - /mmwave/right/h1p9m/detections
+      - /mmwave/back/h1p9m/detections
+      - /mmwave/left/h1p9m/detections
+      - /mmwave/front/h1p5m/detections
+      - /mmwave/right/h1p5m/detections
+      - /mmwave/back/h1p5m/detections
+      - /mmwave/left/h1p5m/detections
+      - /mmwave/front/h1m/detections
+      - /mmwave/right/h1m/detections
+      - /mmwave/back/h1m/detections
+      - /mmwave/left/h1m/detections
+    sonar_scan_topics:
+      - /sonar/scan
+      - /sonar/right_scan
+      - /sonar/back_scan
+      - /sonar/left_scan
+    sonar_scan_yaws: [0.0, -1.57079632679, 3.14159265359, 1.57079632679]
+    normal_camera_topic: /gated_camera/detection_points
+    gated_camera_topic: /gated_camera/pseudocolor/detection_points
+    stf_camera_topic: /gated_camera/stf_detection_points
+    bev_topic: /gated_camera/bev_detection_points
+    uav_gated_topic: /uav/gated_camera/detection_points
+    depth_camera_detection_topic: /depth_camera/detection_points
+    depth_topic: /depth_camera/dehazed_points
+    model_states_topic: /model_states
+    buffer_keep_s: 0.65
+    sync_tolerance_s: 0.35
+    sonar_fusion_window_frames: 3
+    publish_rate_hz: 8.0
+    max_points_per_cloud: 2500
+    max_range_m: 160.0
+    radar_min_range_m: 6.0
+    close_range_m: 30.0
+    heatmap_resolution_m: 1.0
+    heatmap_x_min: 0.0
+    heatmap_x_max: 150.0
+    heatmap_y_min: -75.0
+    heatmap_y_max: 75.0
+    heatmap_threshold: 0.55
+    heatmap_source_cell_cap: 1.25
+    detected_suppression_radius: 9.0
+    confirmation_radius: 10.0
+    semantic_confirmation_radius: 15.0
+    enable_spatial_fallback_confirmation: false
+    spatial_confirmation_min_points: 8
+    spatial_confirmation_min_sources: 2
+    enable_sim_truth_confirmation: true
+    sim_truth_confirmation_radius: 16.0
+    object_association_radius: 14.0
+    detected_object_timeout_s: 30.0
+    ekf_process_noise: 0.35
+    ekf_measurement_noise: 0.9
+    drone_goal_altitude: 24.0
+    enable_nn_heatmap_bypass: false
+    nn_heatmap_topic: /c3/nn/heatmap_goal
+    evaluation_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - net_line_a
+    evaluation_target_model_names:
+      - moving_vessel
+
+gated_camera_recognizer:
+  ros__parameters:
+    image_topic: /gated_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /gated_camera/camera_info
+    output_prefix: gated_camera
+    frame_id: gated_camera_link
+    detection_input: raw
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    # Current src/usv_bringup/models/best.onnx metadata:
+    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 260.0
+    process_stride: 1
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 85.0]
+
+pseudocolor_gated_camera_recognizer:
+  ros__parameters:
+    image_topic: /gated_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /gated_camera/camera_info
+    output_prefix: gated_camera/pseudocolor
+    frame_id: gated_camera_link
+    detection_input: range_view
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    # Current src/usv_bringup/models/best1.onnx metadata:
+    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 260.0
+    process_stride: 1
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 88.0]
+
+uav_gated_camera_recognizer:
+  ros__parameters:
+    image_topic: /uav/gated_camera/image_raw
+    depth_topic: /uav/gated_camera/depth/image_raw
+    camera_info_topic: /uav/gated_camera/camera_info
+    output_prefix: uav/gated_camera
+    frame_id: uav_gated_camera_link
+    detection_input: range_view
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    # UAV uses the pseudo-color/range-view model by default.
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
+    enable_dehaze: true
+    dehaze_strength: 0.55
+    dehaze_omega: 0.85
+    dehaze_min_transmission: 0.20
+    dehaze_depth_beta: 0.010
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 0.82
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 360.0
+    process_stride: 1
+    gate_near: [10.0, 45.0]
+    gate_mid: [35.0, 110.0]
+    gate_far: [90.0, 230.0]
+
+depth_camera_recognizer:
+  ros__parameters:
+    image_topic: /depth_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /depth_camera/camera_info
+    output_prefix: depth_camera
+    frame_id: depth_camera_link
+    detection_input: raw
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
+    confidence_threshold: 0.10
+    enable_yolo_empty_contour_fallback: true
+    enable_dehaze: true
+    dehaze_strength: 0.65
+    dehaze_omega: 0.88
+    dehaze_min_transmission: 0.18
+    dehaze_depth_beta: 0.018
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.20
+    min_contour_area: 260.0
+    process_stride: 1
+
+gated_slice_fusion_recognizer:
+  ros__parameters:
+    near_topic: /gated_camera/slice_near
+    mid_topic: /gated_camera/slice_mid
+    far_topic: /gated_camera/slice_far
+    output_prefix: gated_camera/stf_fusion
+    frame_id: gated_camera_link
+    base_frame: base_link
+    process_stride: 2
+    confidence_threshold: 0.22
+    min_contour_area: 260.0
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.20
+    # STF gated camera calibration: 1280x720, fx=fy=2322.4, cx=667.777, cy=261.144.
+    # Keep these at 0.0 in the Gazebo camera path so the node uses the simulated camera FOV.
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    gate_near: [2.0, 18.0]
+    gate_mid: [12.0, 42.0]
+    gate_far: [32.0, 85.0]
+    range_blend_with_size_prior: 0.25
+    default_object_height: 1.6
+
+gated_bev_detector:
+  ros__parameters:
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /depth_camera/camera_info
+    output_topic: /gated_camera/bev_detection_points
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 1.3962634
+    min_range: 2.0
+    max_range: 90.0
+    min_z: 0.45
+    max_z: 4.0
+    lateral_range: 35.0
+    cell_size: 0.65
+    pixel_stride: 4
+    min_cell_points: 2
+    min_cluster_cells: 3
+    min_cluster_points: 18
+
+dynamic_target_controller:
+  ros__parameters:
+    update_rate: 4.0
+    wave_amplitude: 0.10
+    motion_time_scale: 1.0
+    tracked_target_name: moving_vessel
+    vessel_name: moving_vessel
+    fishing_boat_name: small_fishing_boat
+    fishnet_buoy_name: fishnet_buoy
+    obstacle_name: floating_obstacle
+    debris_name: drift_debris
+    survey_boat_name: survey_boat
+    service_boat_name: service_boat
+
+ais_simulator:
+  ros__parameters:
+    model_states_topic: /model_states
+    output_topic: /ais/targets
+    usv_model_name: wamv
+    target_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+      - cargo_ship_far
+      - anchored_tanker
+    mmsi_start: 413000100
+    publish_rate: 2.0
+    confidence: 0.90
+    max_range: 240.0
+
+uav_patrol_controller:
+  ros__parameters:
+    model_name: scout_uav
+    update_rate: 8.0
+    center_x: 14.0
+    center_y: 0.0
+    altitude: 24.0
+    radius_x: 12.0
+    radius_y: 8.0
+    angular_speed: 0.060
+    patrol_speed: 0.70
+    camera_pitch: 0.30
+    target_tracking_enabled: true
+    target_model_name: moving_vessel
+    usv_model_name: wamv
+    model_states_topic: /model_states
+    remote_target_topic: /uav/remote_target_status
+    remote_target_confidence: 0.94
+    remote_target_class_id: 5.0
+    target_follow_backoff: 18.0
+    target_lateral_sweep: 13.0
+    target_timeout: 2.0
+    external_goal_topic: /c3/drone/goal
+    external_goal_timeout: 4.0
+    external_goal_speed: 1.6
+
+usv_target_follower:
+  ros__parameters:
+    enabled: true
+    model_name: wamv
+    pose_topic: /tracked_object_poses
+    track_status_topic: /tracked_objects_text
+    c3_detected_topic: /c3/detected_objects
+    remote_target_topic: /uav/remote_target_status
+    model_states_topic: /model_states
+    target_model_name: moving_vessel
+    update_rate: 15.0
+    max_speed: 2.20
+    max_yaw_rate: 1.05
+    desired_standoff: 7.0
+    target_timeout: 5.0
+    track_status_timeout: 2.0
+    remote_target_timeout: 3.5
+    max_follow_range: 170.0
+    yaw_gain: 1.45
+    speed_gain: 0.32
+    waterline_z: 0.32
+    startup_delay: 3.0
+    target_lead_time: 1.8
+    max_lead_distance: 6.0
+    min_chase_speed: 0.80
+    far_range_speed_boost: 0.55
+    stale_target_speed_scale: 0.85
+    target_lock_timeout: 8.0
+    target_reacquire_gate: 18.0
+    turn_slowdown_gain: 0.20
+    follow_class_id: 5.0
+    follow_class_ids: [5.0, 2.0]
+    prefer_follow_class: true
+    min_follow_confidence: 0.12
+    min_track_hits: 1
+    obstacle_lookahead: 34.0
+    obstacle_lateral_window: 13.0
+    obstacle_clearance: 5.5
+    hard_stop_distance: 8.0
+    hard_stop_lateral: 2.4
+    avoidance_gain: 0.85
+    obstacle_slowdown_gain: 0.38
+    min_avoidance_speed_scale: 0.50
+    centered_obstacle_bias: 1.0
+    use_model_state_obstacles: true
+    use_model_state_target_fallback: true
+    model_obstacle_timeout: 1.0
+    obstacle_model_names:
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - net_line_a
+
+wave_buoyancy_node:
+  ros__parameters:
+    link_name: wamv::base_footprint
+    water_level: 0.32
+    wave_amplitude: 0.10
+    update_rate: 0.5
+    vertical_force_scale: 18.0
+    torque_scale: 5.0
+
+tracking_evaluator:
+  ros__parameters:
+    model_states_topic: /model_states
+    track_status_topic: /tracked_objects_text
+    usv_model_name: wamv
+    target_model_names:
+      - moving_vessel
+      - small_fishing_boat
+      - survey_boat
+      - service_boat
+    obstacle_model_names:
+      - fishnet_buoy
+      - floating_obstacle
+      - drift_debris
+      - floating_container
+      - channel_buoy_north
+      - channel_buoy_south
+      - navigation_marker_port
+      - navigation_marker_starboard
+      - net_line_a
+    match_gate: 7.0
+    eval_range: 140.0
+    track_timeout: 2.5
+    cpa_horizon: 120.0
+    publish_rate: 2.0
