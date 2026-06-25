@@ -1,6 +1,0 @@
-{
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/usv_perception/compile_commands.json",
-    "C_Cpp.default.compilerPath": "/usr/bin/g++",
-    "C_Cpp.default.cppStandard": "gnu++17",
-    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64"
-}
