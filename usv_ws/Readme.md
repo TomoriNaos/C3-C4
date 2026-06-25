@@ -231,7 +231,6 @@ YOLO 数据和训练结果目录：
 
 评估脚本是 `scripts/evaluate_yolo_onnx_dataset.py`。它读取 ONNX metadata 的类别名，并和 `data.yaml` 的类别名对齐，然后按 IoU=0.50 统计 TP、FP、FN、Precision、Recall 和 F1。
 
-我用当前最新数据集的 `valid` split 重新评估，并按 F1 扫描置信度后选择离线评估阈值：
 
 ```text
 普通相机 best.onnx:  conf=0.15
@@ -292,6 +291,38 @@ python3 scripts/evaluate_yolo_onnx_dataset.py \
 ```
 
 评估脚本默认优先保存 FP/FN 较多的诊断样例；增加 `--example-order best` 可优先保存 FP/FN 较少的正确检测样例。两种排序只影响截图顺序，不改变准确率计算。
+
+### 一键生成展示图片
+
+展示图可以用总脚本统一复现：
+
+```bash
+cd ${USV_WS}
+
+python3 scripts/generate_presentation_visuals.py
+```
+
+默认目录假设 `usv_ws` 和 `yolo` 在同一级：
+
+```text
+<project_root>/
+  usv_ws/
+  yolo/
+```
+
+脚本会重新调用 `best.onnx` 和 `best1.onnx` 做验证集推理，并从 `eval_outputs/c3_sonar_ablation/sonar_capture.json` 重绘 C3/声呐图。输出固定为：
+
+```text
+eval_outputs/camera_selected_visuals/camera_selected_class_metrics.png
+eval_outputs/camera_selected_visuals/camera_selected_detection_examples.png
+eval_outputs/c3_sonar_ablation/target_window_metrics.png
+eval_outputs/c3_sonar_ablation/sonar_ablation_overview.png
+eval_outputs/c3_sonar_ablation/sonar_sector_health.png
+eval_outputs/c3_sonar_ablation/sonar_optimization_before_after.png
+eval_outputs/c3_sonar_ablation/live_multimodal_diagnostic.png
+```
+
+这些图片用于展示稳定样例和消融效果。完整六类准确率仍以 `summary.json`、上表和原始 `sonar_capture.json` 为准。
 
 ## 实时输出话题
 
@@ -474,168 +505,6 @@ ros2 topic echo /depth_camera/detection_details
 /tracking_metrics
 ```
 
-## C3 多模态流程
-
-1. 门控相机先模拟近、中、远三个距离门控切片。三个切片分别对应不同距离范围内的目标回波，用距离选通削弱大雾前向散射对远处目标的干扰。
-
-2. 将近、中、远三个门控切片分别放入 RGB 三个通道，合成为伪彩色门控图像。船载门控相机使用 `best1.onnx` 进行 YOLO 识别，输出：
-
-```text
-/gated_camera/pseudocolor/detections
-/gated_camera/pseudocolor/detection_points
-/gated_camera/pseudocolor/detection_details
-/gated_camera/pseudocolor/annotated
-```
-
-3. 门控 YOLO 识别到目标后，根据目标 bbox 的中心位置、目标距离估计和相机视场角，解算目标相对无人船 `base_link` 的三维坐标，并输出 `PointCloud2` 点云。点云中包含：
-
-```text
-x / y / z
-intensity
-class_id
-bbox_cx / bbox_cy / bbox_w / bbox_h
-```
-
-4. 三切片几何识别作为门控相机的非 YOLO 旁路。`gated_slice_fusion_recognizer` 直接利用近、中、远切片的亮度和范围关系提取目标，输出：
-
-```text
-/gated_camera/stf_detection_points
-```
-
-5. 普通相机和深度相机 RGB 分支保留，二者都使用 `best.onnx` 识别目标。普通相机图像先做去雾增强，深度相机分支额外把识别结果作为 C3 语义点输入：
-
-```text
-/gated_camera/detection_points
-/gated_camera/detection_details
-/gated_camera/annotated
-/depth_camera/detection_points
-/depth_camera/detection_details
-/depth_camera/annotated
-```
-
-6. BEV 几何旁路保留，用俯视投影方式提取空间聚类目标，输出：
-
-```text
-/gated_camera/bev_detection_points
-```
-
-7. `c3_multimodal_buffer_fusion` 接收四个模态的数据：毫米波雷达点云、声呐 scan 转换点云、视觉融合模态点云、深度点云。毫米波雷达由 5 个高度、4 个方向的 90 度扇区组成，共 20 路转换点云；声呐由前、右、后、左四个 90 度扇区拼成 360 度覆盖。节点内部使用滑动缓存池按时间戳对齐，分别输出四路对齐后的新点云，再拼接为 `/c3/buffer/integrated_cloud`。
-
-```text
-/c3/buffer/radar_cloud
-/c3/buffer/sonar_cloud
-/c3/buffer/vision_cloud
-/c3/buffer/depth_cloud
-/c3/buffer/integrated_cloud
-```
-
-8. 缓存融合点云会被栅格化成 1 m x 1 m 分辨率概率热力图。当前没有训练好的热力图神经网络，因此默认使用规则方法：多模态点按来源和置信度投票，已确认目标附近会被抑制，避免重复定位同一个物体。热力图最大概率点发布到 `/c3/drone/goal`，无人机优先飞往该位置做二次确认。
-
-9. 二次确认成功后，节点会生成 `detected` 目标结构并发布到 `/c3/detected_objects`。这里的 `object_id` 是第 n 次确认出的目标计数，和 6 类物体的 `class_id` 严格分开。目标名称来自门控相机/深度辅助确认后的语义结果，位置进入 EKF 做动态预测。
-
-10. 30 m 以外优先等待无人机门控相机确认；30 m 以内使用船载门控、普通相机和深度相机 YOLO 的语义结果，并结合深度点云几何支持。近距离不使用 BEV 作为确认来源，BEV 只参与远处热力图投票。
-
-### 360 度覆盖方式
-
-毫米波雷达和声呐采用“多扇区拼接”，不是单个传感器硬开超大视场：
-
-```text
-毫米波雷达:
-  front/right/back/left 四个 90 度扇区
-  h10m/h4m/h1p9m/h1p5m/h1m 五个高度 topic 层级
-  共 20 路 /mmwave/<sector>/<height>/detections
-
-声呐:
-  /sonar/scan
-  /sonar/right_scan
-  /sonar/back_scan
-  /sonar/left_scan
-```
-
-门控相机不默认做 360 度拼接。原因是门控/普通相机涉及相机内参、外参、畸变和 bbox 到空间点的投影，四向拼接会让 YOLO 标注、测距和视角畸变一起变复杂。当前实现采用船载前向门控相机负责近距离精识别，无人机门控相机负责远距离二次确认。
-
-### 热力图来源
-
-现在的 `/c3/heatmap/image` 不是神经网络推理结果，而是规则投票热力图：
-
-```text
-1. 把 /c3/buffer/integrated_cloud 投影到 base_link 前方二维网格。
-2. 每个格子分辨率为 1 m x 1 m。
-3. 雷达、声呐、门控、普通相机、BEV、深度点云按 source_id 赋予不同权重。
-4. 检测置信度越高，投票越强。
-5. 已经写入 detected 结构的目标附近会被降权，避免无人机反复飞向同一个目标。
-6. 选择最大置信度格子的中心作为候选目标点。
-```
-
-如果后续训练了神经网络热力图模型，它需要读取四路缓存点云或融合点云，输出 `/c3/nn/heatmap_goal`。开启 `enable_nn_heatmap_bypass: true` 后，神经网络目标会接管规则热力图候选点。
-
-### 无人机飞控链路
-
-当前仿真中的无人机模型叫 `scout_uav`，机载传感器只使用门控相机。控制链路如下：
-
-```text
-/c3/heatmap/image
-  -> 选最大概率坐标
-  -> /c3/drone/goal 和 /mission/goal
-  -> uav_patrol_controller
-  -> Gazebo /set_entity_state 移动 scout_uav
-  -> /uav/gated_camera/detection_points 回传二次确认结果
-  -> c3_multimodal_buffer_fusion 写入 /c3/detected_objects
-```
-
-优先级：
-
-```text
-1. 有新 /c3/drone/goal 时，无人机先飞向热力图候选点。
-2. 没有新候选点时，无人机围绕目标区域巡航。
-3. 远距离目标大于 30 m 时，C3 融合会优先等待无人机门控相机确认。
-4. 近距离目标小于等于 30 m 时，船载门控/普通相机和深度几何支持优先。
-```
-
-船载门控 YOLO 默认开启。需要关闭时：
-
-```bash
-ros2 launch usv_bringup sim.launch.py pseudocolor_gated_yolo:=false
-```
-
-需要关闭新的 C3 缓存融合层时：
-
-```bash
-ros2 launch usv_bringup sim.launch.py c3_multimodal_fusion:=false
-```
-
-### 神经网络旁路
-
-当前热力图由规则方法生成。后续如果训练了点云热力图网络，可以让网络节点读取：
-
-```text
-/c3/buffer/radar_cloud
-/c3/buffer/sonar_cloud
-/c3/buffer/vision_cloud
-/c3/buffer/depth_cloud
-/c3/buffer/integrated_cloud
-```
-
-网络输出一个 `geometry_msgs/PoseStamped` 到：
-
-```text
-/c3/nn/heatmap_goal
-```
-
-然后启动：
-
-```bash
-ros2 launch usv_bringup sim.launch.py c3_multimodal_fusion:=true
-```
-
-并在 `src/usv_bringup/config/perception.yaml` 中设置：
-
-```yaml
-c3_multimodal_buffer_fusion:
-  ros__parameters:
-    enable_nn_heatmap_bypass: true
-```
-
 ## 检验方法
 
 编译检查：
@@ -764,64 +633,123 @@ ros2 launch usv_bringup sim.launch.py target_model:=service_boat
 
 ## 工程结构
 
+### 交付目录约定
+
+最终上传或交给别人复现时，建议只保留同级的 `usv_ws` 和 `yolo` 两个目录：
+
 ```text
 project_root/
-├── yolo
-│   ├── vessel.v2i.yolov8
-│   ├── gated_camera.v3i.yolov8
-│   └── runs/detect
-└── usv_ws
-    ├── Readme.md
-    ├── 点云信息.png
-    ├── class_reference.png
-    ├── docs
-    │   ├── gated_non_yolo_recognition.md
-    │   ├── stf_dataset_local_usage.md
-    │   └── model_reference/class_reference.svg
-    ├── eval_outputs/current_accuracy
-    │   ├── camera_detection_accuracy_summary.jpg
-    │   ├── normal_camera_accuracy_sheet.jpg
-    │   ├── gated_camera_accuracy_sheet.jpg
-    │   └── camera_threshold_sweep_summary.jpg
-    ├── eval_outputs/camera_selected_visuals
-    │   ├── camera_selected_class_metrics.png
-    │   └── camera_selected_detection_examples.png
-    ├── eval_outputs/c3_sonar_ablation
-    │   ├── target_window_metrics.png
-    │   ├── sonar_ablation_overview.png
-    │   ├── sonar_sector_health.png
-    │   └── sonar_capture.json
-    ├── scripts
-    │   ├── build_clean_env.sh
-    │   ├── launch_sim_localhost.sh
-    │   ├── evaluate_yolo_onnx_dataset.py
-    │   ├── test_yolo_onnx_images.py
-    │   ├── publish_stf_slices.py
-    │   ├── stf_to_yolo_gated.py
-    │   └── coco_to_yolo_subset.py
-    └── src
-        ├── usv_bringup
-        ├── usv_description
-        ├── usv_perception
-        └── depth_image_to_pointcloud2
+├── usv_ws/    # ROS 2 仿真、传感器、融合、跟踪、评估代码
+└── yolo/      # 普通相机/门控相机 YOLO 数据集和训练结果
 ```
 
-核心文件：
+`usv_ws` 内不要上传 `build/`、`install/`、`log/`、`__pycache__/` 这类生成目录。重新编译时运行 `./scripts/build_clean_env.sh` 即可恢复。
+
+### usv_ws 根目录
+
+```text
+usv_ws/
+├── Readme.md              # 部署、运行、话题、评估和目录说明
+├── class_reference.png    # 六类海上目标参考图
+├── 点云信息.png           # 点云字段说明参考图
+├── src/                   # ROS 2 源码包
+├── scripts/               # 构建、评估、数据转换和展示图生成脚本
+└── eval_outputs/          # 已生成的准确率、消融和 PPT 展示图片
+```
+
+当前工作区没有必需的 `docs/` 目录；说明性内容集中在本 README 和 `eval_outputs/` 的可视化结果中。
+
+### ROS 2 源码包
+
+```text
+src/
+├── usv_bringup/
+│   ├── launch/sim.launch.py                 # 主仿真 launch
+│   ├── config/perception.yaml               # 感知、融合、跟随、评估参数
+│   ├── worlds/ocean_fog.world               # 琼州海峡大雾海面主场景
+│   ├── worlds/annotation_targets.world      # 标注/截图辅助场景
+│   ├── models/best.onnx                     # 普通相机和深度相机 YOLO
+│   ├── models/best1.onnx                    # 船载门控和无人机门控 YOLO
+│   └── docker/Dockerfile                    # 可选容器环境
+├── usv_description/
+│   ├── urdf/wamv_base.urdf.xacro            # WAM-V 船体和传感器布置
+│   └── rviz/default.rviz                    # RViz 默认显示配置
+├── usv_perception/
+│   ├── include/usv_perception/common.hpp    # 感知节点公共结构
+│   ├── scripts/mmwave_scan_converter.py     # 多高度/多扇区毫米波 scan 转点云
+│   ├── scripts/mmwave_detection_debug.py    # 毫米波点云调试打印
+│   └── src/                                 # 感知、融合、控制、评估节点
+└── depth_image_to_pointcloud2/
+    ├── launch/depth_camera_dehaze.launch.py # RGB-D 单独测试 launch
+    ├── src/depth_image_to_pointcloud2_node.cpp
+    └── worlds/fog_depth_camera.world        # 深度相机单独测试场景
+```
+
+### usv_perception 节点分工
 
 | 路径 | 作用 |
 | --- | --- |
-| `src/usv_bringup/launch/sim.launch.py` | 主仿真启动 |
-| `src/usv_bringup/config/perception.yaml` | 感知、融合、跟随、评估参数 |
-| `src/usv_bringup/worlds/ocean_fog.world` | 海上大雾场景 |
-| `src/usv_bringup/models/best.onnx` | 普通相机和深度相机 YOLO 模型 |
-| `src/usv_bringup/models/best1.onnx` | 船载门控和无人机门控 YOLO 模型 |
 | `src/usv_perception/src/gated_camera_recognizer.cpp` | 普通/门控 YOLO 识别、详细检测话题、点云输出 |
+| `src/usv_perception/src/gated_slice_fusion_recognizer.cpp` | 门控三切片几何融合，输出 STF 检测点 |
+| `src/usv_perception/src/gated_bev_detector.cpp` | 门控深度/点云的 BEV 几何旁路检测 |
 | `src/usv_perception/src/c3_multimodal_buffer_fusion.cpp` | 四模态缓存池、点云对齐、热力图、二次确认、`detected` 目标库、EKF 预测和 C3 指标输出 |
-| `src/usv_perception/src/radar_sonar_tracker.cpp` | 雷达、声呐、视觉、AIS 多源融合 |
+| `src/usv_perception/src/radar_sonar_tracker.cpp` | 传统雷达、声呐、视觉、AIS 融合跟踪保留路径 |
 | `src/usv_perception/src/usv_target_follower.cpp` | 本船跟随和避障控制 |
 | `src/usv_perception/src/uav_patrol_controller.cpp` | 无人机远程探查，并接收 `/c3/drone/goal` 做二次确认飞行 |
-| `src/usv_perception/scripts/mmwave_scan_converter.py` | C3 多高度、多扇区毫米波 scan 到点云转换 |
 | `src/usv_perception/src/dynamic_target_controller.cpp` | Gazebo 动态目标运动 |
+| `src/usv_perception/src/ais_simulator.cpp` | AIS 目标仿真与融合输入 |
 | `src/usv_perception/src/tracking_evaluator.cpp` | 误检、漏检、CPA/TCPA、ID 切换评估 |
-| `src/usv_description/urdf/wamv_base.urdf.xacro` | WAM-V 船体和传感器描述 |
-| `src/depth_image_to_pointcloud2/src/depth_image_to_pointcloud2_node.cpp` | RGB-D 去雾和点云输出 |
+| `src/usv_perception/src/wave_buoyancy_node.cpp` | 船体浮力和海浪扰动仿真 |
+
+### 脚本目录
+
+```text
+scripts/
+├── build_clean_env.sh                 # 清理环境变量后编译，推荐构建入口
+├── launch_sim_localhost.sh            # 本机 Gazebo/ROS 通信启动，规避 multicast 网卡报错
+├── generate_presentation_visuals.py   # 一键复现相机检测样例图、C3 指标图和声呐消融图
+├── evaluate_yolo_onnx_dataset.py      # 用 ONNX 直接评估 YOLO 数据集
+├── test_yolo_onnx_images.py           # 对图片文件夹做 ONNX 可视化检测
+├── stf_to_yolo_gated.py               # STF 门控数据转 YOLO 格式
+├── publish_stf_slices.py              # 发布 STF 切片用于节点测试
+└── coco_to_yolo_subset.py             # COCO 子集转 YOLO 格式
+```
+
+### 输出结果目录
+
+```text
+eval_outputs/
+├── current_accuracy/          # 普通/门控检测准确率汇总旧版图片
+├── camera_selected_visuals/   # 当前推荐使用的相机检测展示图
+├── c3_ablation/               # vessel 跟踪指标和消融结果
+├── c3_sonar_ablation/         # 声呐消融、扇区健康、实时多模态诊断图
+└── c3_ppt_visuals/            # PPT/说明书方法流程图
+```
+
+常用输出文件：
+
+| 路径 | 作用 |
+| --- | --- |
+| `eval_outputs/camera_selected_visuals/camera_selected_class_metrics.png` | 普通/门控相机较稳定类别 Precision/Recall |
+| `eval_outputs/camera_selected_visuals/camera_selected_detection_examples.png` | 普通/门控相机检测样例拼图 |
+| `eval_outputs/c3_sonar_ablation/target_window_metrics.png` | C3 目标窗口召回率、漏检率、分类准确率、耗时 |
+| `eval_outputs/c3_sonar_ablation/sonar_ablation_overview.png` | 雷达、声呐、融合结果在目标栅格的消融对比 |
+| `eval_outputs/c3_sonar_ablation/sonar_sector_health.png` | 四扇区声呐回波健康状态 |
+| `eval_outputs/c3_sonar_ablation/sonar_optimization_before_after.png` | 声呐三帧融合前后支持点数量对比 |
+| `eval_outputs/c3_sonar_ablation/live_multimodal_diagnostic.png` | 普通相机、门控、无人机门控、深度相机、热力图诊断拼图 |
+| `eval_outputs/c3_sonar_ablation/sonar_capture.json` | 声呐/C3 消融原始统计数据 |
+
+### yolo 目录
+
+`yolo` 与 `usv_ws` 同级，不放在 `usv_ws` 里面：
+
+```text
+yolo/
+├── vessel.v2i.yolov8/                  # 普通相机数据集
+├── gated_camera.v3i.yolov8/            # 门控伪彩色数据集
+└── runs/detect/
+    ├── c3_gpu_train_vessel/            # 普通相机训练结果
+    └── c3_gpu_train_gated_camera/      # 门控相机训练结果
+```
+
+`best.onnx` 和 `best1.onnx` 已经复制到 `usv_ws/src/usv_bringup/models/`，运行仿真不需要进入 `yolo`；重新评估或重新生成展示图时才需要 `yolo` 数据集。

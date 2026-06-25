@@ -387,6 +387,7 @@ public:
 
     buffer_keep_s_ = declare_parameter<double>("buffer_keep_s", 0.65);
     sync_tolerance_s_ = declare_parameter<double>("sync_tolerance_s", 0.35);
+    sonar_fusion_window_frames_ = declare_parameter<int>("sonar_fusion_window_frames", 3);
     publish_rate_hz_ = declare_parameter<double>("publish_rate_hz", 8.0);
     max_points_per_cloud_ = declare_parameter<int>("max_points_per_cloud", 2500);
     max_range_m_ = declare_parameter<double>("max_range_m", 160.0);
@@ -424,6 +425,7 @@ public:
       "evaluation_target_model_names", std::vector<std::string>{"moving_vessel"});
     evaluation_target_model_name_ =
       declare_parameter<std::string>("evaluation_target_model_name", "");
+    sonar_frame_windows_.resize(sonar_scan_topics_.size());
 
     for (const auto & topic : radar_topics_) {
       radar_subs_.push_back(create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -434,7 +436,7 @@ public:
       const double yaw = sonar_scan_yaws_[i];
       sonar_subs_.push_back(create_subscription<sensor_msgs::msg::LaserScan>(
         sonar_scan_topics_[i], rclcpp::SensorDataQoS(),
-        [this, yaw](sensor_msgs::msg::LaserScan::SharedPtr msg) {on_sonar_scan(msg, yaw);}));
+        [this, yaw, i](sensor_msgs::msg::LaserScan::SharedPtr msg) {on_sonar_scan(msg, yaw, i);}));
     }
     add_vision_subscription(normal_camera_topic_, kSrcVisionNormal, 1.00);
     add_vision_subscription(gated_camera_topic_, kSrcVisionGated, 1.12);
@@ -508,7 +510,10 @@ private:
     }
   }
 
-  void on_sonar_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg, double mount_yaw)
+  void on_sonar_scan(
+    const sensor_msgs::msg::LaserScan::SharedPtr msg,
+    double mount_yaw,
+    std::size_t sector_index)
   {
     if (!msg) {
       return;
@@ -535,7 +540,24 @@ private:
       frame.points.push_back(point);
     }
     if (!frame.points.empty()) {
-      sonar_buffer_.push_back(std::move(frame));
+      if (sector_index >= sonar_frame_windows_.size()) {
+        sonar_frame_windows_.resize(sector_index + 1);
+      }
+      auto & sector_window = sonar_frame_windows_[sector_index];
+      sector_window.push_back(frame);
+      const std::size_t window_size =
+        static_cast<std::size_t>(std::max(1, sonar_fusion_window_frames_));
+      while (sector_window.size() > window_size) {
+        sector_window.pop_front();
+      }
+
+      TimedCloud fused_frame;
+      fused_frame.stamp = frame.stamp;
+      for (const auto & history_frame : sector_window) {
+        fused_frame.points.insert(
+          fused_frame.points.end(), history_frame.points.begin(), history_frame.points.end());
+      }
+      sonar_buffer_.push_back(std::move(fused_frame));
       prune_buffer(sonar_buffer_, now());
     }
   }
@@ -1395,6 +1417,7 @@ private:
   std::string evaluation_target_model_name_;
   double buffer_keep_s_{0.65};
   double sync_tolerance_s_{0.35};
+  int sonar_fusion_window_frames_{3};
   double publish_rate_hz_{8.0};
   int max_points_per_cloud_{2500};
   double max_range_m_{160.0};
@@ -1427,6 +1450,7 @@ private:
   std::deque<TimedCloud> sonar_buffer_;
   std::deque<TimedCloud> vision_buffer_;
   std::deque<TimedCloud> depth_buffer_;
+  std::vector<std::deque<TimedCloud>> sonar_frame_windows_;
   std::vector<DetectedObject> detected_objects_;
   int next_detected_object_id_{1};
 

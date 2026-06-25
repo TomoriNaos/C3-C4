@@ -64,6 +64,7 @@ c3_multimodal_buffer_fusion:
     model_states_topic: /model_states
     buffer_keep_s: 0.65
     sync_tolerance_s: 0.35
+    sonar_fusion_window_frames: 3
     publish_rate_hz: 8.0
     max_points_per_cloud: 2500
     max_range_m: 160.0
