@@ -18,12 +18,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 DISPLAY_NAMES = {
-    "buoy": "浮标",
-    "debris_container": "漂浮箱/杂物",
-    "fishing_boat": "渔船",
-    "floating_obstacle": "漂浮障碍",
-    "platform": "平台",
-    "vessel": "目标船",
+    "small_fishing_boat": "小型渔船",
+    "moving_vessel": "目标船",
+    "anchored_tanker": "锚泊油轮",
+    "service_boat": "作业船",
+    "survey_boat": "测量船",
+    "cargo_ship_far": "远距离大船",
+    "research_platform": "平台",
+    "obstacle": "障碍物",
 }
 
 

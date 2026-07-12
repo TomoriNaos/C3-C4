@@ -784,7 +784,7 @@
             </image>
             <clip>
               <near>0.2</near>
-              <far>260.0</far>
+              <far>380.0</far>
             </clip>
           </camera>
           <plugin name="gazebo_ros_uav_gated_camera" filename="libgazebo_ros_camera.so">

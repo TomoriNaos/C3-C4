@@ -92,8 +92,6 @@ public:
     detection_input_ = lower_copy(declare_parameter<std::string>("detection_input", "raw"));
     yolo_model_path_ = declare_parameter<std::string>("yolo_model_path", "");
     confidence_threshold_ = declare_parameter<double>("confidence_threshold", 0.35);
-    min_contour_area_ = declare_parameter<double>("min_contour_area", 450.0);
-    enable_yolo_empty_contour_fallback_ = declare_parameter<bool>("enable_yolo_empty_contour_fallback", true);
     enable_dehaze_ = declare_parameter<bool>("enable_dehaze", true);
     dehaze_strength_ = std::clamp(declare_parameter<double>("dehaze_strength", 0.65), 0.0, 1.0);
     dehaze_omega_ = std::clamp(declare_parameter<double>("dehaze_omega", 0.88), 0.0, 1.0);
@@ -115,11 +113,16 @@ public:
     camera_calibration_width_ = declare_parameter<double>("camera_calibration_width", 0.0);
     camera_calibration_height_ = declare_parameter<double>("camera_calibration_height", 0.0);
     depth_roi_shrink_ = std::clamp(declare_parameter<double>("depth_roi_shrink", 0.20), 0.0, 0.45);
+    bbox_support_grid_side_ =
+      std::clamp(static_cast<int>(declare_parameter<int>("bbox_support_grid_side", 3)), 1, 5);
+    bbox_support_score_scale_ =
+      std::clamp(declare_parameter<double>("bbox_support_score_scale", 0.82), 0.05, 1.0);
     use_tf_transform_ = declare_parameter<bool>("use_tf_transform", true);
     use_camera_info_ = declare_parameter<bool>("use_camera_info", true);
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
-      {"vessel", "fishing_boat", "buoy", "fishnet_buoy", "floating_obstacle", "maritime_obstacle"});
+      {"small_fishing_boat", "moving_vessel", "research_platform", "service_boat",
+        "survey_boat", "cargo_ship_far", "anchored_tanker", "obstacle"});
     gates_[0] = parse_gate(declare_parameter<std::vector<double>>("gate_near", {2.0, 18.0}), 2.0, 18.0);
     gates_[1] = parse_gate(declare_parameter<std::vector<double>>("gate_mid", {12.0, 42.0}), 12.0, 42.0);
     gates_[2] = parse_gate(declare_parameter<std::vector<double>>("gate_far", {32.0, 85.0}), 32.0, 85.0);
@@ -193,7 +196,7 @@ private:
   void load_yolo_model()
   {
     if (yolo_model_path_.empty()) {
-      RCLCPP_INFO(get_logger(), "No YOLO model path configured; using contour fallback recognizer");
+      RCLCPP_WARN(get_logger(), "No YOLO model path configured; detections will be empty");
       return;
     }
 
@@ -202,13 +205,13 @@ private:
     if (extension != ".onnx") {
       RCLCPP_WARN(
         get_logger(),
-        "C++ gated recognizer supports ONNX YOLO models. Got '%s'; using contour fallback. "
+        "C++ gated recognizer supports ONNX YOLO models. Got '%s'; detections will be empty. "
         "Export with: yolo export model=best.pt format=onnx imgsz=640",
         yolo_model_path_.c_str());
       return;
     }
     if (!std::filesystem::exists(path)) {
-      RCLCPP_WARN(get_logger(), "YOLO ONNX model does not exist: %s; using contour fallback", yolo_model_path_.c_str());
+      RCLCPP_WARN(get_logger(), "YOLO ONNX model does not exist: %s; detections will be empty", yolo_model_path_.c_str());
       return;
     }
 
@@ -227,9 +230,8 @@ private:
       RCLCPP_INFO(get_logger(), "Loaded YOLO ONNX model: %s backend=%s", yolo_model_path_.c_str(), yolo_backend_.c_str());
     } catch (const Ort::Exception & exc) {
       yolo_loaded_ = false;
-      yolo_backend_ = "contour_fallback";
+      yolo_backend_ = "not_loaded";
       RCLCPP_WARN(get_logger(), "Could not load YOLO ONNX model '%s': %s", yolo_model_path_.c_str(), exc.what());
-      RCLCPP_WARN(get_logger(), "Falling back to contour recognizer");
     }
   }
 
@@ -474,7 +476,11 @@ private:
     if (yolo_loaded_) {
       return detect_with_yolo(bgr, header);
     }
-    return detect_with_contours(bgr, header);
+    vision_msgs::msg::Detection2DArray detections;
+    detections.header = header;
+    detections.header.frame_id = frame_id_;
+    (void)bgr;
+    return detections;
   }
 
   const cv::Mat & select_detection_image(
@@ -533,15 +539,10 @@ private:
         class_id,
         candidate.score));
     }
-    if (detections.detections.empty() && enable_yolo_empty_contour_fallback_) {
-      return detect_with_contours(bgr, header);
-    }
     } catch (const Ort::Exception & exc) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO ONNX Runtime inference failed: %s", exc.what());
-      return detect_with_contours(bgr, header);
     } catch (const std::exception & exc) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "YOLO inference failed: %s", exc.what());
-      return detect_with_contours(bgr, header);
     }
     return detections;
   }
@@ -748,58 +749,6 @@ private:
     return candidates;
   }
 
-  vision_msgs::msg::Detection2DArray detect_with_contours(const cv::Mat & bgr, const std_msgs::msg::Header & header) const
-  {
-    vision_msgs::msg::Detection2DArray detections;
-    detections.header = header;
-    detections.header.frame_id = frame_id_;
-
-    cv::Mat hsv;
-    cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
-    std::vector<cv::Mat> channels;
-    cv::split(hsv, channels);
-    cv::Mat mask = (channels[1] > 45) & (channels[2] > 35);
-    cv::medianBlur(mask, mask, 5);
-    const cv::Mat kernel = cv::Mat::ones(5, 5, CV_8UC1);
-    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
-    cv::dilate(mask, mask, kernel, cv::Point(-1, -1), 1);
-
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    const double image_area = static_cast<double>(bgr.rows * bgr.cols);
-    for (const auto & contour : contours) {
-      const double area = cv::contourArea(contour);
-      if (area < min_contour_area_) {
-        continue;
-      }
-      const cv::Rect rect = cv::boundingRect(contour);
-      if (rect.width < 10 || rect.height < 10) {
-        continue;
-      }
-      const double score = std::min(0.92, 0.38 + 18.0 * area / std::max(image_area, 1.0));
-      detections.detections.push_back(make_detection(
-        header, rect.x, rect.y, rect.x + rect.width, rect.y + rect.height,
-        classify_fallback_target(rect.width, rect.height, area, image_area), score));
-    }
-    return detections;
-  }
-
-  static std::string classify_fallback_target(int width, int height, double area, double image_area)
-  {
-    const double aspect = static_cast<double>(width) / std::max(static_cast<double>(height), 1.0);
-    const double area_ratio = area / std::max(image_area, 1.0);
-    if (aspect > 1.45 && area_ratio > 0.0015) {
-      return "vessel";
-    }
-    if (height > width * 1.15 && area_ratio < 0.02) {
-      return "buoy";
-    }
-    if (area_ratio < 0.006) {
-      return "floating_obstacle";
-    }
-    return "maritime_obstacle";
-  }
-
   vision_msgs::msg::Detection2D make_detection(
     const std_msgs::msg::Header & header,
     double x1, double y1, double x2, double y2,
@@ -841,28 +790,82 @@ private:
         continue;
       }
 
-      const double u = detection.bbox.center.position.x;
-      const double v = detection.bbox.center.position.y;
-      const double lateral = (u - intrinsics.cx) * static_cast<double>(depth_m) / intrinsics.fx;
-      const double vertical = (v - intrinsics.cy) * static_cast<double>(depth_m) / intrinsics.fy;
+      points.push_back(make_detection_point(
+        detection, intrinsics, depth_m,
+        detection.bbox.center.position.x,
+        detection.bbox.center.position.y,
+        detection_score(detection)));
 
-      const LocalPoint local_point{depth_m, -lateral, -vertical};
-      const LocalPoint base_point = transform_to_base(local_point);
+      if (bbox_support_grid_side_ <= 1 || rect.width < 6 || rect.height < 6) {
+        continue;
+      }
 
-      DetectionPoint point;
-      point.x = static_cast<float>(base_point.x);
-      point.y = static_cast<float>(base_point.y);
-      point.z = static_cast<float>(base_point.z);
-      point.score = detection_score(detection);
-      point.label = detection_label(detection);
-      point.class_id = static_cast<float>(class_index_for_label(point.label));
-      point.bbox_cx = static_cast<float>(detection.bbox.center.position.x);
-      point.bbox_cy = static_cast<float>(detection.bbox.center.position.y);
-      point.bbox_w = static_cast<float>(detection.bbox.size_x);
-      point.bbox_h = static_cast<float>(detection.bbox.size_y);
-      points.push_back(point);
+      const int side = bbox_support_grid_side_;
+      const int middle = side / 2;
+      const double span = 0.55;
+      const int sample_w = std::max(3, rect.width / 5);
+      const int sample_h = std::max(3, rect.height / 5);
+      for (int iy = 0; iy < side; ++iy) {
+        for (int ix = 0; ix < side; ++ix) {
+          if (ix == middle && iy == middle) {
+            continue;
+          }
+          const double nx = side == 1 ? 0.0 :
+            (static_cast<double>(ix) / static_cast<double>(side - 1) - 0.5) * span;
+          const double ny = side == 1 ? 0.0 :
+            (static_cast<double>(iy) / static_cast<double>(side - 1) - 0.5) * span;
+          const double u = detection.bbox.center.position.x + nx * detection.bbox.size_x;
+          const double v = detection.bbox.center.position.y + ny * detection.bbox.size_y;
+          const int sample_left = std::clamp(
+            static_cast<int>(std::round(u - sample_w * 0.5)), 0, std::max(image_width - 1, 0));
+          const int sample_top = std::clamp(
+            static_cast<int>(std::round(v - sample_h * 0.5)), 0, std::max(image_height - 1, 0));
+          const int sample_right = std::clamp(sample_left + sample_w, 0, image_width);
+          const int sample_bottom = std::clamp(sample_top + sample_h, 0, image_height);
+          const auto sample_depth = median_depth(
+            cv::Rect(
+              sample_left, sample_top,
+              std::max(0, sample_right - sample_left),
+              std::max(0, sample_bottom - sample_top)),
+            depth);
+          if (!(sample_depth > 0.0F)) {
+            continue;
+          }
+          points.push_back(make_detection_point(
+            detection, intrinsics, sample_depth, u, v,
+            detection_score(detection) * static_cast<float>(bbox_support_score_scale_)));
+        }
+      }
     }
     return points;
+  }
+
+  DetectionPoint make_detection_point(
+    const vision_msgs::msg::Detection2D & detection,
+    const CameraIntrinsics & intrinsics,
+    float depth_m,
+    double u,
+    double v,
+    float score)
+  {
+    const double lateral = (u - intrinsics.cx) * static_cast<double>(depth_m) / intrinsics.fx;
+    const double vertical = (v - intrinsics.cy) * static_cast<double>(depth_m) / intrinsics.fy;
+
+    const LocalPoint local_point{depth_m, -lateral, -vertical};
+    const LocalPoint base_point = transform_to_base(local_point);
+
+    DetectionPoint point;
+    point.x = static_cast<float>(base_point.x);
+    point.y = static_cast<float>(base_point.y);
+    point.z = static_cast<float>(base_point.z);
+    point.score = score;
+    point.label = detection_label(detection);
+    point.class_id = static_cast<float>(class_index_for_label(point.label));
+    point.bbox_cx = static_cast<float>(detection.bbox.center.position.x);
+    point.bbox_cy = static_cast<float>(detection.bbox.center.position.y);
+    point.bbox_w = static_cast<float>(detection.bbox.size_x);
+    point.bbox_h = static_cast<float>(detection.bbox.size_y);
+    return point;
   }
 
   LocalPoint transform_to_base(const LocalPoint & local_point)
@@ -1022,8 +1025,17 @@ private:
 
       std::ostringstream text;
       text << label << " " << std::fixed << std::setprecision(2) << score;
-      if (index < points.size()) {
-        text << " x=" << points[index].x << " y=" << points[index].y;
+      const DetectionPoint * matched_point = nullptr;
+      for (const auto & point : points) {
+        if (std::abs(point.bbox_cx - detection.bbox.center.position.x) < 0.5F &&
+          std::abs(point.bbox_cy - detection.bbox.center.position.y) < 0.5F)
+        {
+          matched_point = &point;
+          break;
+        }
+      }
+      if (matched_point != nullptr) {
+        text << " x=" << matched_point->x << " y=" << matched_point->y;
       }
       const int baseline = 0;
       const int text_y = std::max(18, rect.y - 6);
@@ -1196,23 +1208,32 @@ private:
 
   int class_index_for_label(const std::string & label) const
   {
-    if (label == "buoy" || label == "fishnet_buoy") {
+    if (label == "small_fishing_boat") {
       return 0;
     }
-    if (label == "debris_container" || label == "debris" || label == "container") {
+    if (label == "moving_vessel" || label == "vessel") {
       return 1;
     }
-    if (label == "fishing_boat") {
+    if (label == "research_platform" || label == "platform") {
       return 2;
     }
-    if (label == "floating_obstacle" || label == "maritime_obstacle") {
+    if (label == "service_boat") {
       return 3;
     }
-    if (label == "platform") {
+    if (label == "survey_boat") {
       return 4;
     }
-    if (label == "vessel") {
+    if (label == "cargo_ship_far") {
       return 5;
+    }
+    if (label == "anchored_tanker") {
+      return 6;
+    }
+    if (label == "obstacle" || label == "buoy" || label == "fishnet_buoy" ||
+      label == "debris_container" || label == "debris" || label == "container" ||
+      label == "floating_obstacle" || label == "maritime_obstacle")
+    {
+      return 7;
     }
     return -1;
   }
@@ -1286,8 +1307,6 @@ private:
   std::string detection_input_{"raw"};
   std::string yolo_model_path_;
   double confidence_threshold_{0.35};
-  double min_contour_area_{450.0};
-  bool enable_yolo_empty_contour_fallback_{true};
   bool enable_dehaze_{true};
   double dehaze_strength_{0.65};
   double dehaze_omega_{0.88};
@@ -1309,6 +1328,8 @@ private:
   double camera_calibration_width_{0.0};
   double camera_calibration_height_{0.0};
   double depth_roi_shrink_{0.20};
+  int bbox_support_grid_side_{3};
+  double bbox_support_score_scale_{0.82};
   bool use_tf_transform_{true};
   bool use_camera_info_{true};
   std::vector<std::string> class_names_;
@@ -1331,7 +1352,7 @@ private:
   std::array<const char *, 1> yolo_output_names_{};
   bool yolo_loaded_{false};
   mutable float last_yolo_max_score_{0.0F};
-  std::string yolo_backend_{"contour_fallback"};
+  std::string yolo_backend_{"not_loaded"};
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
