@@ -48,22 +48,9 @@ set_target_properties(gated_camera_recognizer PROPERTIES
   INSTALL_RPATH "${ONNXRUNTIME_ROOT}/lib"
 )
 
-add_executable(gated_slice_fusion_recognizer src/gated_slice_fusion_recognizer.cpp)
-target_include_directories(gated_slice_fusion_recognizer PRIVATE include ${OpenCV_INCLUDE_DIRS})
-ament_target_dependencies(gated_slice_fusion_recognizer rclcpp sensor_msgs std_msgs vision_msgs)
-target_link_libraries(gated_slice_fusion_recognizer ${OpenCV_LIBS})
-
-add_executable(gated_bev_detector src/gated_bev_detector.cpp)
-target_include_directories(gated_bev_detector PRIVATE include)
-ament_target_dependencies(gated_bev_detector rclcpp sensor_msgs std_msgs)
-
 add_executable(dynamic_target_controller src/dynamic_target_controller.cpp)
 target_include_directories(dynamic_target_controller PRIVATE include)
 ament_target_dependencies(dynamic_target_controller ${NODE_DEPS})
-
-add_executable(ais_simulator src/ais_simulator.cpp)
-target_include_directories(ais_simulator PRIVATE include)
-ament_target_dependencies(ais_simulator ${NODE_DEPS})
 
 add_executable(radar_sonar_tracker src/radar_sonar_tracker.cpp)
 target_include_directories(radar_sonar_tracker PRIVATE include)
@@ -91,10 +78,7 @@ ament_target_dependencies(tracking_evaluator ${NODE_DEPS})
 
 install(TARGETS
   gated_camera_recognizer
-  gated_slice_fusion_recognizer
-  gated_bev_detector
   dynamic_target_controller
-  ais_simulator
   radar_sonar_tracker
   c3_multimodal_buffer_fusion
   uav_patrol_controller

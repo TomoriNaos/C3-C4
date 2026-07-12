@@ -15,20 +15,24 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
 CLASS_ORDER = [
-    "buoy",
-    "debris_container",
-    "fishing_boat",
-    "floating_obstacle",
-    "platform",
-    "vessel",
+    "small_fishing_boat",
+    "moving_vessel",
+    "research_platform",
+    "service_boat",
+    "survey_boat",
+    "cargo_ship_far",
+    "anchored_tanker",
+    "obstacle",
 ]
 CLASS_ZH = {
-    "buoy": "浮标",
-    "debris_container": "漂浮箱/杂物",
-    "fishing_boat": "渔船",
-    "floating_obstacle": "漂浮障碍",
-    "platform": "平台",
-    "vessel": "目标船",
+    "small_fishing_boat": "小型渔船",
+    "moving_vessel": "目标船",
+    "anchored_tanker": "锚泊油轮",
+    "service_boat": "作业船",
+    "survey_boat": "测量船",
+    "cargo_ship_far": "远距离大船",
+    "research_platform": "平台",
+    "obstacle": "障碍物",
 }
 
 COLOR_BLUE = (45, 143, 221)
@@ -1040,7 +1044,7 @@ def render_system_method_flow(out_path: Path) -> None:
     modality_cards = [
         ((70, 170, 525, 335), "毫米波雷达", ["360° 多扇区覆盖", "多高度雷达回波", "远距离稳定测距"], COLOR_BLUE),
         ((605, 170, 1060, 335), "声呐", ["四个 90° 扇区", "三帧滑动融合", "补充近水面回波"], COLOR_GREEN),
-        ((1140, 170, 1595, 335), "门控/普通/BEV", ["门控伪彩色 YOLO", "普通相机去雾识别", "BEV 几何旁路"], COLOR_PURPLE),
+        ((1140, 170, 1595, 335), "门控/普通相机", ["门控伪彩色 YOLO", "普通相机去雾 YOLO", "bbox + 深度解算坐标"], COLOR_PURPLE),
         ((1675, 170, 2130, 335), "深度相机", ["bbox 中心深度解算", "近距离三维定位", "辅助目标确认"], COLOR_ORANGE),
     ]
     for xy, title, lines, color in modality_cards:
@@ -1050,8 +1054,7 @@ def render_system_method_flow(out_path: Path) -> None:
     c3_box = (705, 455, 1495, 625)
     decision_cx, decision_cy = 1100, 825
     close_box = (260, 1010, 800, 1185)
-    ais_box = (1400, 930, 1940, 1090)
-    far_box = (1400, 1150, 1940, 1325)
+    far_box = (1400, 1010, 1940, 1185)
     merge_y = 1390
     ekf_box = (790, 1450, 1410, 1605)
     output_box = (790, 1650, 1410, 1770)
@@ -1088,11 +1091,6 @@ def render_system_method_flow(out_path: Path) -> None:
         "输出目标名称与三维坐标",
         "直接更新 detected 目标库",
     ], COLOR_PURPLE)
-    draw_method_card(ais_box, "AIS 辅助定位先验", [
-        "不属于四模态主输入",
-        "辅助远距离目标选择",
-        "提高目标 ID 稳定性",
-    ], COLOR_GREEN)
     draw_method_card(far_box, ">30m：飞控协同确认", [
         "飞控派无人机飞往候选点",
         "无人机门控相机二次识别",
@@ -1113,9 +1111,8 @@ def render_system_method_flow(out_path: Path) -> None:
     split_y = 930
     draw_elbow_arrow([(decision_cx - 205, decision_cy), (close_cx, decision_cy), (close_cx, close_box[1])], color=COLOR_PURPLE, width=4)
     draw.text((close_cx - 36, split_y - 56), "≤30m", fill=COLOR_PURPLE, font=font(21, bold=True))
-    draw_elbow_arrow([(decision_cx + 205, decision_cy), (far_cx, decision_cy), (far_cx, ais_box[1])], color=COLOR_TEAL, width=4)
+    draw_elbow_arrow([(decision_cx + 205, decision_cy), (far_cx, decision_cy), (far_cx, far_box[1])], color=COLOR_TEAL, width=4)
     draw.text((far_cx - 28, split_y - 56), ">30m", fill=COLOR_TEAL, font=font(21, bold=True))
-    draw_arrow(draw, (far_cx, ais_box[3]), (far_cx, far_box[1]), color=COLOR_MUTED, width=3)
     draw_elbow_arrow([(close_cx, close_box[3]), (close_cx, merge_y), (1040, merge_y), (1040, ekf_box[1])], color=COLOR_PURPLE, width=4)
     draw_elbow_arrow([(far_cx, far_box[3]), (far_cx, merge_y), (1160, merge_y), (1160, ekf_box[1])], color=COLOR_TEAL, width=4)
     draw_arrow(draw, (1100, ekf_box[3]), (1100, output_box[1]), color=COLOR_ORANGE, width=4)
@@ -1132,7 +1129,6 @@ def render_interface_alignment(out_path: Path) -> None:
         ("/sonar/*scan", "LaserScan -> 点云", COLOR_GREEN),
         ("/gated_camera/*points", "PointCloud2 + 类别/bbox", COLOR_PURPLE),
         ("/depth_camera/*points", "PointCloud2 + 深度", COLOR_ORANGE),
-        ("/ais/targets", "JSON 先验", COLOR_TEAL),
         ("/uav/gated_camera/*points", "远程 PointCloud2", COLOR_RED),
     ]
     for i, (topic, kind, color) in enumerate(left):

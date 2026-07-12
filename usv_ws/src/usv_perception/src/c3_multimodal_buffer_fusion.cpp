@@ -38,8 +38,6 @@ constexpr float kSrcSonar = 2.0F;
 constexpr float kSrcDepth = 4.0F;
 constexpr float kSrcVisionNormal = 31.0F;
 constexpr float kSrcVisionGated = 32.0F;
-constexpr float kSrcVisionStf = 33.0F;
-constexpr float kSrcVisionBev = 34.0F;
 constexpr float kSrcVisionUav = 35.0F;
 constexpr float kSrcVisionDepthYolo = 36.0F;
 
@@ -116,50 +114,78 @@ static std::string class_name(int class_id)
 {
   switch (class_id) {
     case 0:
-      return "buoy";
+      return "small_fishing_boat";
     case 1:
-      return "debris_container";
+      return "moving_vessel";
     case 2:
-      return "fishing_boat";
+      return "research_platform";
     case 3:
-      return "floating_obstacle";
+      return "service_boat";
     case 4:
-      return "platform";
+      return "survey_boat";
     case 5:
-      return "vessel";
+      return "cargo_ship_far";
+    case 6:
+      return "anchored_tanker";
+    case 7:
+      return "obstacle";
     default:
       return "unknown";
   }
 }
 
+static std::string json_escape(const std::string & input)
+{
+  std::ostringstream out;
+  for (const char c : input) {
+    switch (c) {
+      case '"':
+        out << "\\\"";
+        break;
+      case '\\':
+        out << "\\\\";
+        break;
+      case '\n':
+        out << "\\n";
+        break;
+      case '\r':
+        out << "\\r";
+        break;
+      case '\t':
+        out << "\\t";
+        break;
+      default:
+        out << c;
+        break;
+    }
+  }
+  return out.str();
+}
+
 static int class_from_model_name(const std::string & name)
 {
-  if (name.find("fishnet_buoy") != std::string::npos ||
-    name.find("buoy") != std::string::npos ||
-    name.find("marker") != std::string::npos)
-  {
+  if (name == "small_fishing_boat") {
     return 0;
   }
-  if (name.find("container") != std::string::npos || name.find("debris") != std::string::npos) {
+  if (name == "moving_vessel") {
     return 1;
   }
-  if (name.find("fishing") != std::string::npos) {
+  if (name == "research_platform") {
     return 2;
   }
-  if (name.find("obstacle") != std::string::npos || name.find("net_line") != std::string::npos) {
+  if (name == "service_boat") {
     return 3;
   }
-  if (name.find("platform") != std::string::npos) {
+  if (name == "survey_boat") {
     return 4;
   }
-  if (name.find("vessel") != std::string::npos ||
-    name.find("boat") != std::string::npos ||
-    name.find("ship") != std::string::npos ||
-    name.find("tanker") != std::string::npos)
-  {
+  if (name == "cargo_ship_far") {
     return 5;
   }
-  return -1;
+  if (name == "anchored_tanker") {
+    return 6;
+  }
+  return 7;
 }
 
 }  // namespace
@@ -377,8 +403,6 @@ public:
     normal_camera_topic_ = declare_parameter<std::string>("normal_camera_topic", "/gated_camera/detection_points");
     gated_camera_topic_ =
       declare_parameter<std::string>("gated_camera_topic", "/gated_camera/pseudocolor/detection_points");
-    stf_camera_topic_ = declare_parameter<std::string>("stf_camera_topic", "/gated_camera/stf_detection_points");
-    bev_topic_ = declare_parameter<std::string>("bev_topic", "/gated_camera/bev_detection_points");
     uav_gated_topic_ = declare_parameter<std::string>("uav_gated_topic", "/uav/gated_camera/detection_points");
     depth_camera_detection_topic_ =
       declare_parameter<std::string>("depth_camera_detection_topic", "/depth_camera/detection_points");
@@ -418,9 +442,10 @@ public:
     evaluation_model_names_ = declare_parameter<std::vector<std::string>>(
       "evaluation_model_names",
       std::vector<std::string>{
-        "moving_vessel", "small_fishing_boat", "survey_boat", "service_boat", "fishnet_buoy",
-        "floating_obstacle", "drift_debris", "floating_container", "channel_buoy_north",
-        "channel_buoy_south", "navigation_marker_port", "navigation_marker_starboard", "net_line_a"});
+        "moving_vessel", "small_fishing_boat", "survey_boat", "service_boat", "cargo_ship_far",
+        "anchored_tanker", "research_platform", "fishnet_buoy", "floating_obstacle", "drift_debris",
+        "floating_container", "channel_buoy_north", "channel_buoy_south", "navigation_marker_port",
+        "navigation_marker_starboard", "net_line_a"});
     evaluation_target_model_names_ = declare_parameter<std::vector<std::string>>(
       "evaluation_target_model_names", std::vector<std::string>{"moving_vessel"});
     evaluation_target_model_name_ =
@@ -440,8 +465,6 @@ public:
     }
     add_vision_subscription(normal_camera_topic_, kSrcVisionNormal, 1.00);
     add_vision_subscription(gated_camera_topic_, kSrcVisionGated, 1.12);
-    add_vision_subscription(stf_camera_topic_, kSrcVisionStf, 0.80);
-    add_vision_subscription(bev_topic_, kSrcVisionBev, 0.70);
     add_vision_subscription(uav_gated_topic_, kSrcVisionUav, 1.20);
     add_vision_subscription(depth_camera_detection_topic_, kSrcVisionDepthYolo, 1.00);
     depth_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -663,8 +686,6 @@ private:
     last_depth_points_ = depth.size();
     last_normal_camera_points_ = count_source(vision, kSrcVisionNormal);
     last_gated_camera_points_ = count_source(vision, kSrcVisionGated);
-    last_stf_points_ = count_source(vision, kSrcVisionStf);
-    last_bev_points_ = count_source(vision, kSrcVisionBev);
     last_uav_gated_points_ = count_source(vision, kSrcVisionUav);
     last_depth_camera_yolo_points_ = count_source(vision, kSrcVisionDepthYolo);
 
@@ -707,10 +728,6 @@ private:
       if (point.x < heatmap_x_min_ || point.x >= heatmap_x_max_ ||
         point.y < heatmap_y_min_ || point.y >= heatmap_y_max_)
       {
-        continue;
-      }
-      const double range = std::hypot(point.x, point.y);
-      if (std::abs(point.source_id - kSrcVisionBev) < 0.5 && range <= close_range_m_) {
         continue;
       }
       double vote = source_weight(point.source_id) * std::clamp<double>(point.intensity, 0.05, 1.0);
@@ -792,12 +809,6 @@ private:
     if (std::abs(source_id - kSrcVisionNormal) < 0.5) {
       return 1.05;
     }
-    if (std::abs(source_id - kSrcVisionStf) < 0.5) {
-      return 0.85;
-    }
-    if (std::abs(source_id - kSrcVisionBev) < 0.5) {
-      return 0.55;
-    }
     if (std::abs(source_id - kSrcVisionDepthYolo) < 0.5) {
       return 1.00;
     }
@@ -809,9 +820,9 @@ private:
 
   static std::size_t source_slot(float source_id)
   {
-    const std::array<float, 9> ids{
+    const std::array<float, 7> ids{
       kSrcRadar, kSrcSonar, kSrcDepth, kSrcVisionNormal, kSrcVisionGated,
-      kSrcVisionStf, kSrcVisionBev, kSrcVisionUav, kSrcVisionDepthYolo};
+      kSrcVisionUav, kSrcVisionDepthYolo};
     for (std::size_t i = 0; i < ids.size(); ++i) {
       if (std::abs(source_id - ids[i]) < 0.5F) {
         return i;
@@ -908,18 +919,16 @@ private:
       if (point.class_id < 0.0F) {
         continue;
       }
-      const bool is_bev = std::abs(point.source_id - kSrcVisionBev) < 0.5;
       const bool is_uav = std::abs(point.source_id - kSrcVisionUav) < 0.5;
       const bool is_local_vision =
         std::abs(point.source_id - kSrcVisionNormal) < 0.5 ||
         std::abs(point.source_id - kSrcVisionGated) < 0.5 ||
-        std::abs(point.source_id - kSrcVisionStf) < 0.5 ||
         std::abs(point.source_id - kSrcVisionDepthYolo) < 0.5;
       if (candidate_range > close_range_m_) {
         if (!is_uav && !is_local_vision) {
           continue;
         }
-      } else if (!is_local_vision || is_bev) {
+      } else if (!is_local_vision) {
         continue;
       }
       if (!best_semantic || point.intensity > best_semantic->intensity) {
@@ -989,8 +998,6 @@ private:
   {
     return std::abs(source_id - kSrcVisionNormal) < 0.5 ||
            std::abs(source_id - kSrcVisionGated) < 0.5 ||
-           std::abs(source_id - kSrcVisionStf) < 0.5 ||
-           std::abs(source_id - kSrcVisionBev) < 0.5 ||
            std::abs(source_id - kSrcVisionUav) < 0.5 ||
            std::abs(source_id - kSrcVisionDepthYolo) < 0.5;
   }
@@ -1264,6 +1271,47 @@ private:
     const double processing_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 
+    std::ostringstream model_eval;
+    model_eval.setf(std::ios::fixed, std::ios::floatfield);
+    model_eval << std::setprecision(3) << "[";
+    for (std::size_t gt_index = 0; gt_index < scene_gts.size(); ++gt_index) {
+      const auto & gt = scene_gts[gt_index];
+      int best = -1;
+      double best_distance = match_gate;
+      for (std::size_t i = 0; i < active_indices.size(); ++i) {
+        const auto & object = detected_objects_[active_indices[i]];
+        const double d = std::hypot(object.state[0] - gt.x, object.state[1] - gt.y);
+        if (d < best_distance) {
+          best_distance = d;
+          best = static_cast<int>(i);
+        }
+      }
+      const bool matched = best >= 0;
+      const int detected_class = matched ?
+        detected_objects_[active_indices[static_cast<std::size_t>(best)]].class_id : -1;
+      const bool class_correct = matched && detected_class == gt.class_id;
+      const bool in_summary_scope = is_evaluation_target(gt.name);
+      const std::string status = matched ? (class_correct ? "hit" : "class_mismatch") : "miss";
+
+      if (gt_index > 0) {
+        model_eval << ",";
+      }
+      model_eval << "{\"model\":\"" << json_escape(gt.name) << "\""
+                 << ",\"class_id\":" << gt.class_id
+                 << ",\"class_name\":\"" << class_name(gt.class_id) << "\""
+                 << ",\"x\":" << gt.x
+                 << ",\"y\":" << gt.y
+                 << ",\"range\":" << std::hypot(gt.x, gt.y)
+                 << ",\"in_summary_scope\":" << (in_summary_scope ? "true" : "false")
+                 << ",\"matched\":" << (matched ? "true" : "false")
+                 << ",\"status\":\"" << status << "\""
+                 << ",\"match_distance\":" << (matched ? best_distance : -1.0)
+                 << ",\"detected_class_id\":" << detected_class
+                 << ",\"detected_class_name\":\"" << class_name(detected_class) << "\""
+                 << ",\"class_correct\":" << (class_correct ? "true" : "false") << "}";
+    }
+    model_eval << "]";
+
     std::ostringstream out;
     out.setf(std::ios::fixed, std::ios::floatfield);
     out << std::setprecision(3)
@@ -1284,6 +1332,7 @@ private:
         << ",\"false_positive_rate\":" << false_positive_rate
         << ",\"miss_rate\":" << miss_rate
         << ",\"classification_accuracy\":" << class_accuracy
+        << ",\"model_eval\":" << model_eval.str()
         << ",\"single_frame_processing_ms\":" << processing_ms
         << ",\"process_memory_mb\":" << process_memory_mb()
         << ",\"heatmap_best_probability\":" << last_heatmap_probability_
@@ -1295,8 +1344,6 @@ private:
         << ",\"depth_points\":" << last_depth_points_
         << ",\"normal_camera_points\":" << last_normal_camera_points_
         << ",\"gated_camera_points\":" << last_gated_camera_points_
-        << ",\"stf_points\":" << last_stf_points_
-        << ",\"bev_points\":" << last_bev_points_
         << ",\"uav_gated_points\":" << last_uav_gated_points_
         << ",\"depth_camera_yolo_points\":" << last_depth_camera_yolo_points_
         << "}";
@@ -1406,8 +1453,6 @@ private:
   std::vector<double> sonar_scan_yaws_;
   std::string normal_camera_topic_;
   std::string gated_camera_topic_;
-  std::string stf_camera_topic_;
-  std::string bev_topic_;
   std::string uav_gated_topic_;
   std::string depth_camera_detection_topic_;
   std::string depth_topic_;
@@ -1470,8 +1515,6 @@ private:
   std::size_t last_depth_points_{0};
   std::size_t last_normal_camera_points_{0};
   std::size_t last_gated_camera_points_{0};
-  std::size_t last_stf_points_{0};
-  std::size_t last_bev_points_{0};
   std::size_t last_uav_gated_points_{0};
   std::size_t last_depth_camera_yolo_points_{0};
 
