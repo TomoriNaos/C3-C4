@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "gazebo_msgs/msg/entity_state.hpp"
-#include "gazebo_msgs/msg/model_states.hpp"
 #include "gazebo_msgs/srv/set_entity_state.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
@@ -56,9 +55,6 @@ public:
     pose_topic_ = declare_parameter<std::string>("pose_topic", "/tracked_object_poses");
     track_status_topic_ = declare_parameter<std::string>("track_status_topic", "/tracked_objects_text");
     c3_detected_topic_ = declare_parameter<std::string>("c3_detected_topic", "/c3/detected_objects");
-    remote_target_topic_ = declare_parameter<std::string>("remote_target_topic", "/uav/remote_target_status");
-    model_states_topic_ = declare_parameter<std::string>("model_states_topic", "/model_states");
-    target_model_name_ = declare_parameter<std::string>("target_model_name", "moving_vessel");
     enabled_ = declare_parameter<bool>("enabled", true);
     update_rate_ = declare_parameter<double>("update_rate", 15.0);
     max_speed_ = declare_parameter<double>("max_speed", 1.50);
@@ -66,7 +62,6 @@ public:
     desired_standoff_ = declare_parameter<double>("desired_standoff", 10.0);
     target_timeout_ = declare_parameter<double>("target_timeout", 5.0);
     track_status_timeout_ = declare_parameter<double>("track_status_timeout", 2.0);
-    remote_target_timeout_ = declare_parameter<double>("remote_target_timeout", 3.5);
     max_follow_range_ = declare_parameter<double>("max_follow_range", 120.0);
     yaw_gain_ = declare_parameter<double>("yaw_gain", 1.00);
     speed_gain_ = declare_parameter<double>("speed_gain", 0.18);
@@ -81,7 +76,7 @@ public:
     target_reacquire_gate_ = declare_parameter<double>("target_reacquire_gate", 9.0);
     turn_slowdown_gain_ = declare_parameter<double>("turn_slowdown_gain", 0.35);
 
-    follow_class_id_ = declare_parameter<double>("follow_class_id", 1.0);
+    follow_class_id_ = declare_parameter<double>("follow_class_id", 0.0);
     follow_class_ids_ = declare_parameter<std::vector<double>>(
       "follow_class_ids", std::vector<double>{follow_class_id_});
     prefer_follow_class_ = declare_parameter<bool>("prefer_follow_class", true);
@@ -97,21 +92,6 @@ public:
     obstacle_slowdown_gain_ = declare_parameter<double>("obstacle_slowdown_gain", 0.38);
     min_avoidance_speed_scale_ = declare_parameter<double>("min_avoidance_speed_scale", 0.50);
     centered_obstacle_bias_ = declare_parameter<double>("centered_obstacle_bias", 1.0);
-    use_model_state_obstacles_ = declare_parameter<bool>("use_model_state_obstacles", true);
-    use_model_state_target_fallback_ = declare_parameter<bool>("use_model_state_target_fallback", true);
-    model_obstacle_timeout_ = declare_parameter<double>("model_obstacle_timeout", 1.0);
-    obstacle_model_names_ = declare_parameter<std::vector<std::string>>(
-      "obstacle_model_names",
-      std::vector<std::string>{
-        "navigation_marker_port",
-        "navigation_marker_starboard",
-        "fishnet_buoy",
-        "floating_obstacle",
-        "drift_debris",
-        "floating_container",
-        "channel_buoy_north",
-        "channel_buoy_south",
-        "net_line_a"});
 
     client_ = create_client<gazebo_msgs::srv::SetEntityState>("/set_entity_state");
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -121,20 +101,14 @@ public:
       track_status_topic_, 10, std::bind(&UsvTargetFollower::on_track_status, this, std::placeholders::_1));
     c3_detected_sub_ = create_subscription<std_msgs::msg::String>(
       c3_detected_topic_, 10, std::bind(&UsvTargetFollower::on_c3_detected, this, std::placeholders::_1));
-    remote_target_sub_ = create_subscription<std_msgs::msg::String>(
-      remote_target_topic_, 10,
-      std::bind(&UsvTargetFollower::on_remote_target_status, this, std::placeholders::_1));
-    model_states_sub_ = create_subscription<gazebo_msgs::msg::ModelStates>(
-      model_states_topic_, 10, std::bind(&UsvTargetFollower::on_model_states, this, std::placeholders::_1));
     status_pub_ = create_publisher<std_msgs::msg::String>("usv_follow_status", 10);
 
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(1.0 / std::max(update_rate_, 0.1)));
     timer_ = create_wall_timer(period, std::bind(&UsvTargetFollower::on_timer, this));
     RCLCPP_INFO(
-      get_logger(), "USV target follower subscribed to poses=%s status=%s c3=%s remote=%s",
-      pose_topic_.c_str(), track_status_topic_.c_str(), c3_detected_topic_.c_str(),
-      remote_target_topic_.c_str());
+      get_logger(), "USV target follower subscribed to poses=%s status=%s c3=%s",
+      pose_topic_.c_str(), track_status_topic_.c_str(), c3_detected_topic_.c_str());
   }
 
 private:
@@ -184,80 +158,6 @@ private:
     c3_detected_tracks_ = std::move(parsed);
     last_c3_detected_time_ = std::chrono::steady_clock::now();
     has_c3_detected_tracks_ = true;
-  }
-
-  void on_remote_target_status(const std_msgs::msg::String::SharedPtr msg)
-  {
-    auto parsed = parse_track_status(msg->data);
-    if (parsed.empty()) {
-      return;
-    }
-    remote_target_tracks_ = std::move(parsed);
-    last_remote_target_time_ = std::chrono::steady_clock::now();
-    has_remote_target_tracks_ = true;
-  }
-
-  void on_model_states(const gazebo_msgs::msg::ModelStates::SharedPtr msg)
-  {
-    if (!use_model_state_obstacles_ && !use_model_state_target_fallback_) {
-      return;
-    }
-
-    model_obstacle_tracks_.clear();
-    model_target_tracks_.clear();
-    const auto now = std::chrono::steady_clock::now();
-    for (std::size_t i = 0; i < msg->name.size() && i < msg->pose.size(); ++i) {
-      const double dx = msg->pose[i].position.x - x_;
-      const double dy = msg->pose[i].position.y - y_;
-      const double cos_yaw = std::cos(yaw_);
-      const double sin_yaw = std::sin(yaw_);
-      const double rel_x = cos_yaw * dx + sin_yaw * dy;
-      const double rel_y = -sin_yaw * dx + cos_yaw * dy;
-      const double range = std::hypot(rel_x, rel_y);
-
-      if (use_model_state_target_fallback_ && msg->name[i] == target_model_name_ &&
-        std::isfinite(range) && range <= max_follow_range_ && rel_x > -6.0)
-      {
-        TrackObservation target;
-        target.id = -50000 - static_cast<int>(i);
-        target.x = rel_x;
-        target.y = rel_y;
-        if (i < msg->twist.size()) {
-          target.vx = cos_yaw * msg->twist[i].linear.x + sin_yaw * msg->twist[i].linear.y;
-          target.vy = -sin_yaw * msg->twist[i].linear.x + cos_yaw * msg->twist[i].linear.y;
-          target.speed = std::hypot(target.vx, target.vy);
-        }
-        target.confidence = 0.72;
-        target.class_id = follow_class_id_;
-        target.hits = std::max(2, min_track_hits_);
-        target.last_source = "gazebo_target_fallback";
-        target.stamp = now;
-        model_target_tracks_.push_back(target);
-      }
-
-      if (!use_model_state_obstacles_ ||
-        std::find(obstacle_model_names_.begin(), obstacle_model_names_.end(), msg->name[i]) ==
-        obstacle_model_names_.end())
-      {
-        continue;
-      }
-
-      if (!std::isfinite(range) || range > max_follow_range_ || rel_x < -4.0) {
-        continue;
-      }
-
-      TrackObservation obstacle;
-      obstacle.id = -10000 - static_cast<int>(i);
-      obstacle.x = rel_x;
-      obstacle.y = rel_y;
-      obstacle.confidence = 0.85;
-      obstacle.class_id = 7.0;
-      obstacle.hits = 3;
-      obstacle.last_source = "gazebo_model_state";
-      obstacle.stamp = now;
-      model_obstacle_tracks_.push_back(obstacle);
-    }
-    last_model_obstacle_time_ = now;
   }
 
   void on_timer()
@@ -343,32 +243,6 @@ private:
       tracks = pose_tracks_;
     }
 
-    if (has_remote_target_tracks_ &&
-      std::chrono::duration<double>(now - last_remote_target_time_).count() <= remote_target_timeout_)
-    {
-      tracks.insert(tracks.end(), remote_target_tracks_.begin(), remote_target_tracks_.end());
-    }
-
-    if (use_model_state_target_fallback_ &&
-      std::chrono::duration<double>(now - last_model_obstacle_time_).count() <= model_obstacle_timeout_)
-    {
-      bool has_valid_semantic_target = false;
-      for (const auto & track : tracks) {
-        if (is_follow_class(track) && is_valid_follow_candidate(track)) {
-          has_valid_semantic_target = true;
-          break;
-        }
-      }
-      if (!has_valid_semantic_target) {
-        tracks.insert(tracks.end(), model_target_tracks_.begin(), model_target_tracks_.end());
-      }
-    }
-
-    if (use_model_state_obstacles_ &&
-      std::chrono::duration<double>(now - last_model_obstacle_time_).count() <= model_obstacle_timeout_)
-    {
-      tracks.insert(tracks.end(), model_obstacle_tracks_.begin(), model_obstacle_tracks_.end());
-    }
     return tracks;
   }
 
@@ -422,9 +296,6 @@ private:
       if (track.last_source.find("gated") != std::string::npos) {
         score -= 0.20;
       }
-      if (track.last_source == "uav_remote_scout") {
-        score -= 3.0;
-      }
       if (score < best_score) {
         best_score = score;
         best = track;
@@ -440,9 +311,6 @@ private:
       return false;
     }
     if (track.confidence < min_follow_confidence_) {
-      return false;
-    }
-    if (track.last_source == "gazebo_model_state") {
       return false;
     }
     if (track.hits > 0 && track.hits < min_track_hits_ && track.last_source != "pose_array") {
@@ -699,26 +567,18 @@ private:
   std::string pose_topic_{"/tracked_object_poses"};
   std::string track_status_topic_{"/tracked_objects_text"};
   std::string c3_detected_topic_{"/c3/detected_objects"};
-  std::string remote_target_topic_{"/uav/remote_target_status"};
-  std::string model_states_topic_{"/model_states"};
-  std::string target_model_name_{"moving_vessel"};
   bool enabled_{true};
   bool warned_waiting_{false};
   bool has_target_{false};
   bool has_status_tracks_{false};
   bool has_c3_detected_tracks_{false};
-  bool has_remote_target_tracks_{false};
   bool prefer_follow_class_{true};
-  bool use_model_state_obstacles_{true};
-  bool use_model_state_target_fallback_{true};
   double update_rate_{15.0};
   double max_speed_{1.50};
   double max_yaw_rate_{0.70};
   double desired_standoff_{10.0};
   double target_timeout_{5.0};
   double track_status_timeout_{2.0};
-  double remote_target_timeout_{3.5};
-  double model_obstacle_timeout_{1.0};
   double max_follow_range_{120.0};
   double yaw_gain_{1.00};
   double speed_gain_{0.18};
@@ -732,7 +592,7 @@ private:
   double target_lock_timeout_{4.5};
   double target_reacquire_gate_{9.0};
   double turn_slowdown_gain_{0.35};
-  double follow_class_id_{1.0};
+  double follow_class_id_{0.0};
   std::vector<double> follow_class_ids_;
   double min_follow_confidence_{0.18};
   int min_track_hits_{2};
@@ -752,25 +612,17 @@ private:
   TrackObservation target_;
   std::vector<TrackObservation> metadata_tracks_;
   std::vector<TrackObservation> c3_detected_tracks_;
-  std::vector<TrackObservation> remote_target_tracks_;
   std::vector<TrackObservation> pose_tracks_;
-  std::vector<TrackObservation> model_target_tracks_;
-  std::vector<TrackObservation> model_obstacle_tracks_;
-  std::vector<std::string> obstacle_model_names_;
   std::chrono::steady_clock::time_point start_time_;
   std::chrono::steady_clock::time_point last_step_;
   std::chrono::steady_clock::time_point last_target_time_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_status_time_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_c3_detected_time_{std::chrono::steady_clock::now()};
-  std::chrono::steady_clock::time_point last_remote_target_time_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_pose_time_{std::chrono::steady_clock::now()};
-  std::chrono::steady_clock::time_point last_model_obstacle_time_{std::chrono::steady_clock::now()};
   rclcpp::Client<gazebo_msgs::srv::SetEntityState>::SharedPtr client_;
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr pose_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr status_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr c3_detected_sub_;
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr remote_target_sub_;
-  rclcpp::Subscription<gazebo_msgs::msg::ModelStates>::SharedPtr model_states_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;

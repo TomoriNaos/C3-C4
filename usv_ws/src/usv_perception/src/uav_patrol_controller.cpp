@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -33,6 +35,7 @@ public:
   {
     model_name_ = declare_parameter<std::string>("model_name", "scout_uav");
     const double update_rate = declare_parameter<double>("update_rate", 8.0);
+    update_dt_s_ = 1.0 / std::max(update_rate, 0.1);
     center_x_ = declare_parameter<double>("center_x", 16.0);
     center_y_ = declare_parameter<double>("center_y", 0.0);
     altitude_ = declare_parameter<double>("altitude", 26.0);
@@ -41,28 +44,33 @@ public:
     angular_speed_ = declare_parameter<double>("angular_speed", 0.045);
     patrol_speed_ = declare_parameter<double>("patrol_speed", 0.45);
     camera_pitch_ = declare_parameter<double>("camera_pitch", 0.30);
-    target_tracking_enabled_ = declare_parameter<bool>("target_tracking_enabled", true);
-    target_model_name_ = declare_parameter<std::string>("target_model_name", "moving_vessel");
     usv_model_name_ = declare_parameter<std::string>("usv_model_name", "wamv");
     model_states_topic_ = declare_parameter<std::string>("model_states_topic", "/model_states");
-    remote_target_topic_ = declare_parameter<std::string>("remote_target_topic", "/uav/remote_target_status");
-    remote_target_confidence_ = declare_parameter<double>("remote_target_confidence", 0.94);
-    remote_target_class_id_ = declare_parameter<double>("remote_target_class_id", 1.0);
-    target_follow_backoff_ = declare_parameter<double>("target_follow_backoff", 18.0);
-    target_lateral_sweep_ = declare_parameter<double>("target_lateral_sweep", 13.0);
-    target_timeout_ = declare_parameter<double>("target_timeout", 2.0);
     external_goal_topic_ = declare_parameter<std::string>("external_goal_topic", "/c3/drone/goal");
     external_goal_timeout_ = declare_parameter<double>("external_goal_timeout", 4.0);
     external_goal_speed_ = declare_parameter<double>("external_goal_speed", 1.6);
+    goal_arrive_radius_ = declare_parameter<double>("goal_arrive_radius", 2.0);
+    control_backend_ = declare_parameter<std::string>("control_backend", "px4");
+    px4_goal_topic_ = declare_parameter<std::string>("px4_goal_topic", "/uav/offboard_goal");
+    px4_pose_topic_ = declare_parameter<std::string>("px4_pose_topic", "/px4/vehicle_pose");
+    gazebo_sim_goal_topic_ = declare_parameter<std::string>("gazebo_sim_goal_topic", "/uav/sim/command");
+    gazebo_sim_pose_topic_ = declare_parameter<std::string>("gazebo_sim_pose_topic", "/uav/sim/estimated_pose");
+    flight_status_topic_ = declare_parameter<std::string>("flight_status_topic", "/uav/flight_status");
 
     client_ = create_client<gazebo_msgs::srv::SetEntityState>("/set_entity_state");
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("uav/status_marker", 10);
-    remote_target_pub_ = create_publisher<std_msgs::msg::String>(remote_target_topic_, 10);
+    px4_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(px4_goal_topic_, 10);
+    gazebo_sim_goal_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(gazebo_sim_goal_topic_, 10);
+    flight_status_pub_ = create_publisher<std_msgs::msg::String>(flight_status_topic_, 10);
     model_states_sub_ = create_subscription<gazebo_msgs::msg::ModelStates>(
       model_states_topic_, 10, std::bind(&UavPatrolController::on_model_states, this, std::placeholders::_1));
     external_goal_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       external_goal_topic_, 10, std::bind(&UavPatrolController::on_external_goal, this, std::placeholders::_1));
+    px4_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+      px4_pose_topic_, 10, std::bind(&UavPatrolController::on_px4_pose, this, std::placeholders::_1));
+    gazebo_sim_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+      gazebo_sim_pose_topic_, 10, std::bind(&UavPatrolController::on_gazebo_sim_pose, this, std::placeholders::_1));
 
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::duration<double>(1.0 / std::max(update_rate, 0.1)));
@@ -70,6 +78,14 @@ public:
   }
 
 private:
+  enum class MissionMode : uint8_t
+  {
+    PATROL = 0,
+    TRANSIT = 1,
+    HOLD = 2,
+    BACK = 3
+  };
+
   struct Waypoint
   {
     double x;
@@ -84,10 +100,25 @@ private:
   void on_timer()
   {
     const double t = elapsed_seconds();
+    update_mission_mode();
     const auto state = make_state(t);
-    publish_tf(state);
-    publish_marker(state);
-    publish_remote_target();
+    auto display_state = state;
+    if (control_backend_ == "gazebo_simulated" && has_uav_truth_state_) {
+      display_state.pose = uav_truth_pose_;
+    }
+    publish_tf(display_state);
+    publish_marker(display_state);
+    publish_flight_status(state);
+
+    if (control_backend_ == "px4") {
+      publish_px4_goal(state);
+      return;
+    }
+
+    if (control_backend_ == "gazebo_simulated") {
+      publish_gazebo_sim_goal(state);
+      return;
+    }
 
     if (!client_->service_is_ready()) {
       if (!warned_waiting_) {
@@ -104,28 +135,26 @@ private:
 
   gazebo_msgs::msg::EntityState make_state(double t) const
   {
-    if (has_recent_external_goal()) {
+    if (mission_mode_ == MissionMode::TRANSIT || mission_mode_ == MissionMode::BACK) {
       return make_external_goal_state();
-    }
-    if (target_tracking_enabled_ && has_recent_target()) {
-      return make_target_scout_state(t);
     }
     return make_patrol_state(t);
   }
 
   gazebo_msgs::msg::EntityState make_external_goal_state() const
   {
-    double current_x = has_uav_state_ ? uav_pose_.position.x : external_goal_.pose.position.x;
-    double current_y = has_uav_state_ ? uav_pose_.position.y : external_goal_.pose.position.y;
+    const auto goal = resolve_goal_world();
+    double current_x = has_uav_state_ ? uav_pose_.position.x : goal[0];
+    double current_y = has_uav_state_ ? uav_pose_.position.y : goal[1];
     double current_z = has_uav_state_ ? uav_pose_.position.z : altitude_;
-    const double goal_x = external_goal_.pose.position.x;
-    const double goal_y = external_goal_.pose.position.y;
-    const double goal_z = external_goal_.pose.position.z > 1.0 ? external_goal_.pose.position.z : altitude_;
+    const double goal_x = goal[0];
+    const double goal_y = goal[1];
+    const double goal_z = goal[2];
     const double dx = goal_x - current_x;
     const double dy = goal_y - current_y;
     const double dz = goal_z - current_z;
     const double distance = std::hypot(dx, dy);
-    const double step = std::min(distance, external_goal_speed_ / 8.0);
+    const double step = std::min(distance, external_goal_speed_ * update_dt_s_);
     const double ratio = distance > 1e-3 ? step / distance : 0.0;
 
     gazebo_msgs::msg::EntityState state;
@@ -144,22 +173,19 @@ private:
 
   gazebo_msgs::msg::EntityState make_patrol_state(double t) const
   {
-    const std::vector<Waypoint> path{
-      {center_x_ + 78.0, center_y_ - 52.0},
-      {center_x_ + 46.0, center_y_ - 30.0},
-      {center_x_ + 18.0, center_y_ - 2.0},
-      {center_x_ + 42.0, center_y_ + 38.0},
-      {center_x_ + 86.0, center_y_ + 56.0},
-      {center_x_ + 124.0, center_y_ + 18.0},
-      {center_x_ + 96.0, center_y_ - 24.0}
-    };
-    const auto sample = sample_path(path, patrol_speed_, t);
-    const double x = sample.x;
-    const double y = sample.y;
+    const double phase = angular_speed_ * t;
+    const double local_x = center_x_ + radius_x_ * std::cos(phase);
+    const double local_y = center_y_ + radius_y_ * std::sin(phase);
+    const double local_vx = -radius_x_ * angular_speed_ * std::sin(phase);
+    const double local_vy = radius_y_ * angular_speed_ * std::cos(phase);
+    const auto world = ship_relative_to_world(local_x, local_y, altitude_);
+    const auto tangent_world = ship_relative_vector_to_world(local_vx, local_vy);
+    const double x = world[0];
+    const double y = world[1];
     const double z = altitude_ + 0.9 * std::sin(0.035 * t);
-    const double vx = sample.vx;
-    const double vy = sample.vy;
-    const double yaw = sample.yaw;
+    const double vx = tangent_world[0];
+    const double vy = tangent_world[1];
+    const double yaw = std::atan2(vy, vx);
 
     gazebo_msgs::msg::EntityState state;
     state.name = model_name_;
@@ -174,58 +200,16 @@ private:
     return state;
   }
 
-  gazebo_msgs::msg::EntityState make_target_scout_state(double t) const
-  {
-    const double target_x = target_pose_.position.x;
-    const double target_y = target_pose_.position.y;
-    const double usv_x = has_usv_state_ ? usv_pose_.position.x : 0.0;
-    const double usv_y = has_usv_state_ ? usv_pose_.position.y : 0.0;
-    double dir_x = target_x - usv_x;
-    double dir_y = target_y - usv_y;
-    double length = std::hypot(dir_x, dir_y);
-    if (length < 1.0) {
-      dir_x = std::cos(yaw_from_quaternion(target_pose_.orientation));
-      dir_y = std::sin(yaw_from_quaternion(target_pose_.orientation));
-      length = 1.0;
-    }
-    dir_x /= length;
-    dir_y /= length;
-    const double side_x = -dir_y;
-    const double side_y = dir_x;
-    const double sweep = target_lateral_sweep_ * std::sin(0.22 * t);
-
-    const double x = target_x - dir_x * target_follow_backoff_ + side_x * sweep;
-    const double y = target_y - dir_y * target_follow_backoff_ + side_y * sweep;
-    const double z = altitude_ + 1.2 * std::sin(0.05 * t);
-    const double yaw = std::atan2(target_y - y, target_x - x);
-
-    gazebo_msgs::msg::EntityState state;
-    state.name = model_name_;
-    state.reference_frame = "world";
-    state.pose.position.x = x;
-    state.pose.position.y = y;
-    state.pose.position.z = z;
-    state.pose.orientation = quaternion_from_euler(0.0, camera_pitch_, yaw);
-    state.twist.linear.x = target_twist_.linear.x;
-    state.twist.linear.y = target_twist_.linear.y;
-    state.twist.linear.z = 0.0;
-    return state;
-  }
-
   void on_model_states(const gazebo_msgs::msg::ModelStates::SharedPtr msg)
   {
     const auto uav_index = find_model(*msg, model_name_);
     if (uav_index >= 0) {
-      uav_pose_ = msg->pose[static_cast<std::size_t>(uav_index)];
-      has_uav_state_ = true;
-    }
-
-    const auto target_index = find_model(*msg, target_model_name_);
-    if (target_index >= 0) {
-      target_pose_ = msg->pose[static_cast<std::size_t>(target_index)];
-      target_twist_ = msg->twist[static_cast<std::size_t>(target_index)];
-      has_target_state_ = true;
-      last_target_time_ = std::chrono::steady_clock::now();
+      uav_truth_pose_ = msg->pose[static_cast<std::size_t>(uav_index)];
+      has_uav_truth_state_ = true;
+      if (control_backend_ != "gazebo_simulated" || !has_uav_state_) {
+        uav_pose_ = uav_truth_pose_;
+        has_uav_state_ = true;
+      }
     }
 
     const auto usv_index = find_model(*msg, usv_model_name_);
@@ -246,6 +230,124 @@ private:
     last_external_goal_time_ = std::chrono::steady_clock::now();
   }
 
+  void on_px4_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  {
+    if (!msg) {
+      return;
+    }
+    uav_pose_ = msg->pose;
+    has_uav_state_ = true;
+  }
+
+  void on_gazebo_sim_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  {
+    if (!msg || control_backend_ != "gazebo_simulated") {
+      return;
+    }
+    uav_pose_ = msg->pose;
+    has_uav_state_ = true;
+  }
+
+  void publish_px4_goal(const gazebo_msgs::msg::EntityState & state)
+  {
+    geometry_msgs::msg::PoseStamped goal;
+    goal.header.stamp = get_clock()->now();
+    // The bridge owns the ROS ENU to PX4 NED conversion.
+    goal.header.frame_id = "world";
+    goal.pose = state.pose;
+    px4_goal_pub_->publish(goal);
+  }
+
+  void publish_gazebo_sim_goal(const gazebo_msgs::msg::EntityState & state)
+  {
+    geometry_msgs::msg::PoseStamped goal;
+    goal.header.stamp = get_clock()->now();
+    goal.header.frame_id = "world";
+    goal.pose = state.pose;
+    gazebo_sim_goal_pub_->publish(goal);
+  }
+
+  void publish_flight_status(const gazebo_msgs::msg::EntityState & command) const
+  {
+    const char * mode = "巡航";
+    if (mission_mode_ == MissionMode::TRANSIT) {
+      mode = "前往粗定位点";
+    } else if (mission_mode_ == MissionMode::HOLD) {
+      mode = "目标区域盘旋";
+    }
+    std::ostringstream out;
+    out.setf(std::ios::fixed, std::ios::floatfield);
+    out << std::setprecision(2)
+        << "{\"模式\":\"" << mode << "\""
+        << ",\"任务有效\":" << (has_recent_external_goal() ? "true" : "false")
+        << ",\"指令_x\":" << command.pose.position.x
+        << ",\"指令_y\":" << command.pose.position.y
+        << ",\"指令高度\":" << command.pose.position.z;
+    if (has_recent_external_goal()) {
+      out << ",\"粗定位_x\":" << external_goal_.pose.position.x
+          << ",\"粗定位_y\":" << external_goal_.pose.position.y;
+    }
+    out << "}";
+    std_msgs::msg::String msg;
+    msg.data = out.str();
+    flight_status_pub_->publish(msg);
+  }
+
+  void update_mission_mode()
+  {
+    if (has_recent_external_goal()) {
+      mission_mode_ = MissionMode::TRANSIT;
+      if (has_uav_state_) {
+        const auto goal = resolve_goal_world();
+        const double distance = std::hypot(goal[0] - uav_pose_.position.x, goal[1] - uav_pose_.position.y);
+        if (distance <= goal_arrive_radius_) {
+          mission_mode_ = MissionMode::HOLD;
+        }
+      }
+      return;
+    }
+    mission_mode_ = MissionMode::PATROL;
+  }
+
+  std::array<double, 3> resolve_goal_world() const
+  {
+    if (external_goal_.header.frame_id == "ship" || external_goal_.header.frame_id == "base_link") {
+      return ship_relative_to_world(
+        external_goal_.pose.position.x,
+        external_goal_.pose.position.y,
+        external_goal_.pose.position.z > 1.0 ? external_goal_.pose.position.z : altitude_);
+    }
+    return {
+      external_goal_.pose.position.x,
+      external_goal_.pose.position.y,
+      external_goal_.pose.position.z > 1.0 ? external_goal_.pose.position.z : altitude_};
+  }
+
+  std::array<double, 3> ship_relative_to_world(double x, double y, double z) const
+  {
+    if (!has_usv_state_) {
+      return {x, y, z};
+    }
+    const double yaw = yaw_from_quaternion(usv_pose_.orientation);
+    const double c = std::cos(yaw);
+    const double s = std::sin(yaw);
+    return {
+      usv_pose_.position.x + c * x - s * y,
+      usv_pose_.position.y + s * x + c * y,
+      z > 1.0 ? z : altitude_};
+  }
+
+  std::array<double, 2> ship_relative_vector_to_world(double x, double y) const
+  {
+    if (!has_usv_state_) {
+      return {x, y};
+    }
+    const double yaw = yaw_from_quaternion(usv_pose_.orientation);
+    const double c = std::cos(yaw);
+    const double s = std::sin(yaw);
+    return {c * x - s * y, s * x + c * y};
+  }
+
   static int find_model(const gazebo_msgs::msg::ModelStates & msg, const std::string & name)
   {
     for (std::size_t i = 0; i < msg.name.size(); ++i) {
@@ -254,13 +356,6 @@ private:
       }
     }
     return -1;
-  }
-
-  bool has_recent_target() const
-  {
-    return has_target_state_ &&
-           std::chrono::duration<double>(std::chrono::steady_clock::now() - last_target_time_).count() <=
-           target_timeout_;
   }
 
   bool has_recent_external_goal() const
@@ -397,61 +492,19 @@ private:
     text.lifetime.sec = 1;
     markers.markers.push_back(text);
 
-    if (has_recent_target()) {
-      visualization_msgs::msg::Marker target;
-      target.header.frame_id = "world";
-      target.header.stamp = now;
-      target.ns = "uav_remote_target";
-      target.id = 3;
-      target.type = visualization_msgs::msg::Marker::SPHERE;
-      target.action = visualization_msgs::msg::Marker::ADD;
-      target.pose.position.x = target_pose_.position.x;
-      target.pose.position.y = target_pose_.position.y;
-      target.pose.position.z = target_pose_.position.z + 2.2;
-      target.pose.orientation.w = 1.0;
-      target.scale.x = 1.8;
-      target.scale.y = 1.8;
-      target.scale.z = 1.8;
-      target.color.r = 0.15;
-      target.color.g = 0.95;
-      target.color.b = 1.0;
-      target.color.a = 0.88;
-      target.lifetime.sec = 1;
-      markers.markers.push_back(target);
-
-      visualization_msgs::msg::Marker label;
-      label.header = target.header;
-      label.ns = "uav_remote_target";
-      label.id = 4;
-      label.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-      label.action = visualization_msgs::msg::Marker::ADD;
-      label.pose.position.x = target_pose_.position.x;
-      label.pose.position.y = target_pose_.position.y;
-      label.pose.position.z = target_pose_.position.z + 4.0;
-      label.pose.orientation.w = 1.0;
-      label.scale.z = 0.85;
-      label.color.r = 0.75;
-      label.color.g = 1.0;
-      label.color.b = 1.0;
-      label.color.a = 1.0;
-      label.text = "UAV SCOUT: " + target_model_name_;
-      label.lifetime.sec = 1;
-      markers.markers.push_back(label);
-    }
-
     if (has_recent_external_goal()) {
       visualization_msgs::msg::Marker goal;
       goal.header.frame_id = "world";
       goal.header.stamp = now;
       goal.ns = "c3_uav_goal";
       goal.id = 5;
-      goal.type = visualization_msgs::msg::Marker::SPHERE;
+      goal.type = visualization_msgs::msg::Marker::CUBE;
       goal.action = visualization_msgs::msg::Marker::ADD;
       goal.pose = external_goal_.pose;
       goal.pose.orientation.w = 1.0;
-      goal.scale.x = 2.2;
-      goal.scale.y = 2.2;
-      goal.scale.z = 2.2;
+      goal.scale.x = 1.0;
+      goal.scale.y = 1.0;
+      goal.scale.z = 0.25;
       goal.color.r = 1.0;
       goal.color.g = 0.35;
       goal.color.b = 0.05;
@@ -463,56 +516,21 @@ private:
     marker_pub_->publish(markers);
   }
 
-  void publish_remote_target()
-  {
-    if (!has_recent_target() || !has_usv_state_) {
-      return;
-    }
-
-    const double dx = target_pose_.position.x - usv_pose_.position.x;
-    const double dy = target_pose_.position.y - usv_pose_.position.y;
-    const double yaw = yaw_from_quaternion(usv_pose_.orientation);
-    const double cos_yaw = std::cos(yaw);
-    const double sin_yaw = std::sin(yaw);
-    const double rel_x = cos_yaw * dx + sin_yaw * dy;
-    const double rel_y = -sin_yaw * dx + cos_yaw * dy;
-    const double dvx = target_twist_.linear.x - usv_twist_.linear.x;
-    const double dvy = target_twist_.linear.y - usv_twist_.linear.y;
-    const double rel_vx = cos_yaw * dvx + sin_yaw * dvy;
-    const double rel_vy = -sin_yaw * dvx + cos_yaw * dvy;
-    const double speed = std::hypot(rel_vx, rel_vy);
-
-    std::ostringstream status;
-    status.setf(std::ios::fixed, std::ios::floatfield);
-    status << std::setprecision(2)
-           << "[{\"id\":9001"
-           << ",\"x\":" << rel_x
-           << ",\"y\":" << rel_y
-           << ",\"vx\":" << rel_vx
-           << ",\"vy\":" << rel_vy
-           << ",\"speed\":" << speed
-           << ",\"confidence\":" << remote_target_confidence_
-           << ",\"class_id\":" << remote_target_class_id_
-           << ",\"last_source\":\"uav_remote_scout\""
-           << ",\"hits\":20"
-           << ",\"sources\":[\"uav_remote_scout\"]}]";
-
-    std_msgs::msg::String msg;
-    msg.data = status.str();
-    remote_target_pub_->publish(msg);
-  }
-
   static double yaw_from_quaternion(const geometry_msgs::msg::Quaternion & q)
   {
     return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
   }
 
   std::string model_name_{"scout_uav"};
-  std::string target_model_name_{"moving_vessel"};
   std::string usv_model_name_{"wamv"};
   std::string model_states_topic_{"/model_states"};
-  std::string remote_target_topic_{"/uav/remote_target_status"};
   std::string external_goal_topic_{"/c3/drone/goal"};
+  std::string control_backend_{"px4"};
+  std::string px4_goal_topic_{"/uav/offboard_goal"};
+  std::string px4_pose_topic_{"/px4/vehicle_pose"};
+  std::string gazebo_sim_goal_topic_{"/uav/sim/command"};
+  std::string gazebo_sim_pose_topic_{"/uav/sim/estimated_pose"};
+  std::string flight_status_topic_{"/uav/flight_status"};
   double center_x_{16.0};
   double center_y_{0.0};
   double altitude_{26.0};
@@ -521,34 +539,33 @@ private:
   double angular_speed_{0.045};
   double patrol_speed_{0.45};
   double camera_pitch_{0.30};
-  double remote_target_confidence_{0.94};
-  double remote_target_class_id_{1.0};
-  double target_follow_backoff_{18.0};
-  double target_lateral_sweep_{13.0};
-  double target_timeout_{2.0};
   double external_goal_timeout_{4.0};
   double external_goal_speed_{1.6};
+  double goal_arrive_radius_{2.0};
+  double update_dt_s_{0.125};
   bool warned_waiting_{false};
-  bool target_tracking_enabled_{true};
-  bool has_target_state_{false};
   bool has_usv_state_{false};
   bool has_uav_state_{false};
+  bool has_uav_truth_state_{false};
   bool has_external_goal_{false};
-  geometry_msgs::msg::Pose target_pose_;
-  geometry_msgs::msg::Twist target_twist_;
+  MissionMode mission_mode_{MissionMode::PATROL};
   geometry_msgs::msg::Pose usv_pose_;
   geometry_msgs::msg::Twist usv_twist_;
   geometry_msgs::msg::Pose uav_pose_;
+  geometry_msgs::msg::Pose uav_truth_pose_;
   geometry_msgs::msg::PoseStamped external_goal_;
   std::chrono::steady_clock::time_point start_time_;
-  std::chrono::steady_clock::time_point last_target_time_{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_external_goal_time_{std::chrono::steady_clock::now()};
   rclcpp::Client<gazebo_msgs::srv::SetEntityState>::SharedPtr client_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   rclcpp::Subscription<gazebo_msgs::msg::ModelStates>::SharedPtr model_states_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr external_goal_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr remote_target_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr px4_goal_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr gazebo_sim_goal_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr flight_status_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr px4_pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr gazebo_sim_pose_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

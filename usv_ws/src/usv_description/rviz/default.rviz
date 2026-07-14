@@ -7,14 +7,18 @@ Panels:
         - /TF1
         - /RobotModel1
         - /Tracking Markers1
-        - /Gated Range View1
-        - /UAV Gated Camera View1
         - /Gated Detection Points1
+        - /Pseudocolor Gated Points1
+        - /Depth Camera Detection Points1
+        - /UAV Gated Detection Points1
+        - /C3 Integrated Cloud1
       Splitter Ratio: 0.5
   - Class: rviz_common/Views
     Name: Views
   - Class: rviz_common/Time
     Name: Time
+  - Class: usv_rviz_dashboard/PerceptionDashboard
+    Name: 多模态感知总览
 Visualization Manager:
   Class: ""
   Displays:
@@ -96,6 +100,57 @@ Visualization Manager:
       Queue Size: 10
       Value: true
     - Class: rviz_default_plugins/PointCloud2
+      Name: Pseudocolor Gated Points
+      Enabled: true
+      Topic:
+        Value: /gated_camera/pseudocolor/detection_points
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Spheres
+      Size (m): 0.35
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Min Intensity: 0
+      Max Intensity: 1
+      Queue Size: 10
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Depth Camera Detection Points
+      Enabled: true
+      Topic:
+        Value: /depth_camera/detection_points
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Spheres
+      Size (m): 0.35
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Min Intensity: 0
+      Max Intensity: 1
+      Queue Size: 10
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: UAV Gated Detection Points
+      Enabled: true
+      Topic:
+        Value: /uav/gated_camera/detection_points
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Depth: 5
+      Style: Spheres
+      Size (m): 0.35
+      Color Transformer: Intensity
+      Channel Name: intensity
+      Min Intensity: 0
+      Max Intensity: 1
+      Queue Size: 10
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
       Name: C3 Integrated Cloud
       Enabled: true
       Topic:
@@ -157,45 +212,6 @@ Visualization Manager:
       Shape: Arrow (Flat)
       Arrow Length: 0.8
       Color: 120; 255; 255
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Name: Gated Range View
-      Enabled: true
-      Topic:
-        Value: /gated_camera/range_view
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Depth: 5
-      Normalize Range: true
-      Min Value: 0
-      Max Value: 1
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Name: UAV Gated Camera View
-      Enabled: true
-      Topic:
-        Value: /uav/gated_camera/range_view
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Depth: 5
-      Normalize Range: true
-      Min Value: 0
-      Max Value: 1
-      Value: true
-    - Class: rviz_default_plugins/Image
-      Name: C3 Heatmap
-      Enabled: true
-      Topic:
-        Value: /c3/heatmap/image
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Depth: 5
-      Normalize Range: true
-      Min Value: 0
-      Max Value: 255
       Value: true
   Enabled: true
   Global Options:

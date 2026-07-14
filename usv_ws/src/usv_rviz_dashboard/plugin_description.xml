@@ -1,0 +1,8 @@
+<library path="perception_dashboard">
+  <class
+    name="usv_rviz_dashboard/PerceptionDashboard"
+    type="usv_rviz_dashboard::PerceptionDashboard"
+    base_class_type="rviz_common::Panel">
+    <description>Live multimodal image and performance dashboard.</description>
+  </class>
+</library>

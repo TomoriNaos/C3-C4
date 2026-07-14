@@ -14,6 +14,7 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>usv_rviz_dashboard</exec_depend>
   <exec_depend>depth_image_to_pointcloud2</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>usv_description</exec_depend>

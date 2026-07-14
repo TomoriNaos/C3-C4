@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "c3_sonar_driver/msg/sonar_detect.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -89,7 +91,17 @@ public:
   : Node("radar_sonar_tracker")
   {
     const std::string radar_topic = declare_parameter<std::string>("radar_topic", "/mmwave_radar/scan");
-    const std::string sonar_topic = declare_parameter<std::string>("sonar_topic", "/sonar/range");
+    sonar_scan_topics_ = declare_parameter<std::vector<std::string>>(
+      "sonar_scan_topics", std::vector<std::string>{});
+    sonar_scan_yaws_ = declare_parameter<std::vector<double>>("sonar_scan_yaws", std::vector<double>{0.0});
+    const std::string legacy_sonar_topic = declare_parameter<std::string>("sonar_topic", "");
+    sonar_detect_topic_ = declare_parameter<std::string>("sonar_detect_topic", "/sonar/detect");
+    if (sonar_scan_topics_.empty() && !legacy_sonar_topic.empty()) {
+      sonar_scan_topics_.push_back(legacy_sonar_topic);
+    }
+    while (sonar_scan_yaws_.size() < sonar_scan_topics_.size()) {
+      sonar_scan_yaws_.push_back(0.0);
+    }
     const std::string gated_points_topic =
       declare_parameter<std::string>("gated_points_topic", "/gated_camera/detection_points");
     const std::string uav_points_topic =
@@ -97,23 +109,47 @@ public:
     const std::string pseudocolor_gated_points_topic =
       declare_parameter<std::string>(
         "pseudocolor_gated_points_topic", "/gated_camera/pseudocolor/detection_points");
+    const std::string stf_gated_points_topic =
+      declare_parameter<std::string>("stf_gated_points_topic", "/gated_camera/stf_detection_points");
+    const std::string bev_gated_points_topic =
+      declare_parameter<std::string>("bev_gated_points_topic", "/gated_camera/bev_detection_points");
+    const std::string ais_topic = declare_parameter<std::string>("ais_topic", "/ais/targets");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     radar_x_offset_ = declare_parameter<double>("radar_x_offset", -0.35);
     radar_y_offset_ = declare_parameter<double>("radar_y_offset", 0.0);
     sonar_x_offset_ = declare_parameter<double>("sonar_x_offset", 0.65);
+    sonar_window_frames_ = declare_parameter<int>("sonar_fusion_window_frames", 3);
+    sonar_min_points_for_valid_detect_ = declare_parameter<int>("sonar_min_points_for_valid_detect", 20);
+    sonar_default_confidence_ = declare_parameter<double>("sonar_default_confidence", 0.65);
+    sonar_detect_timeout_ = declare_parameter<double>("sonar_detect_timeout_s", 2.0);
     cluster_gap_ = declare_parameter<double>("cluster_gap", 0.75);
     min_cluster_points_ = declare_parameter<int>("min_cluster_points", 2);
     max_tracking_range_ = declare_parameter<double>("max_tracking_range", 80.0);
     association_gate_ = declare_parameter<double>("association_gate", 2.8);
     track_timeout_ = declare_parameter<double>("track_timeout", 2.0);
+    camera_fusion_timeout_ = declare_parameter<double>("camera_fusion_timeout", 0.8);
+    uav_fusion_timeout_ = declare_parameter<double>("uav_fusion_timeout", 1.2);
     min_camera_confidence_ = declare_parameter<double>("min_camera_confidence", 0.20);
+    ais_confidence_ = declare_parameter<double>("ais_confidence", 0.88);
+    min_ais_confidence_ = declare_parameter<double>("min_ais_confidence", 0.45);
 
     radar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       radar_topic, rclcpp::SensorDataQoS(),
       std::bind(&RadarSonarTracker::on_radar, this, std::placeholders::_1));
-    sonar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-      sonar_topic, rclcpp::SensorDataQoS(),
-      std::bind(&RadarSonarTracker::on_sonar_scan, this, std::placeholders::_1));
+    sonar_sector_windows_.resize(sonar_scan_topics_.size());
+    for (std::size_t i = 0; i < sonar_scan_topics_.size(); ++i) {
+      const double mount_yaw = sonar_scan_yaws_[i];
+      sonar_subs_.push_back(create_subscription<sensor_msgs::msg::LaserScan>(
+        sonar_scan_topics_[i], rclcpp::SensorDataQoS(),
+        [this, mount_yaw, i](sensor_msgs::msg::LaserScan::SharedPtr msg) {
+          on_sonar_scan(msg, mount_yaw, i);
+        }));
+    }
+    if (!sonar_detect_topic_.empty()) {
+      sonar_detect_sub_ = create_subscription<c3_sonar_driver::msg::SonarDetect>(
+        sonar_detect_topic_, 10,
+        std::bind(&RadarSonarTracker::on_sonar_detect, this, std::placeholders::_1));
+    }
     gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
       gated_points_topic, rclcpp::SensorDataQoS(),
       [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
@@ -131,34 +167,105 @@ public:
           on_detection_points(msg, "pseudocolor_gated_yolo", 0.78);
         });
     }
+    if (!stf_gated_points_topic.empty()) {
+      stf_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        stf_gated_points_topic, rclcpp::SensorDataQoS(),
+        [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          on_detection_points(msg, "stf_gated_slices", 0.68);
+        });
+    }
+    if (!bev_gated_points_topic.empty()) {
+      bev_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        bev_gated_points_topic, rclcpp::SensorDataQoS(),
+        [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          on_detection_points(msg, "gated_bev", 0.63);
+        });
+    }
+    ais_sub_ = create_subscription<std_msgs::msg::String>(
+      ais_topic, 10, std::bind(&RadarSonarTracker::on_ais_targets, this, std::placeholders::_1));
+
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("tracked_objects", 10);
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("tracked_object_poses", 10);
     text_pub_ = create_publisher<std_msgs::msg::String>("tracked_objects_text", 10);
     RCLCPP_INFO(
-      get_logger(), "Tracking radar=%s sonar=%s gated=%s uav=%s pseudocolor=%s",
-      radar_topic.c_str(), sonar_topic.c_str(), gated_points_topic.c_str(), uav_points_topic.c_str(),
-      pseudocolor_gated_points_topic.empty() ? "off" : pseudocolor_gated_points_topic.c_str());
+      get_logger(), "Tracking radar=%s sonar_detect=%s sonar_sectors=%zu gated=%s uav=%s pseudocolor=%s stf_gated=%s bev_gated=%s ais=%s",
+      radar_topic.c_str(), sonar_detect_topic_.empty() ? "off" : sonar_detect_topic_.c_str(), sonar_scan_topics_.size(), gated_points_topic.c_str(), uav_points_topic.c_str(),
+      pseudocolor_gated_points_topic.empty() ? "off" : pseudocolor_gated_points_topic.c_str(),
+      stf_gated_points_topic.empty() ? "off" : stf_gated_points_topic.c_str(),
+      bev_gated_points_topic.empty() ? "off" : bev_gated_points_topic.c_str(), ais_topic.c_str());
   }
 
 private:
-  void on_sonar_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+  void on_sonar_detect(const c3_sonar_driver::msg::SonarDetect::SharedPtr msg)
   {
-    double sum_x = 0.0;
-    double sum_y = 0.0;
-    int count = 0;
+    if (!msg || msg->detect_id == last_sonar_detect_id_ || !std::isfinite(msg->confidence) || msg->confidence <= 0.0F) {
+      return;
+    }
+    Detection detection;
+    detection.x = msg->position.x;
+    detection.y = msg->position.y;
+    detection.z = msg->position.z;
+    if (std::hypot(detection.x, detection.y) < 1e-4 && std::isfinite(msg->range_m)) {
+      detection.x = sonar_x_offset_ + msg->range_m * std::cos(msg->bearing_rad);
+      detection.y = msg->range_m * std::sin(msg->bearing_rad);
+    }
+    detection.confidence = std::clamp(static_cast<double>(msg->confidence), 0.0, 0.98);
+    detection.source = "c3_sonar";
+    last_sonar_detect_id_ = msg->detect_id;
+    const auto now = std::chrono::steady_clock::now();
+    update_tracks({detection}, now);
+    publish_tracks();
+  }
+
+  void on_sonar_scan(
+    const sensor_msgs::msg::LaserScan::SharedPtr msg,
+    double mount_yaw,
+    std::size_t sector_index)
+  {
+    if (!msg) {
+      return;
+    }
+    std::vector<std::pair<double, double>> frame_points;
+    frame_points.reserve(msg->ranges.size());
     for (std::size_t index = 0; index < msg->ranges.size(); ++index) {
       const double range_value = msg->ranges[index];
       if (!std::isfinite(range_value) || range_value < msg->range_min || range_value > msg->range_max) {
         continue;
       }
-      const double angle = msg->angle_min + static_cast<double>(index) * msg->angle_increment;
-      sum_x += sonar_x_offset_ + range_value * std::cos(angle);
-      sum_y += range_value * std::sin(angle);
-      ++count;
+      const double angle = msg->angle_min + static_cast<double>(index) * msg->angle_increment + mount_yaw;
+      frame_points.emplace_back(
+        sonar_x_offset_ + range_value * std::cos(angle),
+        range_value * std::sin(angle));
     }
 
-    if (count > 0) {
-      last_sonar_detection_ = Detection{sum_x / count, sum_y / count, 0.0, 0.65, -1.0, "sonar"};
+    if (frame_points.empty()) {
+      return;
+    }
+
+    if (sector_index >= sonar_sector_windows_.size()) {
+      sonar_sector_windows_.resize(sector_index + 1);
+    }
+    auto & sector_window = sonar_sector_windows_[sector_index];
+    sector_window.push_back(frame_points);
+    const std::size_t max_window = static_cast<std::size_t>(std::max(1, sonar_window_frames_));
+    while (sector_window.size() > max_window) {
+      sector_window.pop_front();
+    }
+
+    std::vector<std::pair<double, double>> fused_points;
+    for (const auto & sector_history : sonar_sector_windows_) {
+      for (const auto & history_frame : sector_history) {
+        fused_points.insert(fused_points.end(), history_frame.begin(), history_frame.end());
+      }
+    }
+    if (static_cast<int>(fused_points.size()) < sonar_min_points_for_valid_detect_) {
+      return;
+    }
+
+    auto detections = cluster_points(
+      fused_points, "sonar", std::clamp(sonar_default_confidence_, 0.0, 0.98));
+    if (!detections.empty()) {
+      last_sonar_detections_ = detections;
       last_sonar_time_ = std::chrono::steady_clock::now();
       has_sonar_detection_ = true;
     }
@@ -168,11 +275,61 @@ private:
   {
     auto detections = cluster_radar_scan(*msg);
     const auto now = std::chrono::steady_clock::now();
-    if (has_sonar_detection_ && std::chrono::duration<double>(now - last_sonar_time_).count() < 0.35) {
-      detections.push_back(last_sonar_detection_);
+    if (has_sonar_detection_ && std::chrono::duration<double>(now - last_sonar_time_).count() < sonar_detect_timeout_) {
+      detections.insert(detections.end(), last_sonar_detections_.begin(), last_sonar_detections_.end());
     }
     update_tracks(detections, now);
     publish_tracks();
+  }
+
+  std::vector<Detection> cluster_points(
+    const std::vector<std::pair<double, double>> & points,
+    const std::string & source,
+    double base_confidence) const
+  {
+    std::vector<std::vector<std::pair<double, double>>> clusters;
+    std::vector<std::pair<double, double>> current;
+    std::pair<double, double> previous;
+    bool has_previous = false;
+    for (const auto & point : points) {
+      if (has_previous) {
+        const double gap = std::hypot(point.first - previous.first, point.second - previous.second);
+        if (gap > cluster_gap_) {
+          finish_cluster(clusters, current);
+          current.clear();
+        }
+      }
+      current.push_back(point);
+      previous = point;
+      has_previous = true;
+    }
+    finish_cluster(clusters, current);
+
+    std::vector<Detection> detections;
+    for (const auto & cluster : clusters) {
+      if (static_cast<int>(cluster.size()) < min_cluster_points_) {
+        continue;
+      }
+      double sum_x = 0.0;
+      double sum_y = 0.0;
+      double min_x = std::numeric_limits<double>::infinity();
+      double min_y = std::numeric_limits<double>::infinity();
+      double max_x = -std::numeric_limits<double>::infinity();
+      double max_y = -std::numeric_limits<double>::infinity();
+      for (const auto & point : cluster) {
+        sum_x += point.first;
+        sum_y += point.second;
+        min_x = std::min(min_x, point.first);
+        min_y = std::min(min_y, point.second);
+        max_x = std::max(max_x, point.first);
+        max_y = std::max(max_y, point.second);
+      }
+      const double count = static_cast<double>(cluster.size());
+      const double spread = std::hypot(max_x - min_x, max_y - min_y);
+      const double confidence = std::clamp(base_confidence + 0.02 * spread + 0.01 * count, 0.35, 0.95);
+      detections.push_back(Detection{sum_x / count, sum_y / count, 0.0, confidence, -1.0, source});
+    }
+    return detections;
   }
 
   void on_detection_points(
@@ -181,6 +338,17 @@ private:
     double source_weight)
   {
     const auto detections = parse_detection_cloud(*msg, source, source_weight);
+    if (detections.empty()) {
+      return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    update_tracks(detections, now);
+    publish_tracks();
+  }
+
+  void on_ais_targets(const std_msgs::msg::String::SharedPtr msg)
+  {
+    const auto detections = parse_ais_targets(msg->data);
     if (detections.empty()) {
       return;
     }
@@ -311,6 +479,58 @@ private:
     return value;
   }
 
+  std::vector<Detection> parse_ais_targets(const std::string & text) const
+  {
+    std::vector<Detection> detections;
+    std::size_t pos = 0;
+    while (true) {
+      const auto start = text.find('{', pos);
+      if (start == std::string::npos) {
+        break;
+      }
+      const auto end = text.find('}', start);
+      if (end == std::string::npos) {
+        break;
+      }
+
+      const std::string block = text.substr(start, end - start + 1);
+      Detection det;
+      if (!extract_double(block, "\"x\":", det.x) || !extract_double(block, "\"y\":", det.y)) {
+        pos = end + 1;
+        continue;
+      }
+      extract_double(block, "\"class_id\":", det.class_id);
+      det.confidence = ais_confidence_;
+      extract_double(block, "\"confidence\":", det.confidence);
+      det.confidence = std::clamp(det.confidence, min_ais_confidence_, 0.98);
+      det.source = "ais";
+      if (std::isfinite(det.x) && std::isfinite(det.y) && det.x > -5.0 &&
+        std::hypot(det.x, det.y) <= max_tracking_range_)
+      {
+        detections.push_back(det);
+      }
+      pos = end + 1;
+    }
+    return detections;
+  }
+
+  static bool extract_double(const std::string & text, const std::string & key, double & out)
+  {
+    const auto key_pos = text.find(key);
+    if (key_pos == std::string::npos) {
+      return false;
+    }
+    const auto value_start = key_pos + key.size();
+    const auto value_end = text.find_first_of(",}", value_start);
+    const std::string token = text.substr(value_start, value_end - value_start);
+    try {
+      out = std::stod(token);
+      return true;
+    } catch (...) {
+      return false;
+    }
+  }
+
   void finish_cluster(
     std::vector<std::vector<std::pair<double, double>>> & clusters,
     const std::vector<std::pair<double, double>> & cluster) const
@@ -346,9 +566,6 @@ private:
     }
 
     for (const auto & det : unmatched) {
-      if (det.source == "sonar") {
-        continue;
-      }
       Track track;
       track.id = next_track_id_++;
       track.x = det.x;
@@ -492,25 +709,42 @@ private:
   }
 
   std::string base_frame_{"base_link"};
+  std::string sonar_detect_topic_{"/sonar/detect"};
   double radar_x_offset_{-0.35};
   double radar_y_offset_{0.0};
   double sonar_x_offset_{0.65};
+  int sonar_window_frames_{3};
+  int sonar_min_points_for_valid_detect_{20};
+  double sonar_default_confidence_{0.65};
+  double sonar_detect_timeout_{2.0};
   double cluster_gap_{0.75};
   int min_cluster_points_{2};
   double max_tracking_range_{80.0};
   double association_gate_{2.8};
   double track_timeout_{2.0};
+  double camera_fusion_timeout_{0.8};
+  double uav_fusion_timeout_{1.2};
   double min_camera_confidence_{0.20};
+  double ais_confidence_{0.88};
+  double min_ais_confidence_{0.45};
   int next_track_id_{1};
   bool has_sonar_detection_{false};
-  Detection last_sonar_detection_;
+  uint32_t last_sonar_detect_id_{0};
+  std::vector<Detection> last_sonar_detections_;
   std::chrono::steady_clock::time_point last_sonar_time_{std::chrono::steady_clock::now()};
   std::vector<Track> tracks_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr radar_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sonar_sub_;
+  std::vector<std::string> sonar_scan_topics_;
+  std::vector<double> sonar_scan_yaws_;
+  std::vector<std::deque<std::vector<std::pair<double, double>>>> sonar_sector_windows_;
+  std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> sonar_subs_;
+  rclcpp::Subscription<c3_sonar_driver::msg::SonarDetect>::SharedPtr sonar_detect_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gated_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr uav_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pseudocolor_gated_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr stf_gated_points_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr bev_gated_points_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ais_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr text_pub_;

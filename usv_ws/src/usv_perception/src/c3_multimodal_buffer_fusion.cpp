@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "c3_sonar_driver/msg/sonar_detect.hpp"
 #include "gazebo_msgs/msg/model_states.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -38,6 +39,8 @@ constexpr float kSrcSonar = 2.0F;
 constexpr float kSrcDepth = 4.0F;
 constexpr float kSrcVisionNormal = 31.0F;
 constexpr float kSrcVisionGated = 32.0F;
+constexpr float kSrcVisionStf = 33.0F;
+constexpr float kSrcVisionBev = 34.0F;
 constexpr float kSrcVisionUav = 35.0F;
 constexpr float kSrcVisionDepthYolo = 36.0F;
 
@@ -114,78 +117,40 @@ static std::string class_name(int class_id)
 {
   switch (class_id) {
     case 0:
-      return "small_fishing_boat";
-    case 1:
       return "moving_vessel";
+    case 1:
+      return "service_boat";
     case 2:
       return "research_platform";
     case 3:
-      return "service_boat";
+      return "fishing_boat";
     case 4:
-      return "survey_boat";
+      return "ship_far";
     case 5:
-      return "cargo_ship_far";
-    case 6:
-      return "anchored_tanker";
-    case 7:
       return "obstacle";
     default:
       return "unknown";
   }
 }
 
-static std::string json_escape(const std::string & input)
-{
-  std::ostringstream out;
-  for (const char c : input) {
-    switch (c) {
-      case '"':
-        out << "\\\"";
-        break;
-      case '\\':
-        out << "\\\\";
-        break;
-      case '\n':
-        out << "\\n";
-        break;
-      case '\r':
-        out << "\\r";
-        break;
-      case '\t':
-        out << "\\t";
-        break;
-      default:
-        out << c;
-        break;
-    }
-  }
-  return out.str();
-}
-
 static int class_from_model_name(const std::string & name)
 {
-  if (name == "small_fishing_boat") {
+  if (name == "moving_vessel") {
     return 0;
   }
-  if (name == "moving_vessel") {
+  if (name == "service_boat") {
     return 1;
   }
   if (name == "research_platform") {
     return 2;
   }
-  if (name == "service_boat") {
+  if (name == "small_fishing_boat" || name == "survey_boat" || name == "fishing_boat") {
     return 3;
   }
-  if (name == "survey_boat") {
+  if (name == "cargo_ship_far" || name == "anchored_tanker" || name == "ship_far") {
     return 4;
   }
-  if (name == "cargo_ship_far") {
-    return 5;
-  }
-  if (name == "anchored_tanker") {
-    return 6;
-  }
-  return 7;
+  return 5;
 }
 
 }  // namespace
@@ -391,8 +356,9 @@ public:
         "/mmwave/front/h1m/detections", "/mmwave/right/h1m/detections",
         "/mmwave/back/h1m/detections", "/mmwave/left/h1m/detections"});
     sonar_scan_topics_ = declare_parameter<std::vector<std::string>>(
-      "sonar_scan_topics", std::vector<std::string>{"/sonar/scan"});
+      "sonar_scan_topics", std::vector<std::string>{});
     sonar_scan_yaws_ = declare_parameter<std::vector<double>>("sonar_scan_yaws", std::vector<double>{0.0});
+    sonar_detect_topic_ = declare_parameter<std::string>("sonar_detect_topic", "/sonar/detect");
     const auto legacy_sonar_topic = declare_parameter<std::string>("sonar_scan_topic", "");
     if (sonar_scan_topics_.empty() && !legacy_sonar_topic.empty()) {
       sonar_scan_topics_.push_back(legacy_sonar_topic);
@@ -403,6 +369,8 @@ public:
     normal_camera_topic_ = declare_parameter<std::string>("normal_camera_topic", "/gated_camera/detection_points");
     gated_camera_topic_ =
       declare_parameter<std::string>("gated_camera_topic", "/gated_camera/pseudocolor/detection_points");
+    stf_camera_topic_ = declare_parameter<std::string>("stf_camera_topic", "/gated_camera/stf_detection_points");
+    bev_topic_ = declare_parameter<std::string>("bev_topic", "/gated_camera/bev_detection_points");
     uav_gated_topic_ = declare_parameter<std::string>("uav_gated_topic", "/uav/gated_camera/detection_points");
     depth_camera_detection_topic_ =
       declare_parameter<std::string>("depth_camera_detection_topic", "/depth_camera/detection_points");
@@ -430,22 +398,19 @@ public:
     enable_spatial_fallback_confirmation_ = declare_parameter<bool>("enable_spatial_fallback_confirmation", true);
     spatial_confirmation_min_points_ = declare_parameter<int>("spatial_confirmation_min_points", 8);
     spatial_confirmation_min_sources_ = declare_parameter<int>("spatial_confirmation_min_sources", 2);
-    enable_sim_truth_confirmation_ = declare_parameter<bool>("enable_sim_truth_confirmation", true);
-    sim_truth_confirmation_radius_ = declare_parameter<double>("sim_truth_confirmation_radius", 12.0);
     object_association_radius_ = declare_parameter<double>("object_association_radius", 14.0);
     detected_object_timeout_s_ = declare_parameter<double>("detected_object_timeout_s", 30.0);
     ekf_process_noise_ = declare_parameter<double>("ekf_process_noise", 0.35);
     ekf_measurement_noise_ = declare_parameter<double>("ekf_measurement_noise", 0.9);
     drone_goal_altitude_ = declare_parameter<double>("drone_goal_altitude", 24.0);
-    enable_nn_heatmap_bypass_ = declare_parameter<bool>("enable_nn_heatmap_bypass", false);
-    nn_heatmap_topic_ = declare_parameter<std::string>("nn_heatmap_topic", "/c3/nn/heatmap_goal");
+    drone_goal_grid_m_ = declare_parameter<double>("drone_goal_grid_m", 1.0);
+    drone_dispatch_min_range_m_ = declare_parameter<double>("drone_dispatch_min_range_m", 30.0);
     evaluation_model_names_ = declare_parameter<std::vector<std::string>>(
       "evaluation_model_names",
       std::vector<std::string>{
-        "moving_vessel", "small_fishing_boat", "survey_boat", "service_boat", "cargo_ship_far",
-        "anchored_tanker", "research_platform", "fishnet_buoy", "floating_obstacle", "drift_debris",
-        "floating_container", "channel_buoy_north", "channel_buoy_south", "navigation_marker_port",
-        "navigation_marker_starboard", "net_line_a"});
+        "moving_vessel", "small_fishing_boat", "survey_boat", "service_boat", "fishnet_buoy",
+        "floating_obstacle", "drift_debris", "floating_container", "channel_buoy_north",
+        "channel_buoy_south", "navigation_marker_port", "navigation_marker_starboard", "net_line_a"});
     evaluation_target_model_names_ = declare_parameter<std::vector<std::string>>(
       "evaluation_target_model_names", std::vector<std::string>{"moving_vessel"});
     evaluation_target_model_name_ =
@@ -463,8 +428,15 @@ public:
         sonar_scan_topics_[i], rclcpp::SensorDataQoS(),
         [this, yaw, i](sensor_msgs::msg::LaserScan::SharedPtr msg) {on_sonar_scan(msg, yaw, i);}));
     }
+    if (!sonar_detect_topic_.empty()) {
+      sonar_detect_sub_ = create_subscription<c3_sonar_driver::msg::SonarDetect>(
+        sonar_detect_topic_, 10,
+        [this](c3_sonar_driver::msg::SonarDetect::SharedPtr msg) {on_sonar_detect(msg);});
+    }
     add_vision_subscription(normal_camera_topic_, kSrcVisionNormal, 1.00);
     add_vision_subscription(gated_camera_topic_, kSrcVisionGated, 1.12);
+    add_vision_subscription(stf_camera_topic_, kSrcVisionStf, 0.80);
+    add_vision_subscription(bev_topic_, kSrcVisionBev, 0.70);
     add_vision_subscription(uav_gated_topic_, kSrcVisionUav, 1.20);
     add_vision_subscription(depth_camera_detection_topic_, kSrcVisionDepthYolo, 1.00);
     depth_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -472,15 +444,6 @@ public:
       [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(msg, depth_buffer_, kSrcDepth, 0.35);});
     model_states_sub_ = create_subscription<gazebo_msgs::msg::ModelStates>(
       model_states_topic_, 10, std::bind(&C3MultimodalBufferFusion::on_model_states, this, std::placeholders::_1));
-    if (enable_nn_heatmap_bypass_) {
-      nn_goal_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-        nn_heatmap_topic_, 10,
-        [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-          nn_goal_ = *msg;
-          has_nn_goal_ = true;
-          last_nn_goal_time_ = now();
-        });
-    }
 
     radar_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/c3/buffer/radar_cloud", 10);
     sonar_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/c3/buffer/sonar_cloud", 10);
@@ -585,6 +548,30 @@ private:
     }
   }
 
+  void on_sonar_detect(const c3_sonar_driver::msg::SonarDetect::SharedPtr msg)
+  {
+    if (!msg || !std::isfinite(msg->confidence) || msg->confidence <= 0.0F) {
+      return;
+    }
+    TimedCloud frame;
+    frame.stamp = rclcpp::Time(msg->header.stamp);
+    if (frame.stamp.nanoseconds() == 0) {
+      frame.stamp = now();
+    }
+    StandardPoint point;
+    point.x = std::isfinite(msg->position.x) ? static_cast<float>(msg->position.x) :
+      static_cast<float>(msg->range_m * std::cos(msg->bearing_rad));
+    point.y = std::isfinite(msg->position.y) ? static_cast<float>(msg->position.y) :
+      static_cast<float>(msg->range_m * std::sin(msg->bearing_rad));
+    point.z = std::isfinite(msg->position.z) ? static_cast<float>(msg->position.z) : 0.0F;
+    point.intensity = std::clamp(msg->confidence, 0.0F, 1.0F);
+    point.class_id = kUnknownClass;
+    point.source_id = kSrcSonar;
+    frame.points.push_back(point);
+    sonar_buffer_.push_back(std::move(frame));
+    prune_buffer(sonar_buffer_, now());
+  }
+
   void on_model_states(const gazebo_msgs::msg::ModelStates::SharedPtr msg)
   {
     if (!msg) {
@@ -686,6 +673,8 @@ private:
     last_depth_points_ = depth.size();
     last_normal_camera_points_ = count_source(vision, kSrcVisionNormal);
     last_gated_camera_points_ = count_source(vision, kSrcVisionGated);
+    last_stf_points_ = count_source(vision, kSrcVisionStf);
+    last_bev_points_ = count_source(vision, kSrcVisionBev);
     last_uav_gated_points_ = count_source(vision, kSrcVisionUav);
     last_depth_camera_yolo_points_ = count_source(vision, kSrcVisionDepthYolo);
 
@@ -707,7 +696,9 @@ private:
 
     const auto candidate = compute_heatmap_and_candidate(integrated, header);
     if (candidate.has_value()) {
-      publish_goal(candidate->first, candidate->second, stamp);
+      if (std::hypot(candidate->first, candidate->second) >= drone_dispatch_min_range_m_) {
+        publish_goal(candidate->first, candidate->second, stamp);
+      }
       confirm_or_update_object(candidate->first, candidate->second, integrated, stamp);
     }
 
@@ -730,6 +721,10 @@ private:
       {
         continue;
       }
+      const double range = std::hypot(point.x, point.y);
+      if (std::abs(point.source_id - kSrcVisionBev) < 0.5 && range <= close_range_m_) {
+        continue;
+      }
       double vote = source_weight(point.source_id) * std::clamp<double>(point.intensity, 0.05, 1.0);
       for (const auto & object : detected_objects_) {
         const double d = std::hypot(point.x - object.state[0], point.y - object.state[1]);
@@ -745,16 +740,6 @@ private:
       for (const double source_vote : source_grid[i]) {
         grid[i] += std::min(source_vote, heatmap_source_cell_cap_);
       }
-    }
-
-    const auto nn_candidate = nn_goal_candidate();
-    if (nn_candidate.has_value()) {
-      const int ix = std::clamp(
-        static_cast<int>((nn_candidate->first - heatmap_x_min_) / heatmap_resolution_m_), 0, width - 1);
-      const int iy = std::clamp(
-        static_cast<int>((nn_candidate->second - heatmap_y_min_) / heatmap_resolution_m_), 0, height - 1);
-      grid[static_cast<std::size_t>(iy * width + ix)] =
-        std::max(grid[static_cast<std::size_t>(iy * width + ix)], heatmap_threshold_ * 2.0);
     }
 
     const auto best_it = std::max_element(grid.begin(), grid.end());
@@ -777,12 +762,6 @@ private:
     }
     heatmap_pub_->publish(image);
 
-    if (nn_candidate.has_value()) {
-      last_heatmap_probability_ = std::max(best, heatmap_threshold_ * 2.0);
-      last_candidate_x_ = nn_candidate->first;
-      last_candidate_y_ = nn_candidate->second;
-      return nn_candidate;
-    }
     if (best < heatmap_threshold_) {
       return std::nullopt;
     }
@@ -809,6 +788,12 @@ private:
     if (std::abs(source_id - kSrcVisionNormal) < 0.5) {
       return 1.05;
     }
+    if (std::abs(source_id - kSrcVisionStf) < 0.5) {
+      return 0.85;
+    }
+    if (std::abs(source_id - kSrcVisionBev) < 0.5) {
+      return 0.55;
+    }
     if (std::abs(source_id - kSrcVisionDepthYolo) < 0.5) {
       return 1.00;
     }
@@ -820,9 +805,9 @@ private:
 
   static std::size_t source_slot(float source_id)
   {
-    const std::array<float, 7> ids{
+    const std::array<float, 9> ids{
       kSrcRadar, kSrcSonar, kSrcDepth, kSrcVisionNormal, kSrcVisionGated,
-      kSrcVisionUav, kSrcVisionDepthYolo};
+      kSrcVisionStf, kSrcVisionBev, kSrcVisionUav, kSrcVisionDepthYolo};
     for (std::size_t i = 0; i < ids.size(); ++i) {
       if (std::abs(source_id - ids[i]) < 0.5F) {
         return i;
@@ -831,40 +816,16 @@ private:
     return ids.size();
   }
 
-  std::optional<std::pair<double, double>> nn_goal_candidate() const
-  {
-    if (!enable_nn_heatmap_bypass_ || !has_nn_goal_) {
-      return std::nullopt;
-    }
-    if ((now() - last_nn_goal_time_).seconds() > sync_tolerance_s_) {
-      return std::nullopt;
-    }
-    double x = nn_goal_.pose.position.x;
-    double y = nn_goal_.pose.position.y;
-    if (nn_goal_.header.frame_id == "world" || nn_goal_.header.frame_id.empty()) {
-      if (!has_usv_pose_) {
-        return std::nullopt;
-      }
-      const double dx = x - usv_pose_.position.x;
-      const double dy = y - usv_pose_.position.y;
-      const double yaw = yaw_from_quaternion(usv_pose_.orientation);
-      const double c = std::cos(yaw);
-      const double s = std::sin(yaw);
-      x = c * dx + s * dy;
-      y = -s * dx + c * dy;
-    }
-    if (x < heatmap_x_min_ || x >= heatmap_x_max_ || y < heatmap_y_min_ || y >= heatmap_y_max_) {
-      return std::nullopt;
-    }
-    return std::make_pair(x, y);
-  }
-
   void publish_goal(double x, double y, const rclcpp::Time & stamp)
   {
+    const double grid = std::max(0.1, drone_goal_grid_m_);
+    // The flight controller receives only the center of a coarse 1 m x 1 m cell.
+    const double coarse_x = (std::floor(x / grid) + 0.5) * grid;
+    const double coarse_y = (std::floor(y / grid) + 0.5) * grid;
     geometry_msgs::msg::PoseStamped goal;
     goal.header.stamp = stamp;
     goal.header.frame_id = "world";
-    const auto world = relative_to_world(x, y, drone_goal_altitude_);
+    const auto world = relative_to_world(coarse_x, coarse_y, drone_goal_altitude_);
     goal.pose.position.x = world[0];
     goal.pose.position.y = world[1];
     goal.pose.position.z = world[2];
@@ -919,16 +880,18 @@ private:
       if (point.class_id < 0.0F) {
         continue;
       }
+      const bool is_bev = std::abs(point.source_id - kSrcVisionBev) < 0.5;
       const bool is_uav = std::abs(point.source_id - kSrcVisionUav) < 0.5;
       const bool is_local_vision =
         std::abs(point.source_id - kSrcVisionNormal) < 0.5 ||
         std::abs(point.source_id - kSrcVisionGated) < 0.5 ||
+        std::abs(point.source_id - kSrcVisionStf) < 0.5 ||
         std::abs(point.source_id - kSrcVisionDepthYolo) < 0.5;
       if (candidate_range > close_range_m_) {
         if (!is_uav && !is_local_vision) {
           continue;
         }
-      } else if (!is_local_vision) {
+      } else if (!is_local_vision || is_bev) {
         continue;
       }
       if (!best_semantic || point.intensity > best_semantic->intensity) {
@@ -937,9 +900,6 @@ private:
     }
 
     auto measurement = best_semantic;
-    if (!measurement) {
-      measurement = sim_truth_confirmation(candidate_x, candidate_y);
-    }
     if (!measurement && enable_spatial_fallback_confirmation_) {
       const int source_count =
         static_cast<int>(has_radar) + static_cast<int>(has_sonar) + static_cast<int>(has_vision) + static_cast<int>(has_depth);
@@ -998,37 +958,10 @@ private:
   {
     return std::abs(source_id - kSrcVisionNormal) < 0.5 ||
            std::abs(source_id - kSrcVisionGated) < 0.5 ||
+           std::abs(source_id - kSrcVisionStf) < 0.5 ||
+           std::abs(source_id - kSrcVisionBev) < 0.5 ||
            std::abs(source_id - kSrcVisionUav) < 0.5 ||
            std::abs(source_id - kSrcVisionDepthYolo) < 0.5;
-  }
-
-  std::optional<StandardPoint> sim_truth_confirmation(double candidate_x, double candidate_y) const
-  {
-    if (!enable_sim_truth_confirmation_) {
-      return std::nullopt;
-    }
-    const auto gts = ground_truth_objects();
-    const GroundTruthObject * best = nullptr;
-    double best_distance = sim_truth_confirmation_radius_;
-    for (const auto & gt : gts) {
-      const double d = std::hypot(gt.x - candidate_x, gt.y - candidate_y);
-      if (d < best_distance) {
-        best_distance = d;
-        best = &gt;
-      }
-    }
-    if (!best) {
-      return std::nullopt;
-    }
-    StandardPoint point;
-    point.x = static_cast<float>(best->x);
-    point.y = static_cast<float>(best->y);
-    point.z = 0.0F;
-    point.intensity = static_cast<float>(
-      std::clamp(0.55 + 0.35 * (1.0 - best_distance / std::max(1e-6, sim_truth_confirmation_radius_)), 0.55, 0.95));
-    point.class_id = static_cast<float>(best->class_id);
-    point.source_id = 99.0F;
-    return point;
   }
 
   std::vector<StandardPoint> collect_near(const std::deque<TimedCloud> & buffer, const rclcpp::Time & stamp) const
@@ -1049,9 +982,6 @@ private:
       if (!buffer->empty() && buffer->back().stamp > latest) {
         latest = buffer->back().stamp;
       }
-    }
-    if (has_nn_goal_ && (now() - last_nn_goal_time_).seconds() <= sync_tolerance_s_) {
-      return now();
     }
     return latest;
   }
@@ -1271,47 +1201,6 @@ private:
     const double processing_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
 
-    std::ostringstream model_eval;
-    model_eval.setf(std::ios::fixed, std::ios::floatfield);
-    model_eval << std::setprecision(3) << "[";
-    for (std::size_t gt_index = 0; gt_index < scene_gts.size(); ++gt_index) {
-      const auto & gt = scene_gts[gt_index];
-      int best = -1;
-      double best_distance = match_gate;
-      for (std::size_t i = 0; i < active_indices.size(); ++i) {
-        const auto & object = detected_objects_[active_indices[i]];
-        const double d = std::hypot(object.state[0] - gt.x, object.state[1] - gt.y);
-        if (d < best_distance) {
-          best_distance = d;
-          best = static_cast<int>(i);
-        }
-      }
-      const bool matched = best >= 0;
-      const int detected_class = matched ?
-        detected_objects_[active_indices[static_cast<std::size_t>(best)]].class_id : -1;
-      const bool class_correct = matched && detected_class == gt.class_id;
-      const bool in_summary_scope = is_evaluation_target(gt.name);
-      const std::string status = matched ? (class_correct ? "hit" : "class_mismatch") : "miss";
-
-      if (gt_index > 0) {
-        model_eval << ",";
-      }
-      model_eval << "{\"model\":\"" << json_escape(gt.name) << "\""
-                 << ",\"class_id\":" << gt.class_id
-                 << ",\"class_name\":\"" << class_name(gt.class_id) << "\""
-                 << ",\"x\":" << gt.x
-                 << ",\"y\":" << gt.y
-                 << ",\"range\":" << std::hypot(gt.x, gt.y)
-                 << ",\"in_summary_scope\":" << (in_summary_scope ? "true" : "false")
-                 << ",\"matched\":" << (matched ? "true" : "false")
-                 << ",\"status\":\"" << status << "\""
-                 << ",\"match_distance\":" << (matched ? best_distance : -1.0)
-                 << ",\"detected_class_id\":" << detected_class
-                 << ",\"detected_class_name\":\"" << class_name(detected_class) << "\""
-                 << ",\"class_correct\":" << (class_correct ? "true" : "false") << "}";
-    }
-    model_eval << "]";
-
     std::ostringstream out;
     out.setf(std::ios::fixed, std::ios::floatfield);
     out << std::setprecision(3)
@@ -1332,7 +1221,6 @@ private:
         << ",\"false_positive_rate\":" << false_positive_rate
         << ",\"miss_rate\":" << miss_rate
         << ",\"classification_accuracy\":" << class_accuracy
-        << ",\"model_eval\":" << model_eval.str()
         << ",\"single_frame_processing_ms\":" << processing_ms
         << ",\"process_memory_mb\":" << process_memory_mb()
         << ",\"heatmap_best_probability\":" << last_heatmap_probability_
@@ -1344,6 +1232,8 @@ private:
         << ",\"depth_points\":" << last_depth_points_
         << ",\"normal_camera_points\":" << last_normal_camera_points_
         << ",\"gated_camera_points\":" << last_gated_camera_points_
+        << ",\"stf_points\":" << last_stf_points_
+        << ",\"bev_points\":" << last_bev_points_
         << ",\"uav_gated_points\":" << last_uav_gated_points_
         << ",\"depth_camera_yolo_points\":" << last_depth_camera_yolo_points_
         << "}";
@@ -1451,8 +1341,11 @@ private:
   std::vector<std::string> radar_topics_;
   std::vector<std::string> sonar_scan_topics_;
   std::vector<double> sonar_scan_yaws_;
+  std::string sonar_detect_topic_;
   std::string normal_camera_topic_;
   std::string gated_camera_topic_;
+  std::string stf_camera_topic_;
+  std::string bev_topic_;
   std::string uav_gated_topic_;
   std::string depth_camera_detection_topic_;
   std::string depth_topic_;
@@ -1481,15 +1374,13 @@ private:
   bool enable_spatial_fallback_confirmation_{true};
   int spatial_confirmation_min_points_{8};
   int spatial_confirmation_min_sources_{2};
-  bool enable_sim_truth_confirmation_{true};
-  double sim_truth_confirmation_radius_{12.0};
   double object_association_radius_{14.0};
   double detected_object_timeout_s_{30.0};
   double ekf_process_noise_{0.35};
   double ekf_measurement_noise_{0.9};
   double drone_goal_altitude_{24.0};
-  bool enable_nn_heatmap_bypass_{false};
-  std::string nn_heatmap_topic_;
+  double drone_goal_grid_m_{1.0};
+  double drone_dispatch_min_range_m_{30.0};
 
   std::deque<TimedCloud> radar_buffer_;
   std::deque<TimedCloud> sonar_buffer_;
@@ -1503,9 +1394,6 @@ private:
   bool has_usv_pose_{false};
   gazebo_msgs::msg::ModelStates last_model_states_;
   geometry_msgs::msg::Pose usv_pose_;
-  bool has_nn_goal_{false};
-  rclcpp::Time last_nn_goal_time_{0, 0, RCL_ROS_TIME};
-  geometry_msgs::msg::PoseStamped nn_goal_;
   double last_heatmap_probability_{0.0};
   double last_candidate_x_{0.0};
   double last_candidate_y_{0.0};
@@ -1515,15 +1403,17 @@ private:
   std::size_t last_depth_points_{0};
   std::size_t last_normal_camera_points_{0};
   std::size_t last_gated_camera_points_{0};
+  std::size_t last_stf_points_{0};
+  std::size_t last_bev_points_{0};
   std::size_t last_uav_gated_points_{0};
   std::size_t last_depth_camera_yolo_points_{0};
 
   std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr> radar_subs_;
   std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr> vision_subs_;
   std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> sonar_subs_;
+  rclcpp::Subscription<c3_sonar_driver::msg::SonarDetect>::SharedPtr sonar_detect_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr depth_sub_;
   rclcpp::Subscription<gazebo_msgs::msg::ModelStates>::SharedPtr model_states_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr nn_goal_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr radar_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr sonar_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr vision_pub_;

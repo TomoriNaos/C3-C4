@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.8)
 project(usv_bringup)
 
+# Gazebo Classic on this system imports an older jsoncpp CMake package.
+# Keep its policy compatibility while configuring gazebo_ros.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy version for third-party CMake packages")
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()

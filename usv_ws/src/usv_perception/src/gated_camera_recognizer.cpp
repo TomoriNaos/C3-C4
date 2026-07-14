@@ -121,8 +121,8 @@ public:
     use_camera_info_ = declare_parameter<bool>("use_camera_info", true);
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
-      {"small_fishing_boat", "moving_vessel", "research_platform", "service_boat",
-        "survey_boat", "cargo_ship_far", "anchored_tanker", "obstacle"});
+      {"moving_vessel", "service_boat", "research_platform", "fishing_boat", "ship_far",
+        "obstacle"});
     gates_[0] = parse_gate(declare_parameter<std::vector<double>>("gate_near", {2.0, 18.0}), 2.0, 18.0);
     gates_[1] = parse_gate(declare_parameter<std::vector<double>>("gate_mid", {12.0, 42.0}), 12.0, 42.0);
     gates_[2] = parse_gate(declare_parameter<std::vector<double>>("gate_far", {32.0, 85.0}), 32.0, 85.0);
@@ -1208,32 +1208,26 @@ private:
 
   int class_index_for_label(const std::string & label) const
   {
-    if (label == "small_fishing_boat") {
+    if (label == "moving_vessel" || label == "vessel") {
       return 0;
     }
-    if (label == "moving_vessel" || label == "vessel") {
+    if (label == "service_boat") {
       return 1;
     }
     if (label == "research_platform" || label == "platform") {
       return 2;
     }
-    if (label == "service_boat") {
+    if (label == "fishing_boat" || label == "small_fishing_boat" || label == "survey_boat") {
       return 3;
     }
-    if (label == "survey_boat") {
+    if (label == "ship_far" || label == "cargo_ship_far" || label == "anchored_tanker") {
       return 4;
-    }
-    if (label == "cargo_ship_far") {
-      return 5;
-    }
-    if (label == "anchored_tanker") {
-      return 6;
     }
     if (label == "obstacle" || label == "buoy" || label == "fishnet_buoy" ||
       label == "debris_container" || label == "debris" || label == "container" ||
       label == "floating_obstacle" || label == "maritime_obstacle")
     {
-      return 7;
+      return 5;
     }
     return -1;
   }

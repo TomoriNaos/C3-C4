@@ -110,7 +110,7 @@
 
     <model name="moving_vessel">
       <static>false</static>
-      <pose>20 0 0.42 0 0 0</pose>
+      <pose>66 11 0.42 0 0 0</pose>
       <link name="hull">
         <gravity>false</gravity>
         <velocity_decay>
@@ -784,7 +784,7 @@
             </image>
             <clip>
               <near>0.2</near>
-              <far>380.0</far>
+              <far>260.0</far>
             </clip>
           </camera>
           <plugin name="gazebo_ros_uav_gated_camera" filename="libgazebo_ros_camera.so">

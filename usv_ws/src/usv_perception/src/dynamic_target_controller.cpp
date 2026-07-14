@@ -96,8 +96,8 @@ private:
     targets.reserve(7);
     targets.push_back(path_state(
       vessel_name_,
-      {{18.0, -18.0}, {42.0, -8.0}, {66.0, 11.0}, {82.0, 28.0}, {58.0, 47.0},
-        {30.0, 31.0}, {15.0, 8.0}},
+      {{66.0, 11.0}, {82.0, 28.0}, {58.0, 47.0}, {30.0, 31.0}, {18.0, -18.0},
+        {42.0, -8.0}},
       0.42, 0.30, t, 0.0));
     targets.push_back(path_state(
       fishing_boat_name_,

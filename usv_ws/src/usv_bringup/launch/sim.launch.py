@@ -64,10 +64,20 @@ def generate_launch_description():
         default_value='true',
         description='Publish tracking and collision-risk evaluation metrics'
     )
+    ais_arg = DeclareLaunchArgument(
+        'ais',
+        default_value='true',
+        description='Publish simulated AIS targets and fuse them in the tracker'
+    )
     uav_arg = DeclareLaunchArgument(
         'uav',
         default_value='true',
         description='Start the simulated scout UAV and gated-camera recognizer'
+    )
+    sonar_simulation_arg = DeclareLaunchArgument(
+        'sonar_simulation',
+        default_value='true',
+        description='Convert ideal Gazebo sonar rays to delayed/noisy C3 sonar detections'
     )
     yolo_model_arg = DeclareLaunchArgument(
         'yolo_model_path',
@@ -93,6 +103,16 @@ def generate_launch_description():
         'rgbd_dehaze',
         default_value='true',
         description='Start the C3 RGB-D dehaze pointcloud node for the USV depth camera'
+    )
+    stf_gated_fusion_arg = DeclareLaunchArgument(
+        'stf_gated_fusion',
+        default_value='true',
+        description='Start the additional STF-style three-slice gated recognizer'
+    )
+    gated_bev_detection_arg = DeclareLaunchArgument(
+        'gated_bev_detection',
+        default_value='true',
+        description='Start the additional depth-to-BEV gated camera detector'
     )
     pseudocolor_gated_yolo_arg = DeclareLaunchArgument(
         'pseudocolor_gated_yolo',
@@ -171,7 +191,6 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'target_model_name': LaunchConfiguration('target_model')
             }
         ],
         condition=IfCondition(LaunchConfiguration('usv_follow'))
@@ -184,6 +203,10 @@ def generate_launch_description():
         output='screen',
         arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': True}],
+        additional_env={
+            'QT_QPA_PLATFORM': 'xcb',
+            'LIBGL_ALWAYS_SOFTWARE': '1',
+        },
         condition=IfCondition(LaunchConfiguration('rviz'))
     )
 
@@ -209,6 +232,15 @@ def generate_launch_description():
             }
         ],
         condition=IfCondition(LaunchConfiguration('dynamic_targets'))
+    )
+
+    ais_simulator = Node(
+        package='usv_perception',
+        executable='ais_simulator',
+        name='ais_simulator',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('ais'))
     )
 
     radar_sonar_tracker = Node(
@@ -277,6 +309,30 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('perception'))
     )
 
+    gated_slice_fusion_recognizer = Node(
+        package='usv_perception',
+        executable='gated_slice_fusion_recognizer',
+        name='gated_slice_fusion_recognizer',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('stf_gated_fusion'), "' == 'true'"
+        ]))
+    )
+
+    gated_bev_detector = Node(
+        package='usv_perception',
+        executable='gated_bev_detector',
+        name='gated_bev_detector',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('perception'), "' == 'true' and '",
+            LaunchConfiguration('gated_bev_detection'), "' == 'true'"
+        ]))
+    )
+
     c3_multimodal_buffer_fusion = Node(
         package='usv_perception',
         executable='c3_multimodal_buffer_fusion',
@@ -304,9 +360,19 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'target_model_name': LaunchConfiguration('target_model')
+                # The Classic actor follows the same goal interface through a flight-dynamics layer.
+                'control_backend': 'gazebo_simulated'
             }
         ],
+        condition=IfCondition(LaunchConfiguration('uav'))
+    )
+
+    uav_flight_simulator = Node(
+        package='usv_perception',
+        executable='uav_flight_simulator.py',
+        name='uav_flight_simulator',
+        output='screen',
+        parameters=[perception_config, {'use_sim_time': True}],
         condition=IfCondition(LaunchConfiguration('uav'))
     )
 
@@ -403,6 +469,33 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('c3_mmwave_debug'))
     )
 
+    sonar_sectors = [
+        ('front', '/sonar/scan', 0.0, 1),
+        ('right', '/sonar/right_scan', -1.57079632679, 2),
+        ('back', '/sonar/back_scan', 3.14159265359, 3),
+        ('left', '/sonar/left_scan', 1.57079632679, 4),
+    ]
+    sonar_simulator_nodes = [
+        Node(
+            package='usv_perception',
+            executable='sonar_scan_simulator.py',
+            name=f'sonar_scan_simulator_{sector_name}',
+            output='screen',
+            parameters=[{
+                'use_sim_time': True,
+                'input_topic': input_topic,
+                'output_topic': '/sonar/detect',
+                'status_topic': '/sonar/status',
+                'frame_id': 'base_link',
+                'mount_yaw_rad': yaw,
+                'sensor_x_offset_m': 0.65,
+                'sensor_id': sensor_id,
+            }],
+            condition=IfCondition(LaunchConfiguration('sonar_simulation'))
+        )
+        for sector_name, input_topic, yaw, sensor_id in sonar_sectors
+    ]
+
     rgbd_dehaze_pointcloud = Node(
         package='depth_image_to_pointcloud2',
         executable='depth_image_to_pointcloud2',
@@ -438,12 +531,16 @@ def generate_launch_description():
         target_model_arg,
         usv_follow_arg,
         evaluation_arg,
+        ais_arg,
         uav_arg,
+        sonar_simulation_arg,
         yolo_model_arg,
         pseudocolor_yolo_model_arg,
         c3_mmwave_arg,
         c3_mmwave_debug_arg,
         rgbd_dehaze_arg,
+        stf_gated_fusion_arg,
+        gated_bev_detection_arg,
         pseudocolor_gated_yolo_arg,
         c3_multimodal_fusion_arg,
         gzserver,
@@ -454,16 +551,21 @@ def generate_launch_description():
         usv_target_follower,
         wave_buoyancy_node,
         dynamic_target_controller,
+        ais_simulator,
         radar_sonar_tracker,
         tracking_evaluator,
         gated_camera_recognizer,
         pseudocolor_gated_camera_recognizer,
         depth_camera_recognizer,
+        gated_slice_fusion_recognizer,
+        gated_bev_detector,
         c3_multimodal_buffer_fusion,
         uav_patrol_controller,
+        uav_flight_simulator,
         uav_gated_camera_recognizer,
         *mmwave_converter_nodes,
         mmwave_debug_node,
+        *sonar_simulator_nodes,
         rgbd_dehaze_pointcloud,
         rviz_node
     ])
