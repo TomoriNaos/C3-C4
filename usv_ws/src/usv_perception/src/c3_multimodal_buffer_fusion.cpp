@@ -43,6 +43,7 @@ constexpr float kSrcVisionStf = 33.0F;
 constexpr float kSrcVisionBev = 34.0F;
 constexpr float kSrcVisionUav = 35.0F;
 constexpr float kSrcVisionDepthYolo = 36.0F;
+constexpr float kSrcVisionUavNormal = 37.0F;
 
 struct StandardPoint
 {
@@ -371,6 +372,7 @@ public:
       declare_parameter<std::string>("gated_camera_topic", "/gated_camera/pseudocolor/detection_points");
     stf_camera_topic_ = declare_parameter<std::string>("stf_camera_topic", "/gated_camera/stf_detection_points");
     bev_topic_ = declare_parameter<std::string>("bev_topic", "/gated_camera/bev_detection_points");
+    uav_camera_topic_ = declare_parameter<std::string>("uav_camera_topic", "/uav/camera/detection_points");
     uav_gated_topic_ = declare_parameter<std::string>("uav_gated_topic", "/uav/gated_camera/detection_points");
     depth_camera_detection_topic_ =
       declare_parameter<std::string>("depth_camera_detection_topic", "/depth_camera/detection_points");
@@ -437,6 +439,7 @@ public:
     add_vision_subscription(gated_camera_topic_, kSrcVisionGated, 1.12);
     add_vision_subscription(stf_camera_topic_, kSrcVisionStf, 0.80);
     add_vision_subscription(bev_topic_, kSrcVisionBev, 0.70);
+    add_vision_subscription(uav_camera_topic_, kSrcVisionUavNormal, 1.08);
     add_vision_subscription(uav_gated_topic_, kSrcVisionUav, 1.20);
     add_vision_subscription(depth_camera_detection_topic_, kSrcVisionDepthYolo, 1.00);
     depth_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -675,6 +678,7 @@ private:
     last_gated_camera_points_ = count_source(vision, kSrcVisionGated);
     last_stf_points_ = count_source(vision, kSrcVisionStf);
     last_bev_points_ = count_source(vision, kSrcVisionBev);
+    last_uav_camera_points_ = count_source(vision, kSrcVisionUavNormal);
     last_uav_gated_points_ = count_source(vision, kSrcVisionUav);
     last_depth_camera_yolo_points_ = count_source(vision, kSrcVisionDepthYolo);
 
@@ -785,6 +789,9 @@ private:
     if (std::abs(source_id - kSrcVisionGated) < 0.5 || std::abs(source_id - kSrcVisionUav) < 0.5) {
       return 1.25;
     }
+    if (std::abs(source_id - kSrcVisionUavNormal) < 0.5) {
+      return 1.08;
+    }
     if (std::abs(source_id - kSrcVisionNormal) < 0.5) {
       return 1.05;
     }
@@ -805,9 +812,10 @@ private:
 
   static std::size_t source_slot(float source_id)
   {
-    const std::array<float, 9> ids{
+    const std::array<float, 10> ids{
       kSrcRadar, kSrcSonar, kSrcDepth, kSrcVisionNormal, kSrcVisionGated,
-      kSrcVisionStf, kSrcVisionBev, kSrcVisionUav, kSrcVisionDepthYolo};
+      kSrcVisionStf, kSrcVisionBev, kSrcVisionUav, kSrcVisionDepthYolo,
+      kSrcVisionUavNormal};
     for (std::size_t i = 0; i < ids.size(); ++i) {
       if (std::abs(source_id - ids[i]) < 0.5F) {
         return i;
@@ -881,7 +889,9 @@ private:
         continue;
       }
       const bool is_bev = std::abs(point.source_id - kSrcVisionBev) < 0.5;
-      const bool is_uav = std::abs(point.source_id - kSrcVisionUav) < 0.5;
+      const bool is_uav =
+        std::abs(point.source_id - kSrcVisionUav) < 0.5 ||
+        std::abs(point.source_id - kSrcVisionUavNormal) < 0.5;
       const bool is_local_vision =
         std::abs(point.source_id - kSrcVisionNormal) < 0.5 ||
         std::abs(point.source_id - kSrcVisionGated) < 0.5 ||
@@ -961,6 +971,7 @@ private:
            std::abs(source_id - kSrcVisionStf) < 0.5 ||
            std::abs(source_id - kSrcVisionBev) < 0.5 ||
            std::abs(source_id - kSrcVisionUav) < 0.5 ||
+           std::abs(source_id - kSrcVisionUavNormal) < 0.5 ||
            std::abs(source_id - kSrcVisionDepthYolo) < 0.5;
   }
 
@@ -1234,6 +1245,7 @@ private:
         << ",\"gated_camera_points\":" << last_gated_camera_points_
         << ",\"stf_points\":" << last_stf_points_
         << ",\"bev_points\":" << last_bev_points_
+        << ",\"uav_camera_points\":" << last_uav_camera_points_
         << ",\"uav_gated_points\":" << last_uav_gated_points_
         << ",\"depth_camera_yolo_points\":" << last_depth_camera_yolo_points_
         << "}";
@@ -1346,6 +1358,7 @@ private:
   std::string gated_camera_topic_;
   std::string stf_camera_topic_;
   std::string bev_topic_;
+  std::string uav_camera_topic_;
   std::string uav_gated_topic_;
   std::string depth_camera_detection_topic_;
   std::string depth_topic_;
@@ -1405,6 +1418,7 @@ private:
   std::size_t last_gated_camera_points_{0};
   std::size_t last_stf_points_{0};
   std::size_t last_bev_points_{0};
+  std::size_t last_uav_camera_points_{0};
   std::size_t last_uav_gated_points_{0};
   std::size_t last_depth_camera_yolo_points_{0};
 

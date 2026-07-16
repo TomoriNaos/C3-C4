@@ -231,14 +231,14 @@ private:
   std::vector<TrackObservation> active_tracks(const std::chrono::steady_clock::time_point & now) const
   {
     std::vector<TrackObservation> tracks;
-    if (has_c3_detected_tracks_ &&
-      std::chrono::duration<double>(now - last_c3_detected_time_).count() <= track_status_timeout_)
-    {
-      tracks = c3_detected_tracks_;
-    } else if (has_status_tracks_ &&
+    if (has_status_tracks_ &&
       std::chrono::duration<double>(now - last_status_time_).count() <= track_status_timeout_)
     {
       tracks = metadata_tracks_;
+    } else if (has_c3_detected_tracks_ &&
+      std::chrono::duration<double>(now - last_c3_detected_time_).count() <= track_status_timeout_)
+    {
+      tracks = c3_detected_tracks_;
     } else if (std::chrono::duration<double>(now - last_pose_time_).count() <= track_status_timeout_) {
       tracks = pose_tracks_;
     }
@@ -276,6 +276,9 @@ private:
         break;
       }
     }
+    if (prefer_follow_class_ && !follow_class_ids_.empty() && !has_class_candidate) {
+      return std::nullopt;
+    }
 
     double best_score = std::numeric_limits<double>::infinity();
     std::optional<TrackObservation> best;
@@ -296,6 +299,9 @@ private:
       if (track.last_source.find("gated") != std::string::npos) {
         score -= 0.20;
       }
+      if (track.last_source.find("ais") != std::string::npos) {
+        score -= 6.0;
+      }
       if (score < best_score) {
         best_score = score;
         best = track;
@@ -307,7 +313,7 @@ private:
   bool is_valid_follow_candidate(const TrackObservation & track) const
   {
     const double range = std::hypot(track.x, track.y);
-    if (!std::isfinite(range) || track.x < 1.0 || range > max_follow_range_) {
+    if (!std::isfinite(range) || range > max_follow_range_) {
       return false;
     }
     if (track.confidence < min_follow_confidence_) {
@@ -339,6 +345,9 @@ private:
     AvoidanceCommand command;
     for (const auto & obstacle : tracks) {
       if (obstacle.id == target_id) {
+        continue;
+      }
+      if (obstacle.hits > 0 && obstacle.hits < 2 && obstacle.confidence < 0.45) {
         continue;
       }
       if (obstacle.x < 0.5 || obstacle.x > obstacle_lookahead_ ||
@@ -507,6 +516,11 @@ private:
       extract_string(block, "\"last_source\":\"", track.last_source);
       if (track.last_source.empty()) {
         track.last_source = default_source;
+      }
+      if (block.find("\"ais\"") != std::string::npos &&
+        track.last_source.find("ais") == std::string::npos)
+      {
+        track.last_source += "+ais";
       }
       if (track.speed <= 0.0) {
         track.speed = std::hypot(track.vx, track.vy);

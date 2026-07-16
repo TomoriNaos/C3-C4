@@ -16,8 +16,13 @@ def generate_launch_description():
     xacro_file = os.path.join(pkg_description, 'urdf', 'wamv_base.urdf.xacro')
     rviz_config = os.path.join(pkg_description, 'rviz', 'default.rviz')
     perception_config = os.path.join(pkg_bringup, 'config', 'perception.yaml')
-    default_yolo_model = os.path.join(pkg_bringup, 'models', 'best.onnx')
-    default_pseudocolor_yolo_model = os.path.join(pkg_bringup, 'models', 'best1.onnx')
+    workspace_root = os.path.abspath(os.path.join(pkg_bringup, '..', '..', '..', '..'))
+    source_models = os.path.join(workspace_root, 'src', 'usv_bringup', 'models')
+    models_dir = source_models if os.path.isdir(source_models) else os.path.join(pkg_bringup, 'models')
+    default_camera_model = os.path.join(models_dir, 'camera.onnx')
+    default_gated_camera_model = os.path.join(models_dir, 'gated_camera.onnx')
+    default_plane_model = os.path.join(models_dir, 'plane.onnx')
+    default_plane_gated_model = os.path.join(models_dir, 'plane_gated.onnx')
 
     gui_arg = DeclareLaunchArgument(
         'gui',
@@ -79,15 +84,25 @@ def generate_launch_description():
         default_value='true',
         description='Convert ideal Gazebo sonar rays to delayed/noisy C3 sonar detections'
     )
-    yolo_model_arg = DeclareLaunchArgument(
-        'yolo_model_path',
-        default_value=default_yolo_model,
-        description='Path to the normal/dehazed camera YOLO ONNX model'
+    camera_model_arg = DeclareLaunchArgument(
+        'camera_model_path',
+        default_value=default_camera_model,
+        description='Path to the ship normal/depth camera YOLO ONNX model'
     )
-    pseudocolor_yolo_model_arg = DeclareLaunchArgument(
-        'pseudocolor_yolo_model_path',
-        default_value=default_pseudocolor_yolo_model,
-        description='Path to the pseudo-color gated YOLO ONNX model'
+    gated_camera_model_arg = DeclareLaunchArgument(
+        'gated_camera_model_path',
+        default_value=default_gated_camera_model,
+        description='Path to the ship gated-camera YOLO ONNX model'
+    )
+    plane_model_arg = DeclareLaunchArgument(
+        'plane_model_path',
+        default_value=default_plane_model,
+        description='Path to the UAV/plane normal camera YOLO ONNX model'
+    )
+    plane_gated_model_arg = DeclareLaunchArgument(
+        'plane_gated_model_path',
+        default_value=default_plane_gated_model,
+        description='Path to the UAV/plane gated-camera YOLO ONNX model'
     )
     c3_mmwave_arg = DeclareLaunchArgument(
         'c3_mmwave',
@@ -116,8 +131,8 @@ def generate_launch_description():
     )
     pseudocolor_gated_yolo_arg = DeclareLaunchArgument(
         'pseudocolor_gated_yolo',
-        default_value='true',
-        description='Start a separate pseudo-color range-view YOLO recognizer using best1.onnx'
+        default_value='false',
+        description='Start the legacy extra pseudo-color range-view recognizer'
     )
     c3_multimodal_fusion_arg = DeclareLaunchArgument(
         'c3_multimodal_fusion',
@@ -270,7 +285,7 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'yolo_model_path': LaunchConfiguration('yolo_model_path')
+                'yolo_model_path': LaunchConfiguration('gated_camera_model_path')
             }
         ],
         condition=IfCondition(LaunchConfiguration('perception'))
@@ -285,7 +300,7 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'yolo_model_path': LaunchConfiguration('pseudocolor_yolo_model_path')
+                'yolo_model_path': LaunchConfiguration('gated_camera_model_path')
             }
         ],
         condition=IfCondition(PythonExpression([
@@ -303,7 +318,7 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'yolo_model_path': LaunchConfiguration('yolo_model_path')
+                'yolo_model_path': LaunchConfiguration('camera_model_path')
             }
         ],
         condition=IfCondition(LaunchConfiguration('perception'))
@@ -376,6 +391,21 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('uav'))
     )
 
+    uav_camera_recognizer = Node(
+        package='usv_perception',
+        executable='gated_camera_recognizer',
+        name='uav_camera_recognizer',
+        output='screen',
+        parameters=[
+            perception_config,
+            {
+                'use_sim_time': True,
+                'yolo_model_path': LaunchConfiguration('plane_model_path')
+            }
+        ],
+        condition=IfCondition(LaunchConfiguration('uav'))
+    )
+
     uav_gated_camera_recognizer = Node(
         package='usv_perception',
         executable='gated_camera_recognizer',
@@ -385,7 +415,7 @@ def generate_launch_description():
             perception_config,
             {
                 'use_sim_time': True,
-                'yolo_model_path': LaunchConfiguration('pseudocolor_yolo_model_path')
+                'yolo_model_path': LaunchConfiguration('plane_gated_model_path')
             }
         ],
         condition=IfCondition(LaunchConfiguration('uav'))
@@ -534,8 +564,10 @@ def generate_launch_description():
         ais_arg,
         uav_arg,
         sonar_simulation_arg,
-        yolo_model_arg,
-        pseudocolor_yolo_model_arg,
+        camera_model_arg,
+        gated_camera_model_arg,
+        plane_model_arg,
+        plane_gated_model_arg,
         c3_mmwave_arg,
         c3_mmwave_debug_arg,
         rgbd_dehaze_arg,
@@ -562,6 +594,7 @@ def generate_launch_description():
         c3_multimodal_buffer_fusion,
         uav_patrol_controller,
         uav_flight_simulator,
+        uav_camera_recognizer,
         uav_gated_camera_recognizer,
         *mmwave_converter_nodes,
         mmwave_debug_node,

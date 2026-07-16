@@ -140,6 +140,8 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY docs/ DESTINATION share/${PROJECT_NAME}/docs)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/docs")
+  install(DIRECTORY docs/ DESTINATION share/${PROJECT_NAME}/docs)
+endif()
 
 ament_package()

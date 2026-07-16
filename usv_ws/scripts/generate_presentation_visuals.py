@@ -115,8 +115,8 @@ def parse_args() -> argparse.Namespace:
     repo = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yolo-dir", default=str(repo.parent / "yolo"))
-    parser.add_argument("--normal-model", default=str(repo / "src/usv_bringup/models/best.onnx"))
-    parser.add_argument("--gated-model", default=str(repo / "src/usv_bringup/models/best1.onnx"))
+    parser.add_argument("--normal-model", default=str(repo / "src/usv_bringup/models/camera.onnx"))
+    parser.add_argument("--gated-model", default=str(repo / "src/usv_bringup/models/gated_camera.onnx"))
     parser.add_argument("--normal-data", default="vessel.v2i.yolov8/data.yaml")
     parser.add_argument("--gated-data", default="gated_camera.v3i.yolov8/data.yaml")
     parser.add_argument("--normal-conf", type=float, default=0.15)
@@ -921,13 +921,13 @@ def render_heatmap_set(out_dir: Path) -> None:
         "门控相机热力图",
         out_dir / "heatmap_gated_camera.png",
         [(43, 53, 0.90, 4.0), (38, 38, 0.50, 6.0)],
-        ["best1.onnx 语义框", "bbox 中心深度估计", "类别来自门控 YOLO", "雾天适应性更强"],
+        ["gated_camera.onnx 语义框", "bbox 中心深度估计", "类别来自门控 YOLO", "雾天适应性更强"],
     )
     render_heatmap(
         "深度相机热力图",
         out_dir / "heatmap_depth_camera.png",
         [(42, 51, 0.86, 3.8), (65, 45, 0.30, 6.5)],
-        ["best.onnx 识别深度相机图像", "深度点投影", "近距离 z 更准确", "视场范围有限"],
+        ["camera.onnx 识别深度相机图像", "深度点投影", "近距离 z 更准确", "视场范围有限"],
     )
     render_heatmap(
         "多模态融合热力图",

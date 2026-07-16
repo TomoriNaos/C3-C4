@@ -17,8 +17,9 @@ radar_sonar_tracker:
     association_gate: 4.5
     track_timeout: 4.0
     gated_points_topic: /gated_camera/detection_points
-    uav_points_topic: /uav/gated_camera/detection_points
-    pseudocolor_gated_points_topic: /gated_camera/pseudocolor/detection_points
+    uav_camera_points_topic: ""
+    uav_points_topic: ""
+    pseudocolor_gated_points_topic: ""
     stf_gated_points_topic: /gated_camera/stf_detection_points
     bev_gated_points_topic: /gated_camera/bev_detection_points
     ais_topic: /ais/targets
@@ -55,16 +56,17 @@ c3_multimodal_buffer_fusion:
       - /mmwave/left/h1m/detections
     # The fusion buffer receives the same delayed/noisy output as the tracker.
     sonar_detect_topic: /sonar/detect
-    normal_camera_topic: /gated_camera/detection_points
-    gated_camera_topic: /gated_camera/pseudocolor/detection_points
+    normal_camera_topic: ""
+    gated_camera_topic: /gated_camera/detection_points
     stf_camera_topic: /gated_camera/stf_detection_points
     bev_topic: /gated_camera/bev_detection_points
-    uav_gated_topic: /uav/gated_camera/detection_points
+    uav_camera_topic: ""
+    uav_gated_topic: ""
     depth_camera_detection_topic: /depth_camera/detection_points
     depth_topic: /depth_camera/dehazed_points
     model_states_topic: /model_states
-    buffer_keep_s: 0.65
-    sync_tolerance_s: 0.35
+    buffer_keep_s: 1.8
+    sync_tolerance_s: 1.2
     sonar_fusion_window_frames: 3
     publish_rate_hz: 8.0
     max_points_per_cloud: 2500
@@ -115,17 +117,17 @@ gated_camera_recognizer:
     camera_info_topic: /gated_camera/camera_info
     output_prefix: gated_camera
     frame_id: gated_camera_link
-    detection_input: raw
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    detection_input: range_view
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/gated_camera.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    # Current src/usv_bringup/models/best.onnx metadata:
+    # Current src/usv_bringup/models/gated_camera.onnx metadata:
     # {0: moving_vessel, 1: service_boat, 2: research_platform,
     #  3: fishing_boat, 4: ship_far, 5: obstacle}.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
     class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
-    confidence_threshold: 0.10
+    confidence_threshold: 0.08
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -160,11 +162,11 @@ pseudocolor_gated_camera_recognizer:
     output_prefix: gated_camera/pseudocolor
     frame_id: gated_camera_link
     detection_input: range_view
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_model_path: "" # legacy optional node; sim.launch.py sets gated_camera.onnx if enabled.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    # Current src/usv_bringup/models/best1.onnx metadata:
+    # Current src/usv_bringup/models/gated_camera.onnx metadata:
     # {0: moving_vessel, 1: service_boat, 2: research_platform,
     #  3: fishing_boat, 4: ship_far, 5: obstacle}.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
@@ -204,7 +206,7 @@ uav_gated_camera_recognizer:
     output_prefix: uav/gated_camera
     frame_id: uav_gated_camera_link
     detection_input: range_view
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/plane_gated.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
@@ -227,7 +229,7 @@ uav_gated_camera_recognizer:
     camera_cy: 0.0
     camera_calibration_width: 0.0
     camera_calibration_height: 0.0
-    use_tf_transform: true
+    use_tf_transform: false
     use_camera_info: true
     depth_roi_shrink: 0.12
     bbox_support_grid_side: 3
@@ -237,6 +239,43 @@ uav_gated_camera_recognizer:
     gate_mid: [45.0, 160.0]
     gate_far: [120.0, 370.0]
 
+uav_camera_recognizer:
+  ros__parameters:
+    image_topic: /uav/camera/image_raw
+    depth_topic: /uav/camera/depth/image_raw
+    camera_info_topic: /uav/camera/camera_info
+    output_prefix: uav/camera
+    frame_id: uav_camera_link
+    detection_input: raw
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/plane.onnx by default.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
+    enable_dehaze: true
+    dehaze_strength: 0.55
+    dehaze_omega: 0.85
+    dehaze_min_transmission: 0.20
+    dehaze_depth_beta: 0.010
+    base_frame: base_link
+    camera_x_offset: 1.55
+    camera_y_offset: 0.0
+    camera_z_offset: 1.20
+    camera_horizontal_fov: 0.82
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: false
+    use_camera_info: true
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
+    process_stride: 1
+
 depth_camera_recognizer:
   ros__parameters:
     image_topic: /depth_camera/image_raw
@@ -245,7 +284,7 @@ depth_camera_recognizer:
     output_prefix: depth_camera
     frame_id: depth_camera_link
     detection_input: raw
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/camera.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
