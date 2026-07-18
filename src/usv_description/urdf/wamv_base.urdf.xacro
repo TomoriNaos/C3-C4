@@ -39,10 +39,12 @@
         <ray>
           <scan>
             <horizontal>
-              <samples>300</samples>
+              <!-- Four 110 degree sectors overlap by 20 degrees to avoid
+                   cardinal-direction blind gaps from hull occlusion. -->
+              <samples>385</samples>
               <resolution>1</resolution>
-              <min_angle>-0.785398</min_angle>
-              <max_angle>0.785398</max_angle>
+              <min_angle>-0.959931</min_angle>
+              <max_angle>0.959931</max_angle>
             </horizontal>
           </scan>
           <range>
@@ -110,9 +112,30 @@
       <material name="deck_dark"/>
     </visual>
     <visual name="sensor_mast">
-      <origin xyz="-0.35 0 1.18" rpy="0 0 0"/>
+      <origin xyz="-0.35 0 2.29" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.055" length="1.28"/>
+        <cylinder radius="0.055" length="3.42"/>
+      </geometry>
+      <material name="sensor_black"/>
+    </visual>
+    <visual name="mmwave_mount_1p9m">
+      <origin xyz="-0.35 0 1.90" rpy="0 ${pi / 2.0} 0"/>
+      <geometry>
+        <cylinder radius="0.13" length="0.42"/>
+      </geometry>
+      <material name="sensor_black"/>
+    </visual>
+    <visual name="mmwave_mount_3m">
+      <origin xyz="-0.35 0 3.00" rpy="0 ${pi / 2.0} 0"/>
+      <geometry>
+        <cylinder radius="0.13" length="0.42"/>
+      </geometry>
+      <material name="sensor_black"/>
+    </visual>
+    <visual name="mmwave_mount_4m">
+      <origin xyz="-0.35 0 4.00" rpy="0 ${pi / 2.0} 0"/>
+      <geometry>
+        <cylinder radius="0.13" length="0.42"/>
       </geometry>
       <material name="sensor_black"/>
     </visual>
@@ -197,10 +220,10 @@
   </gazebo>
 
   <xacro:if value="$(arg enable_c3_mmwave)">
-    <xacro:c3_raw_mmwave_sensor name="radar_10m_front" height="10.0" yaw="0.0" topic="radar/front/h10m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_10m_right" height="10.0" yaw="-1.570796" topic="radar/right/h10m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_10m_back" height="10.0" yaw="3.141593" topic="radar/back/h10m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_10m_left" height="10.0" yaw="1.570796" topic="radar/left/h10m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_3m_front" height="3.0" yaw="0.0" topic="radar/front/h3m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_3m_right" height="3.0" yaw="-1.570796" topic="radar/right/h3m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_3m_back" height="3.0" yaw="3.141593" topic="radar/back/h3m/raw_scan"/>
+    <xacro:c3_raw_mmwave_sensor name="radar_3m_left" height="3.0" yaw="1.570796" topic="radar/left/h3m/raw_scan"/>
     <xacro:c3_raw_mmwave_sensor name="radar_4m_front" height="4.0" yaw="0.0" topic="radar/front/h4m/raw_scan"/>
     <xacro:c3_raw_mmwave_sensor name="radar_4m_right" height="4.0" yaw="-1.570796" topic="radar/right/h4m/raw_scan"/>
     <xacro:c3_raw_mmwave_sensor name="radar_4m_back" height="4.0" yaw="3.141593" topic="radar/back/h4m/raw_scan"/>
@@ -209,14 +232,6 @@
     <xacro:c3_raw_mmwave_sensor name="radar_1p9m_right" height="1.9" yaw="-1.570796" topic="radar/right/h1p9m/raw_scan"/>
     <xacro:c3_raw_mmwave_sensor name="radar_1p9m_back" height="1.9" yaw="3.141593" topic="radar/back/h1p9m/raw_scan"/>
     <xacro:c3_raw_mmwave_sensor name="radar_1p9m_left" height="1.9" yaw="1.570796" topic="radar/left/h1p9m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_front" height="1.5" yaw="0.0" topic="radar/front/h1p5m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_right" height="1.5" yaw="-1.570796" topic="radar/right/h1p5m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_back" height="1.5" yaw="3.141593" topic="radar/back/h1p5m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1p5m_left" height="1.5" yaw="1.570796" topic="radar/left/h1p5m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1m_front" height="1.0" yaw="0.0" topic="radar/front/h1m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1m_right" height="1.0" yaw="-1.570796" topic="radar/right/h1m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1m_back" height="1.0" yaw="3.141593" topic="radar/back/h1m/raw_scan"/>
-    <xacro:c3_raw_mmwave_sensor name="radar_1m_left" height="1.0" yaw="1.570796" topic="radar/left/h1m/raw_scan"/>
   </xacro:if>
 
   <link name="depth_camera_link">
@@ -264,47 +279,57 @@
     </sensor>
   </gazebo>
 
-  <link name="gated_camera_link">
-    <visual>
-      <geometry>
-        <box size="0.20 0.18 0.14"/>
-      </geometry>
-      <material name="camera_blue"/>
-    </visual>
-  </link>
-  <joint name="gated_camera_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="gated_camera_link"/>
-    <origin xyz="1.55 0 1.20" rpy="0 0 0"/>
-  </joint>
+  <!-- Four overlapping 110 degree gated RGB-D cameras provide full-surround vision. -->
+  <xacro:macro name="c3_gated_camera_sensor" params="name x y z yaw topic visualize">
+    <link name="${name}_link">
+      <visual>
+        <geometry>
+          <box size="0.20 0.18 0.14"/>
+        </geometry>
+        <material name="camera_blue"/>
+      </visual>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 ${yaw}"/>
+    </joint>
+    <gazebo reference="${name}_link">
+      <sensor type="depth" name="${name}">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>${visualize}</visualize>
+        <update_rate>12.0</update_rate>
+        <camera>
+          <horizontal_fov>1.919862</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>120.0</far>
+          </clip>
+        </camera>
+        <plugin name="gazebo_ros_${name}" filename="libgazebo_ros_camera.so">
+          <ros>
+            <remapping>~/image_raw:=${topic}/image_raw</remapping>
+            <remapping>~/depth/image_raw:=${topic}/depth/image_raw</remapping>
+            <remapping>~/camera_info:=${topic}/camera_info</remapping>
+          </ros>
+          <camera_name>${topic}</camera_name>
+          <frame_name>${name}_link</frame_name>
+          <min_depth>0.05</min_depth>
+          <max_depth>120.0</max_depth>
+        </plugin>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
 
-  <gazebo reference="gated_camera_link">
-    <sensor type="camera" name="gated_camera">
-      <pose>0 0 0 0 0 0</pose>
-      <visualize>true</visualize>
-      <update_rate>15.0</update_rate>
-      <camera>
-        <horizontal_fov>1.20</horizontal_fov>
-        <image>
-          <width>640</width>
-          <height>480</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.05</near>
-          <far>120.0</far>
-        </clip>
-      </camera>
-      <plugin name="gazebo_ros_gated_camera" filename="libgazebo_ros_camera.so">
-        <ros>
-          <remapping>~/image_raw:=gated_camera/image_raw</remapping>
-          <remapping>~/camera_info:=gated_camera/camera_info</remapping>
-        </ros>
-        <camera_name>gated_camera</camera_name>
-        <frame_name>gated_camera_link</frame_name>
-      </plugin>
-    </sensor>
-  </gazebo>
+  <xacro:c3_gated_camera_sensor name="gated_camera" x="1.55" y="0" z="1.20" yaw="0" topic="gated_camera" visualize="true"/>
+  <xacro:c3_gated_camera_sensor name="gated_camera_right" x="0" y="-1.15" z="1.20" yaw="-1.570796" topic="gated_camera/right" visualize="false"/>
+  <xacro:c3_gated_camera_sensor name="gated_camera_back" x="-1.55" y="0" z="1.20" yaw="3.141593" topic="gated_camera/back" visualize="false"/>
+  <xacro:c3_gated_camera_sensor name="gated_camera_left" x="0" y="1.15" z="1.20" yaw="1.570796" topic="gated_camera/left" visualize="false"/>
 
   <xacro:macro name="sonar_sector_sensor" params="name yaw topic">
   <link name="${name}_link">

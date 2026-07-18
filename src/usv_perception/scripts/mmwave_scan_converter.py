@@ -57,6 +57,17 @@ class MmwaveScanConverter(Node):
         self.declare_parameter('sea_clutter_height_max', 2.0)
         self.declare_parameter('sea_clutter_compete_min_height', 0.30)
         self.declare_parameter('sea_clutter_random_stddev', 0.06)
+        self.declare_parameter('sea_clutter_probability_per_bin', 1.0)
+        # Sea returns immediately around the hull are dominated by multipath and
+        # wake effects. Keep them in the simulation, but reduce their strength.
+        self.declare_parameter('sea_clutter_near_field_radius_m', 35.0)
+        self.declare_parameter('sea_clutter_near_field_attenuation', 0.12)
+        # A one-frame sea return is not a physical object. Clutter must be
+        # spatially and kinematically persistent before leaving this simulator.
+        self.declare_parameter('clutter_confirmation_frames', 3)
+        self.declare_parameter('clutter_range_gate_m', 1.5)
+        self.declare_parameter('clutter_velocity_gate_mps', 0.30)
+        self._clutter_history = {}
 
         # 输出限制
         self.declare_parameter('max_detections', 80)
@@ -128,6 +139,8 @@ class MmwaveScanConverter(Node):
             winner = self.select_candidate(target_candidate, clutter_candidate)
             if winner is None or winner['snr'] < intensity_threshold:
                 continue
+            if winner['source'] == 2.0 and not self.accept_persistent_clutter(coarse_idx, winner):
+                continue
 
             detections.append(self.candidate_to_point(winner, frame_timestamp))
 
@@ -139,6 +152,24 @@ class MmwaveScanConverter(Node):
         output_header.frame_id = self.get_parameter('output_frame_id').value
         cloud = self.create_cloud(output_header, detections)
         self.pub.publish(cloud)
+
+    def accept_persistent_clutter(self, coarse_idx, candidate):
+        """Reject random sea peaks while retaining a deliberately persistent return."""
+        previous = self._clutter_history.get(coarse_idx)
+        range_gate = float(self.get_parameter('clutter_range_gate_m').value)
+        velocity_gate = float(self.get_parameter('clutter_velocity_gate_mps').value)
+        if previous is not None and \
+                abs(previous['range'] - candidate['range']) <= range_gate and \
+                abs(previous['radial_velocity'] - candidate['radial_velocity']) <= velocity_gate:
+            hits = previous['hits'] + 1
+        else:
+            hits = 1
+        self._clutter_history[coarse_idx] = {
+            'range': candidate['range'],
+            'radial_velocity': candidate['radial_velocity'],
+            'hits': hits,
+        }
+        return hits >= max(1, int(self.get_parameter('clutter_confirmation_frames').value))
 
     def build_group_target_candidate(self, group):
         hit_subbeams = []
@@ -264,12 +295,19 @@ class MmwaveScanConverter(Node):
 
         radar_height = float(self.get_parameter('radar_height_m').value)
         sea_state = float(self.get_parameter('sea_state').value)
+        clutter_probability = float(self.get_parameter('sea_clutter_probability_per_bin').value)
+        if random.random() > max(0.0, min(1.0, clutter_probability)):
+            return None
+
         clutter_min = float(self.get_parameter('sea_clutter_range_min').value)
         clutter_max = float(self.get_parameter('sea_clutter_range_max').value)
         clutter_height_scale = float(self.get_parameter('sea_clutter_height_scale').value)
         clutter_height_max = float(self.get_parameter('sea_clutter_height_max').value)
         compete_min_height = float(self.get_parameter('sea_clutter_compete_min_height').value)
         clutter_random_stddev = float(self.get_parameter('sea_clutter_random_stddev').value)
+        near_field_radius = float(self.get_parameter('sea_clutter_near_field_radius_m').value)
+        near_field_attenuation = float(
+            self.get_parameter('sea_clutter_near_field_attenuation').value)
 
         low = max(min_range, clutter_min)
         high = min(max_range, clutter_max)
@@ -290,6 +328,12 @@ class MmwaveScanConverter(Node):
 
         base = wave_height * (0.7 + 0.6 * sea_state)
         power = base * self.range_decay(rng) * random.uniform(0.85, 1.15)
+        if near_field_radius > low and rng < near_field_radius:
+            # Blend smoothly from the attenuated wake region to normal sea clutter
+            # so a hard range boundary cannot create an artificial ring.
+            ratio = (rng - low) / max(near_field_radius - low, 1e-3)
+            attenuation = near_field_attenuation + (1.0 - near_field_attenuation) * ratio
+            power *= max(0.0, min(1.0, attenuation))
         power += random.gauss(0.0, clutter_random_stddev)
         power = max(0.0, power)
 

@@ -31,6 +31,7 @@ struct EvalTrack
   double class_id{-1.0};
   int hits{0};
   std::string last_source{"unknown"};
+  std::string frame_id{"base_link"};
 };
 
 struct GroundTruthObject
@@ -118,13 +119,14 @@ private:
 
     const bool tracks_fresh = has_tracks_ &&
       std::chrono::duration<double>(std::chrono::steady_clock::now() - last_track_time_).count() <= track_timeout_;
-    const std::vector<EvalTrack> active_tracks = tracks_fresh ? tracks_ : std::vector<EvalTrack>{};
     const auto objects = ground_truth_objects(static_cast<std::size_t>(usv_index));
+    const std::vector<EvalTrack> active_tracks = tracks_fresh ?
+      tracks_in_usv_frame(tracks_, static_cast<std::size_t>(usv_index)) : std::vector<EvalTrack>{};
 
     std::set<int> used_tracks;
-    int frame_tp = 0;
-    int frame_fn = 0;
-    int frame_fp = 0;
+    int frame_target_detected = 0;
+    int frame_target_missed = 0;
+    int frame_target_wrong_class = 0;
     int frame_id_switches = 0;
 
     for (const auto & object : objects) {
@@ -146,46 +148,33 @@ private:
       }
 
       if (best_index >= 0) {
-        ++frame_tp;
+        ++frame_target_detected;
         used_tracks.insert(best_index);
         const int track_id = active_tracks[static_cast<std::size_t>(best_index)].id;
+        const auto & matched_track = active_tracks[static_cast<std::size_t>(best_index)];
+        if (!is_target_class(matched_track.class_id)) {
+          ++frame_target_wrong_class;
+        }
         auto it = last_target_track_ids_.find(object.name);
         if (it != last_target_track_ids_.end() && it->second != track_id) {
           ++frame_id_switches;
         }
         last_target_track_ids_[object.name] = track_id;
       } else {
-        ++frame_fn;
-      }
-    }
-
-    for (std::size_t track_index = 0; track_index < active_tracks.size(); ++track_index) {
-      if (used_tracks.count(static_cast<int>(track_index)) != 0) {
-        continue;
-      }
-      bool close_to_any_ground_truth = false;
-      for (const auto & object : objects) {
-        if (std::hypot(active_tracks[track_index].x - object.rel_x, active_tracks[track_index].y - object.rel_y) <
-          match_gate_)
-        {
-          close_to_any_ground_truth = true;
-          break;
-        }
-      }
-      if (!close_to_any_ground_truth) {
-        ++frame_fp;
+        ++frame_target_missed;
       }
     }
 
     ++frames_;
-    total_tp_ += frame_tp;
-    total_fn_ += frame_fn;
-    total_fp_ += frame_fp;
+    total_tp_ += frame_target_detected;
+    total_fn_ += frame_target_missed;
+    total_fp_ += frame_target_wrong_class;
     total_id_switches_ += frame_id_switches;
 
     const auto risk = closest_risk(objects);
     publish_metrics(
-      active_tracks, objects, frame_tp, frame_fn, frame_fp, frame_id_switches,
+      active_tracks, objects, frame_target_detected, frame_target_missed, frame_target_wrong_class,
+      frame_id_switches,
       risk.closest_name, risk.min_distance, risk.min_cpa, risk.min_tcpa);
   }
 
@@ -236,6 +225,42 @@ private:
       objects.push_back(object);
     }
     return objects;
+  }
+
+  std::vector<EvalTrack> tracks_in_usv_frame(
+    const std::vector<EvalTrack> & tracks,
+    std::size_t usv_index) const
+  {
+    std::vector<EvalTrack> result;
+    result.reserve(tracks.size());
+    const auto & usv_pose = last_model_states_.pose[usv_index];
+    const auto & usv_twist = last_model_states_.twist[usv_index];
+    const double usv_yaw = yaw_from_quaternion(usv_pose);
+    const double cos_yaw = std::cos(usv_yaw);
+    const double sin_yaw = std::sin(usv_yaw);
+    for (auto track : tracks) {
+      if (track.frame_id == "world") {
+        const double dx = track.x - usv_pose.position.x;
+        const double dy = track.y - usv_pose.position.y;
+        const double dvx = track.vx - usv_twist.linear.x;
+        const double dvy = track.vy - usv_twist.linear.y;
+        track.x = cos_yaw * dx + sin_yaw * dy;
+        track.y = -sin_yaw * dx + cos_yaw * dy;
+        track.vx = cos_yaw * dvx + sin_yaw * dvy;
+        track.vy = -sin_yaw * dvx + cos_yaw * dvy;
+        track.frame_id = "base_link";
+      }
+      result.push_back(track);
+    }
+    return result;
+  }
+
+  static bool is_target_class(double class_id)
+  {
+    // c3_gate target-like classes: moving_vessel, service_boat, fishing_boat.
+    return std::abs(class_id - 0.0) < 0.5 ||
+           std::abs(class_id - 1.0) < 0.5 ||
+           std::abs(class_id - 3.0) < 0.5;
   }
 
   struct RiskSummary
@@ -289,24 +314,31 @@ private:
     const int frame_truth_targets = static_cast<int>(std::count_if(
       objects.begin(), objects.end(), [](const GroundTruthObject & object) {return object.target;}));
     const int denominator_detection = std::max(1, frame_tp + frame_fn);
-    const int denominator_false_positive = std::max(1, frame_tp + frame_fp);
+    const int denominator_false_positive = std::max(1, frame_tp);
     const double frame_miss_rate = static_cast<double>(frame_fn) / denominator_detection;
     const double frame_false_positive_rate = static_cast<double>(frame_fp) / denominator_false_positive;
+    const double frame_classification_accuracy = 1.0 - frame_false_positive_rate;
     const double total_miss_rate = static_cast<double>(total_fn_) / std::max(1, total_tp_ + total_fn_);
-    const double total_false_positive_rate = static_cast<double>(total_fp_) / std::max(1, total_tp_ + total_fp_);
+    const double total_false_positive_rate = static_cast<double>(total_fp_) / std::max(1, total_tp_);
 
     std::ostringstream status;
     status.setf(std::ios::fixed, std::ios::floatfield);
     status << std::setprecision(3)
            << "{\"frames\":" << frames_
            << ",\"tracks\":" << active_tracks.size()
+           << ",\"tracked_object_count\":" << active_tracks.size()
            << ",\"ground_truth_objects\":" << objects.size()
            << ",\"ground_truth_targets\":" << frame_truth_targets
+           << ",\"target_detected\":" << frame_tp
+           << ",\"target_wrong_class\":" << frame_fp
+           << ",\"target_missed\":" << frame_fn
            << ",\"tp\":" << frame_tp
            << ",\"fp\":" << frame_fp
            << ",\"fn\":" << frame_fn
            << ",\"false_positive_rate\":" << frame_false_positive_rate
            << ",\"miss_rate\":" << frame_miss_rate
+           << ",\"classification_accuracy\":" << frame_classification_accuracy
+           << ",\"single_frame_processing_ms\":-1.0"
            << ",\"total_tp\":" << total_tp_
            << ",\"total_fp\":" << total_fp_
            << ",\"total_fn\":" << total_fn_
@@ -377,6 +409,7 @@ private:
         track.hits = static_cast<int>(std::round(hits_value));
       }
       extract_string(block, "\"last_source\":\"", track.last_source);
+      extract_string(block, "\"frame_id\":\"", track.frame_id);
       const double range = std::hypot(track.x, track.y);
       if (std::isfinite(range)) {
         tracks.push_back(track);

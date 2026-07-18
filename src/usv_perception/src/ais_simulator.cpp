@@ -110,7 +110,7 @@ private:
       const double sog = std::hypot(last_model_states_.twist[i].linear.x, last_model_states_.twist[i].linear.y);
       const double cog = std::atan2(last_model_states_.twist[i].linear.y, last_model_states_.twist[i].linear.x);
       const double heading = yaw_from_quaternion(last_model_states_.pose[i]);
-      const double class_id = name == "small_fishing_boat" ? 2.0 : 5.0;
+      const double class_id = class_from_model_name(name);
       const double noisy_x = rel_x + sample_normal(position_noise_stddev_);
       const double noisy_y = rel_y + sample_normal(position_noise_stddev_);
       const double noisy_vx = rel_vx + sample_normal(velocity_noise_stddev_);
@@ -150,6 +150,26 @@ private:
       }
     }
     return -1;
+  }
+
+  static double class_from_model_name(const std::string & name)
+  {
+    if (name == "moving_vessel") {
+      return 0.0;
+    }
+    if (name == "service_boat") {
+      return 1.0;
+    }
+    if (name == "survey_boat") {
+      return 2.0;
+    }
+    if (name == "small_fishing_boat") {
+      return 3.0;
+    }
+    if (name == "cargo_ship_far" || name == "anchored_tanker") {
+      return 4.0;
+    }
+    return 5.0;
   }
 
   static double yaw_from_quaternion(const geometry_msgs::msg::Pose & pose)

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <iomanip>
@@ -13,11 +14,13 @@
 #include <vector>
 
 #include "c3_sonar_driver/msg/sonar_detect.hpp"
+#include "gazebo_msgs/msg/model_states.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "usv_perception/common.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -33,6 +36,11 @@ struct Detection
   double z{0.0};
   double confidence{0.0};
   double class_id{-1.0};
+  double aspect_ratio{1.0};
+  double range_rate{0.0};
+  double vx{0.0};
+  double vy{0.0};
+  std::int64_t ais_mmsi{-1};
   std::string source;
 };
 
@@ -43,11 +51,17 @@ struct Track
   double y{0.0};
   double vx{0.0};
   double vy{0.0};
+  double covariance_m2{16.0};
   int hits{1};
   int misses{0};
   double confidence{0.0};
   double class_id{-1.0};
+  double avg_intensity{0.0};
+  double bbox_aspect_ratio{1.0};
+  double range_rate{0.0};
+  std::int64_t ais_mmsi{-1};
   std::string last_source;
+  std::string state{"候选"};
   std::chrono::steady_clock::time_point last_update{std::chrono::steady_clock::now()};
   std::chrono::steady_clock::time_point last_predict{std::chrono::steady_clock::now()};
   std::set<std::string> sources;
@@ -58,6 +72,8 @@ struct Track
     const double dt = std::clamp(raw_dt, 0.0, 0.5);
     x += vx * dt;
     y += vy * dt;
+    covariance_m2 = std::clamp(
+      covariance_m2 + 1.8 * dt + 0.35 * static_cast<double>(misses), 1.0, 100.0);
     last_predict = now;
   }
 
@@ -73,11 +89,32 @@ struct Track
     y += alpha * residual_y;
     vx += beta * residual_x / dt;
     vy += beta * residual_y / dt;
+    if (det.source == "ais") {
+      vx = 0.65 * vx + 0.35 * det.vx;
+      vy = 0.65 * vy + 0.35 * det.vy;
+      if (det.ais_mmsi >= 0) {
+        ais_mmsi = det.ais_mmsi;
+      }
+    }
+    covariance_m2 = std::clamp((1.0 - alpha) * covariance_m2 + 1.0, 0.8, 80.0);
     ++hits;
     misses = 0;
     confidence = std::max(confidence * 0.92, det.confidence);
-    class_id = det.class_id >= 0.0 ? det.class_id : class_id;
-    last_source = det.source;
+    const bool semantic_detection = det.class_id >= 0.0;
+    const bool preserve_visual_source = det.source == "ais" &&
+      (last_source.find("camera") != std::string::npos || last_source.find("yolo") != std::string::npos);
+    if (semantic_detection) {
+      class_id = det.class_id;
+      if (!preserve_visual_source) {
+        last_source = det.source;
+      }
+    } else if (class_id < 0.0) {
+      last_source = det.source;
+    }
+    avg_intensity = avg_intensity <= 0.0 ? det.confidence : 0.75 * avg_intensity + 0.25 * det.confidence;
+    bbox_aspect_ratio = 0.80 * bbox_aspect_ratio + 0.20 * std::clamp(det.aspect_ratio, 0.2, 5.0);
+    range_rate = 0.80 * range_rate + 0.20 * det.range_rate;
+    state = hits >= 2 ? "确认" : "候选";
     last_update = now;
     last_predict = now;
     sources.insert(det.source);
@@ -106,6 +143,16 @@ public:
       declare_parameter<std::string>("gated_points_topic", "/gated_camera/detection_points");
     const std::string uav_points_topic =
       declare_parameter<std::string>("uav_points_topic", "/uav/gated_camera/detection_points");
+    const auto gated_points_topics = declare_parameter<std::vector<std::string>>(
+      "gated_points_topics", std::vector<std::string>{});
+    const auto uav_points_topics = declare_parameter<std::vector<std::string>>(
+      "uav_points_topics", std::vector<std::string>{});
+    const auto uav_depth_points_topics = declare_parameter<std::vector<std::string>>(
+      "uav_depth_points_topics", std::vector<std::string>{});
+    const std::string uav_observation_active_topic = declare_parameter<std::string>(
+      "uav_observation_active_topic", "/uav/observation/active");
+    require_uav_observation_active_ =
+      declare_parameter<bool>("require_uav_observation_active", true);
     const std::string pseudocolor_gated_points_topic =
       declare_parameter<std::string>(
         "pseudocolor_gated_points_topic", "/gated_camera/pseudocolor/detection_points");
@@ -114,6 +161,10 @@ public:
     const std::string bev_gated_points_topic =
       declare_parameter<std::string>("bev_gated_points_topic", "/gated_camera/bev_detection_points");
     const std::string ais_topic = declare_parameter<std::string>("ais_topic", "/ais/targets");
+    const std::string c3_confirmed_topic =
+      declare_parameter<std::string>("c3_confirmed_topic", "/c3/detected_objects");
+    const std::string model_states_topic = declare_parameter<std::string>("model_states_topic", "/model_states");
+    usv_model_name_ = declare_parameter<std::string>("usv_model_name", "wamv");
     base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
     radar_x_offset_ = declare_parameter<double>("radar_x_offset", -0.35);
     radar_y_offset_ = declare_parameter<double>("radar_y_offset", 0.0);
@@ -129,9 +180,29 @@ public:
     track_timeout_ = declare_parameter<double>("track_timeout", 2.0);
     camera_fusion_timeout_ = declare_parameter<double>("camera_fusion_timeout", 0.8);
     uav_fusion_timeout_ = declare_parameter<double>("uav_fusion_timeout", 1.2);
-    min_camera_confidence_ = declare_parameter<double>("min_camera_confidence", 0.20);
+    min_camera_confidence_ = declare_parameter<double>("min_camera_confidence", 0.30);
+    min_uav_camera_confidence_ = declare_parameter<double>("min_uav_camera_confidence", 0.15);
+    camera_detection_cluster_radius_ =
+      declare_parameter<double>("camera_detection_cluster_radius", 4.0);
     ais_confidence_ = declare_parameter<double>("ais_confidence", 0.88);
     min_ais_confidence_ = declare_parameter<double>("min_ais_confidence", 0.45);
+    ais_can_create_tracks_ = declare_parameter<bool>("ais_can_create_tracks", false);
+    ais_can_create_target_tracks_ =
+      declare_parameter<bool>("ais_can_create_target_tracks", true);
+    ais_target_class_ids_ = declare_parameter<std::vector<double>>(
+      "ais_target_class_ids", std::vector<double>{0.0});
+    ais_maintenance_gate_m_ = declare_parameter<double>("ais_maintenance_gate_m", 25.0);
+    max_tracks_per_class_ = declare_parameter<int>("max_tracks_per_class", 2);
+    max_track_misses_ = declare_parameter<int>("max_track_misses", 400);
+    class_replacement_margin_ = declare_parameter<double>("class_replacement_margin", 0.05);
+    mahalanobis_gate_ = declare_parameter<double>("mahalanobis_gate", 3.0);
+    velocity_gate_mps_ = declare_parameter<double>("velocity_gate_mps", 1.0);
+    feature_similarity_gate_ = declare_parameter<double>("feature_similarity_gate", 0.70);
+    tracker_frame_id_ = declare_parameter<std::string>("tracker_frame_id", "world");
+
+    model_states_sub_ = create_subscription<gazebo_msgs::msg::ModelStates>(
+      model_states_topic, 10,
+      std::bind(&RadarSonarTracker::on_model_states, this, std::placeholders::_1));
 
     radar_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       radar_topic, rclcpp::SensorDataQoS(),
@@ -150,15 +221,55 @@ public:
         sonar_detect_topic_, 10,
         std::bind(&RadarSonarTracker::on_sonar_detect, this, std::placeholders::_1));
     }
-    gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-      gated_points_topic, rclcpp::SensorDataQoS(),
-      [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-        on_detection_points(msg, "gated_camera", 0.82);
-      });
-    uav_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-      uav_points_topic, rclcpp::SensorDataQoS(),
-      [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-        on_detection_points(msg, "uav_gated_camera", 0.72);
+    const auto subscribe_gated = [this](const std::string & topic) {
+        if (!topic.empty()) {
+          gated_points_subs_.push_back(create_subscription<sensor_msgs::msg::PointCloud2>(
+            topic, rclcpp::SensorDataQoS(),
+            [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+              on_detection_points(msg, "gated_camera", 0.82);
+            }));
+        }
+      };
+    const auto subscribe_uav = [this](const std::string & topic) {
+        if (!topic.empty()) {
+          uav_points_subs_.push_back(create_subscription<sensor_msgs::msg::PointCloud2>(
+            topic, rclcpp::SensorDataQoS(),
+            [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+              if (!require_uav_observation_active_ || uav_observation_active_) {
+                on_detection_points(msg, "uav_gated_camera", 0.72);
+              }
+            }));
+        }
+      };
+    if (gated_points_topics.empty()) {
+      subscribe_gated(gated_points_topic);
+    } else {
+      for (const auto & topic : gated_points_topics) {
+        subscribe_gated(topic);
+      }
+    }
+    if (uav_points_topics.empty()) {
+      subscribe_uav(uav_points_topic);
+    } else {
+      for (const auto & topic : uav_points_topics) {
+        subscribe_uav(topic);
+      }
+    }
+    for (const auto & topic : uav_depth_points_topics) {
+      if (!topic.empty()) {
+        uav_points_subs_.push_back(create_subscription<sensor_msgs::msg::PointCloud2>(
+          topic, rclcpp::SensorDataQoS(),
+          [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+            if (!require_uav_observation_active_ || uav_observation_active_) {
+              on_detection_points(msg, "uav_depth_camera", 0.90);
+            }
+          }));
+      }
+    }
+    uav_observation_active_sub_ = create_subscription<std_msgs::msg::Bool>(
+      uav_observation_active_topic, 10,
+      [this](std_msgs::msg::Bool::SharedPtr msg) {
+        uav_observation_active_ = msg && msg->data;
       });
     if (!pseudocolor_gated_points_topic.empty()) {
       pseudocolor_gated_points_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -183,21 +294,44 @@ public:
     }
     ais_sub_ = create_subscription<std_msgs::msg::String>(
       ais_topic, 10, std::bind(&RadarSonarTracker::on_ais_targets, this, std::placeholders::_1));
+    c3_confirmed_sub_ = create_subscription<std_msgs::msg::String>(
+      c3_confirmed_topic, 10,
+      std::bind(&RadarSonarTracker::on_c3_confirmed, this, std::placeholders::_1));
 
     marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>("tracked_objects", 10);
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("tracked_object_poses", 10);
     text_pub_ = create_publisher<std_msgs::msg::String>("tracked_objects_text", 10);
     RCLCPP_INFO(
       get_logger(), "Tracking radar=%s sonar_detect=%s sonar_sectors=%zu gated=%s uav=%s pseudocolor=%s stf_gated=%s bev_gated=%s ais=%s",
-      radar_topic.c_str(), sonar_detect_topic_.empty() ? "off" : sonar_detect_topic_.c_str(), sonar_scan_topics_.size(), gated_points_topic.c_str(), uav_points_topic.c_str(),
+      radar_topic.c_str(), sonar_detect_topic_.empty() ? "off" : sonar_detect_topic_.c_str(), sonar_scan_topics_.size(),
+      gated_points_subs_.size() == 1 ? gated_points_topic.c_str() : "multi", uav_points_subs_.size() == 1 ? uav_points_topic.c_str() : "multi",
       pseudocolor_gated_points_topic.empty() ? "off" : pseudocolor_gated_points_topic.c_str(),
       stf_gated_points_topic.empty() ? "off" : stf_gated_points_topic.c_str(),
       bev_gated_points_topic.empty() ? "off" : bev_gated_points_topic.c_str(), ais_topic.c_str());
   }
 
 private:
+  void on_model_states(const gazebo_msgs::msg::ModelStates::SharedPtr msg)
+  {
+    if (!msg) {
+      return;
+    }
+    for (std::size_t i = 0; i < msg->name.size() && i < msg->pose.size(); ++i) {
+      if (msg->name[i] != usv_model_name_) {
+        continue;
+      }
+      usv_x_ = msg->pose[i].position.x;
+      usv_y_ = msg->pose[i].position.y;
+      usv_yaw_ = yaw_from_quaternion(msg->pose[i]);
+      has_usv_pose_ = true;
+      return;
+    }
+  }
+
   void on_sonar_detect(const c3_sonar_driver::msg::SonarDetect::SharedPtr msg)
   {
+    (void)msg;
+    return;
     if (!msg || msg->detect_id == last_sonar_detect_id_ || !std::isfinite(msg->confidence) || msg->confidence <= 0.0F) {
       return;
     }
@@ -222,6 +356,10 @@ private:
     double mount_yaw,
     std::size_t sector_index)
   {
+    (void)msg;
+    (void)mount_yaw;
+    (void)sector_index;
+    return;
     if (!msg) {
       return;
     }
@@ -273,6 +411,8 @@ private:
 
   void on_radar(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   {
+    (void)msg;
+    return;
     auto detections = cluster_radar_scan(*msg);
     const auto now = std::chrono::steady_clock::now();
     if (has_sonar_detection_ && std::chrono::duration<double>(now - last_sonar_time_).count() < sonar_detect_timeout_) {
@@ -327,7 +467,12 @@ private:
       const double count = static_cast<double>(cluster.size());
       const double spread = std::hypot(max_x - min_x, max_y - min_y);
       const double confidence = std::clamp(base_confidence + 0.02 * spread + 0.01 * count, 0.35, 0.95);
-      detections.push_back(Detection{sum_x / count, sum_y / count, 0.0, confidence, -1.0, source});
+      Detection detection;
+      detection.x = sum_x / count;
+      detection.y = sum_y / count;
+      detection.confidence = confidence;
+      detection.source = source;
+      detections.push_back(detection);
     }
     return detections;
   }
@@ -337,9 +482,15 @@ private:
     const std::string & source,
     double source_weight)
   {
-    const auto detections = parse_detection_cloud(*msg, source, source_weight);
+    if (!is_yolo_source(source)) {
+      return;
+    }
+    auto detections = parse_detection_cloud(*msg, source, source_weight);
     if (detections.empty()) {
       return;
+    }
+    for (auto & detection : detections) {
+      detection = detection_to_world(detection);
     }
     const auto now = std::chrono::steady_clock::now();
     update_tracks(detections, now);
@@ -348,7 +499,26 @@ private:
 
   void on_ais_targets(const std_msgs::msg::String::SharedPtr msg)
   {
-    const auto detections = parse_ais_targets(msg->data);
+    auto detections = parse_ais_targets(msg->data);
+    if (detections.empty()) {
+      return;
+    }
+    for (auto & detection : detections) {
+      detection = detection_to_world(detection);
+    }
+    const auto now = std::chrono::steady_clock::now();
+    update_tracks(detections, now);
+    publish_tracks();
+  }
+
+  void on_c3_confirmed(const std_msgs::msg::String::SharedPtr msg)
+  {
+    (void)msg;
+    return;
+    if (!msg) {
+      return;
+    }
+    const auto detections = parse_c3_confirmed_targets(msg->data);
     if (detections.empty()) {
       return;
     }
@@ -418,7 +588,12 @@ private:
       const double count = static_cast<double>(cluster.size());
       const double spread = std::hypot(max_x - min_x, max_y - min_y);
       const double confidence = std::clamp(0.45 + 0.08 * count + 0.08 * spread, 0.45, 0.95);
-      detections.push_back(Detection{sum_x / count, sum_y / count, 0.0, confidence, -1.0, "mmwave_radar"});
+      Detection detection;
+      detection.x = sum_x / count;
+      detection.y = sum_y / count;
+      detection.confidence = confidence;
+      detection.source = "mmwave_radar";
+      detections.push_back(detection);
     }
     return detections;
   }
@@ -452,14 +627,65 @@ private:
       }
 
       const double raw_confidence = offset_intensity >= 0 ? read_float(base, offset_intensity) : 0.55;
-      const double confidence = std::clamp(raw_confidence * source_weight, min_camera_confidence_, 0.98);
-      if (confidence < min_camera_confidence_) {
+      const bool from_uav = source.rfind("uav_", 0) == 0;
+      const double minimum_confidence = from_uav ? min_uav_camera_confidence_ : min_camera_confidence_;
+      if (!std::isfinite(raw_confidence) || raw_confidence < minimum_confidence) {
         continue;
       }
+      const double confidence = std::clamp(raw_confidence * source_weight, 0.0, 0.98);
       const double class_id = offset_class_id >= 0 ? read_float(base, offset_class_id) : -1.0;
-      detections.push_back(Detection{x, y, z, confidence, class_id, source});
+      auto match = std::find_if(detections.begin(), detections.end(), [&](const Detection & detection) {
+          return std::abs(detection.class_id - class_id) < 0.5 &&
+                 std::hypot(detection.x - x, detection.y - y) <= camera_detection_cluster_radius_;
+        });
+      if (match == detections.end()) {
+        Detection detection;
+        detection.x = x;
+        detection.y = y;
+        detection.z = z;
+        detection.confidence = confidence;
+        detection.class_id = class_id;
+        detection.source = source;
+        detections.push_back(detection);
+      } else {
+        const double old_weight = std::max(0.05, match->confidence);
+        const double new_weight = std::max(0.05, confidence);
+        match->x = (old_weight * match->x + new_weight * x) / (old_weight + new_weight);
+        match->y = (old_weight * match->y + new_weight * y) / (old_weight + new_weight);
+        match->z = (old_weight * match->z + new_weight * z) / (old_weight + new_weight);
+        match->confidence = std::max(match->confidence, confidence);
+      }
     }
     return detections;
+  }
+
+  static bool is_yolo_source(const std::string & source)
+  {
+    return source.find("camera") != std::string::npos ||
+           source.find("yolo") != std::string::npos;
+  }
+
+  Detection detection_to_world(const Detection & detection) const
+  {
+    if (!has_usv_pose_ || tracker_frame_id_ != "world") {
+      return detection;
+    }
+    Detection out = detection;
+    const double c = std::cos(usv_yaw_);
+    const double s = std::sin(usv_yaw_);
+    out.x = usv_x_ + c * detection.x - s * detection.y;
+    out.y = usv_y_ + s * detection.x + c * detection.y;
+    out.vx = c * detection.vx - s * detection.vy;
+    out.vy = s * detection.vx + c * detection.vy;
+    return out;
+  }
+
+  static double yaw_from_quaternion(const geometry_msgs::msg::Pose & pose)
+  {
+    const auto & q = pose.orientation;
+    return std::atan2(
+      2.0 * (q.w * q.z + q.x * q.y),
+      1.0 - 2.0 * (q.y * q.y + q.z * q.z));
   }
 
   static int field_offset(const sensor_msgs::msg::PointCloud2 & msg, const std::string & name)
@@ -500,11 +726,55 @@ private:
         continue;
       }
       extract_double(block, "\"class_id\":", det.class_id);
+      double mmsi = -1.0;
+      if (extract_double(block, "\"mmsi\":", mmsi) && std::isfinite(mmsi)) {
+        det.ais_mmsi = static_cast<std::int64_t>(std::llround(mmsi));
+      }
+      extract_double(block, "\"vx\":", det.vx);
+      extract_double(block, "\"vy\":", det.vy);
       det.confidence = ais_confidence_;
       extract_double(block, "\"confidence\":", det.confidence);
       det.confidence = std::clamp(det.confidence, min_ais_confidence_, 0.98);
       det.source = "ais";
       if (std::isfinite(det.x) && std::isfinite(det.y) && det.x > -5.0 &&
+        std::hypot(det.x, det.y) <= max_tracking_range_)
+      {
+        detections.push_back(det);
+      }
+      pos = end + 1;
+    }
+    return detections;
+  }
+
+  std::vector<Detection> parse_c3_confirmed_targets(const std::string & text) const
+  {
+    std::vector<Detection> detections;
+    std::size_t pos = 0;
+    while (true) {
+      const auto start = text.find("{\"object_id\":", pos);
+      if (start == std::string::npos) {
+        break;
+      }
+      const auto end = text.find('}', start);
+      if (end == std::string::npos) {
+        break;
+      }
+      const std::string block = text.substr(start, end - start + 1);
+      Detection det;
+      if (!extract_double(block, "\"x\":", det.x) || !extract_double(block, "\"y\":", det.y) ||
+        !extract_double(block, "\"class_id\":", det.class_id) ||
+        !extract_double(block, "\"confidence\":", det.confidence))
+      {
+        pos = end + 1;
+        continue;
+      }
+      extract_double(block, "\"z\":", det.z);
+      std::string source;
+      extract_string(block, "\"last_source\":\"", source);
+      det.source = source.find("uav_") != std::string::npos ?
+        "c3_confirmation_uav" : "c3_confirmation_main";
+      det.confidence = std::clamp(det.confidence, 0.0, 0.98);
+      if (std::isfinite(det.x) && std::isfinite(det.y) && det.class_id >= 0.0 &&
         std::hypot(det.x, det.y) <= max_tracking_range_)
       {
         detections.push_back(det);
@@ -531,6 +801,21 @@ private:
     }
   }
 
+  static bool extract_string(const std::string & text, const std::string & key, std::string & out)
+  {
+    const auto key_pos = text.find(key);
+    if (key_pos == std::string::npos) {
+      return false;
+    }
+    const auto value_start = key_pos + key.size();
+    const auto value_end = text.find('"', value_start);
+    if (value_end == std::string::npos) {
+      return false;
+    }
+    out = text.substr(value_start, value_end - value_start);
+    return true;
+  }
+
   void finish_cluster(
     std::vector<std::vector<std::pair<double, double>>> & clusters,
     const std::vector<std::pair<double, double>> & cluster) const
@@ -546,16 +831,20 @@ private:
       track.predict(now);
       ++track.misses;
     }
+    prune_stale_tracks(now);
 
     std::vector<Detection> unmatched = detections;
     for (auto & track : tracks_) {
       int best_index = -1;
-      double best_distance = association_gate_;
+      double best_score = std::numeric_limits<double>::infinity();
       for (std::size_t index = 0; index < unmatched.size(); ++index) {
         const auto & det = unmatched[index];
-        const double distance = std::hypot(track.x - det.x, track.y - det.y);
-        if (distance < best_distance) {
-          best_distance = distance;
+        if (!can_associate(track, det)) {
+          continue;
+        }
+        const double score = association_score(track, det);
+        if (score < best_score) {
+          best_score = score;
           best_index = static_cast<int>(index);
         }
       }
@@ -566,12 +855,27 @@ private:
     }
 
     for (const auto & det : unmatched) {
+      const bool ais_seed = det.source == "ais" && can_ais_create_track(det);
+      if ((!is_yolo_source(det.source) && !ais_seed) || det.class_id < 0.0) {
+        continue;
+      }
+      if (active_track_count_for_class(det.class_id) >= max_tracks_per_class_ &&
+        !replace_weaker_track_for_class(det, now))
+      {
+        continue;
+      }
       Track track;
       track.id = next_track_id_++;
       track.x = det.x;
       track.y = det.y;
+      track.vx = det.vx;
+      track.vy = det.vy;
       track.confidence = det.confidence;
       track.class_id = det.class_id;
+      track.avg_intensity = det.confidence;
+      track.bbox_aspect_ratio = std::clamp(det.aspect_ratio, 0.2, 5.0);
+      track.range_rate = det.range_rate;
+      track.ais_mmsi = det.ais_mmsi;
       track.last_source = det.source;
       track.last_update = now;
       track.last_predict = now;
@@ -579,21 +883,141 @@ private:
       tracks_.push_back(track);
     }
 
+    prune_stale_tracks(now);
+  }
+
+  void prune_stale_tracks(const std::chrono::steady_clock::time_point & now)
+  {
     tracks_.erase(
       std::remove_if(
         tracks_.begin(), tracks_.end(),
         [&](const Track & track) {
           return std::chrono::duration<double>(now - track.last_update).count() >= track_timeout_ ||
-                 track.misses >= 20;
+                 track.misses >= max_track_misses_;
         }),
       tracks_.end());
+  }
+
+  bool replace_weaker_track_for_class(
+    const Detection & det,
+    const std::chrono::steady_clock::time_point & now)
+  {
+    int weakest_index = -1;
+    double weakest_confidence = std::numeric_limits<double>::infinity();
+    for (std::size_t i = 0; i < tracks_.size(); ++i) {
+      const auto & track = tracks_[i];
+      if (track.class_id < 0.0 || std::abs(track.class_id - det.class_id) >= 0.5) {
+        continue;
+      }
+      if (track.confidence < weakest_confidence) {
+        weakest_confidence = track.confidence;
+        weakest_index = static_cast<int>(i);
+      }
+    }
+    if (weakest_index < 0 || det.confidence <= weakest_confidence + class_replacement_margin_) {
+      return false;
+    }
+    auto & track = tracks_[static_cast<std::size_t>(weakest_index)];
+    track.x = det.x;
+    track.y = det.y;
+    track.vx = det.vx;
+    track.vy = det.vy;
+    track.covariance_m2 = 16.0;
+    track.hits = 1;
+    track.misses = 0;
+    track.confidence = det.confidence;
+    track.class_id = det.class_id;
+    track.avg_intensity = det.confidence;
+    track.bbox_aspect_ratio = std::clamp(det.aspect_ratio, 0.2, 5.0);
+    track.range_rate = det.range_rate;
+    track.ais_mmsi = det.ais_mmsi;
+    track.last_source = det.source;
+    track.state = "候选";
+    track.last_update = now;
+    track.last_predict = now;
+    track.sources.clear();
+    track.sources.insert(det.source);
+    return true;
+  }
+
+  int active_track_count_for_class(double class_id) const
+  {
+    return static_cast<int>(std::count_if(
+      tracks_.begin(), tracks_.end(), [class_id](const Track & track) {
+        return track.class_id >= 0.0 && std::abs(track.class_id - class_id) < 0.5;
+      }));
+  }
+
+  bool can_ais_create_track(const Detection & det) const
+  {
+    if (ais_can_create_tracks_) {
+      return det.confidence >= min_ais_confidence_;
+    }
+    if (!ais_can_create_target_tracks_ || det.confidence < min_ais_confidence_) {
+      return false;
+    }
+    return std::any_of(ais_target_class_ids_.begin(), ais_target_class_ids_.end(),
+      [&det](double class_id) {return std::abs(det.class_id - class_id) < 0.5;});
+  }
+
+  double mahalanobis_distance(const Track & track, const Detection & det) const
+  {
+    const double variance = std::max(
+      0.5, track.covariance_m2 + 2.0 * (1.0 - std::clamp(det.confidence, 0.0, 0.98)));
+    const double dx = det.x - track.x;
+    const double dy = det.y - track.y;
+    return std::sqrt((dx * dx + dy * dy) / variance);
+  }
+
+  double feature_similarity(const Track & track, const Detection & det) const
+  {
+    double score = 0.0;
+    double weight = 0.0;
+    if (track.class_id >= 0.0 && det.class_id >= 0.0) {
+      score += std::abs(track.class_id - det.class_id) < 0.5 ? 0.45 : 0.0;
+      weight += 0.45;
+    }
+    score += (1.0 - std::clamp(std::abs(track.avg_intensity - det.confidence), 0.0, 1.0)) * 0.25;
+    weight += 0.25;
+    const double aspect_delta = std::abs(track.bbox_aspect_ratio - std::clamp(det.aspect_ratio, 0.2, 5.0));
+    score += (1.0 - std::clamp(aspect_delta / 3.0, 0.0, 1.0)) * 0.15;
+    weight += 0.15;
+    score += (1.0 - std::clamp(std::abs(track.range_rate - det.range_rate) / 2.0, 0.0, 1.0)) * 0.15;
+    weight += 0.15;
+    return weight > 0.0 ? score / weight : 0.0;
+  }
+
+  bool can_associate(const Track & track, const Detection & det) const
+  {
+    if (det.source == "ais" && det.ais_mmsi >= 0 && track.ais_mmsi >= 0) {
+      if (det.ais_mmsi != track.ais_mmsi) {
+        return false;
+      }
+      return std::hypot(track.x - det.x, track.y - det.y) <= ais_maintenance_gate_m_;
+    }
+    if (mahalanobis_distance(track, det) < mahalanobis_gate_) {
+      return true;
+    }
+    const double distance = std::hypot(track.x - det.x, track.y - det.y);
+    const double observed_vx = 2.0 * (det.x - track.x);
+    const double observed_vy = 2.0 * (det.y - track.y);
+    const double velocity_error = std::hypot(observed_vx - track.vx, observed_vy - track.vy);
+    if (distance < association_gate_ * 1.5 && velocity_error < velocity_gate_mps_) {
+      return true;
+    }
+    return feature_similarity(track, det) >= feature_similarity_gate_ && distance < association_gate_ * 3.0;
+  }
+
+  double association_score(const Track & track, const Detection & det) const
+  {
+    return mahalanobis_distance(track, det) - 0.8 * feature_similarity(track, det);
   }
 
   void publish_tracks()
   {
     visualization_msgs::msg::MarkerArray marker_array;
     geometry_msgs::msg::PoseArray pose_array;
-    pose_array.header.frame_id = base_frame_;
+    pose_array.header.frame_id = tracker_frame_id_;
     pose_array.header.stamp = get_clock()->now();
 
     std::ostringstream status;
@@ -680,6 +1104,8 @@ private:
       status.setf(std::ios::fixed, std::ios::floatfield);
       status << std::setprecision(2)
              << "{\"id\":" << track.id
+             << ",\"frame_id\":\"" << tracker_frame_id_ << "\""
+             << ",\"state\":\"" << track.state << "\""
              << ",\"x\":" << track.x
              << ",\"y\":" << track.y
              << ",\"vx\":" << track.vx
@@ -687,8 +1113,11 @@ private:
              << ",\"speed\":" << speed
              << ",\"confidence\":" << track.confidence
              << ",\"class_id\":" << track.class_id
+             << ",\"ais_mmsi\":" << track.ais_mmsi
+             << ",\"covariance_m2\":" << track.covariance_m2
              << ",\"last_source\":\"" << track.last_source << "\""
              << ",\"hits\":" << track.hits
+             << ",\"misses\":" << track.misses
              << ",\"sources\":[";
       int source_index = 0;
       for (const auto & source : track.sources) {
@@ -709,6 +1138,8 @@ private:
   }
 
   std::string base_frame_{"base_link"};
+  std::string tracker_frame_id_{"world"};
+  std::string usv_model_name_{"wamv"};
   std::string sonar_detect_topic_{"/sonar/detect"};
   double radar_x_offset_{-0.35};
   double radar_y_offset_{0.0};
@@ -724,9 +1155,27 @@ private:
   double track_timeout_{2.0};
   double camera_fusion_timeout_{0.8};
   double uav_fusion_timeout_{1.2};
-  double min_camera_confidence_{0.20};
+  double min_camera_confidence_{0.30};
+  double min_uav_camera_confidence_{0.15};
+  double camera_detection_cluster_radius_{4.0};
   double ais_confidence_{0.88};
   double min_ais_confidence_{0.45};
+  double ais_maintenance_gate_m_{25.0};
+  int max_tracks_per_class_{2};
+  int max_track_misses_{400};
+  double class_replacement_margin_{0.05};
+  double mahalanobis_gate_{3.0};
+  double velocity_gate_mps_{1.0};
+  double feature_similarity_gate_{0.70};
+  bool ais_can_create_tracks_{false};
+  bool ais_can_create_target_tracks_{true};
+  std::vector<double> ais_target_class_ids_;
+  bool require_uav_observation_active_{true};
+  bool uav_observation_active_{false};
+  bool has_usv_pose_{false};
+  double usv_x_{0.0};
+  double usv_y_{0.0};
+  double usv_yaw_{0.0};
   int next_track_id_{1};
   bool has_sonar_detection_{false};
   uint32_t last_sonar_detect_id_{0};
@@ -734,17 +1183,20 @@ private:
   std::chrono::steady_clock::time_point last_sonar_time_{std::chrono::steady_clock::now()};
   std::vector<Track> tracks_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr radar_sub_;
+  rclcpp::Subscription<gazebo_msgs::msg::ModelStates>::SharedPtr model_states_sub_;
   std::vector<std::string> sonar_scan_topics_;
   std::vector<double> sonar_scan_yaws_;
   std::vector<std::deque<std::vector<std::pair<double, double>>>> sonar_sector_windows_;
   std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> sonar_subs_;
   rclcpp::Subscription<c3_sonar_driver::msg::SonarDetect>::SharedPtr sonar_detect_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr gated_points_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr uav_points_sub_;
+  std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr> gated_points_subs_;
+  std::vector<rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr> uav_points_subs_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr uav_observation_active_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pseudocolor_gated_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr stf_gated_points_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr bev_gated_points_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr ais_sub_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr c3_confirmed_sub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr text_pub_;

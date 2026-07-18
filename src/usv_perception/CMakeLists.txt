@@ -85,8 +85,13 @@ target_include_directories(radar_sonar_tracker PRIVATE include)
 ament_target_dependencies(radar_sonar_tracker ${NODE_DEPS})
 
 add_executable(c3_multimodal_buffer_fusion src/c3_multimodal_buffer_fusion.cpp)
-target_include_directories(c3_multimodal_buffer_fusion PRIVATE include)
+target_include_directories(c3_multimodal_buffer_fusion PRIVATE include ${ONNXRUNTIME_INCLUDE_DIR})
 ament_target_dependencies(c3_multimodal_buffer_fusion ${NODE_DEPS})
+target_link_libraries(c3_multimodal_buffer_fusion ${ONNXRUNTIME_LIBRARY})
+set_target_properties(c3_multimodal_buffer_fusion PROPERTIES
+  BUILD_RPATH "$<TARGET_FILE_DIR:c3_multimodal_buffer_fusion>;${ONNXRUNTIME_ROOT}/lib"
+  INSTALL_RPATH "${ONNXRUNTIME_ROOT}/lib"
+)
 
 add_executable(uav_patrol_controller src/uav_patrol_controller.cpp)
 target_include_directories(uav_patrol_controller PRIVATE include)

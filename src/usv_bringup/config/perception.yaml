@@ -8,35 +8,68 @@ radar_sonar_tracker:
     radar_x_offset: -0.35
     radar_y_offset: 0.0
     sonar_x_offset: 0.65
-    sonar_min_points_for_valid_detect: 20
-    sonar_default_confidence: 0.65
+    sonar_min_points_for_valid_detect: 5
+    sonar_default_confidence: 0.72
     sonar_detect_timeout_s: 2.0
     cluster_gap: 0.75
     min_cluster_points: 2
     max_tracking_range: 115.0
     association_gate: 4.5
-    track_timeout: 4.0
-    gated_points_topic: /gated_camera/detection_points
-    uav_points_topic: /uav/gated_camera/detection_points
+    track_timeout: 120.0
+    gated_points_topic: ""
+    gated_points_topics:
+      - /gated_camera/detection_points
+      - /gated_camera/right/detection_points
+      - /gated_camera/back/detection_points
+      - /gated_camera/left/detection_points
+    uav_points_topic: ""
+    uav_points_topics:
+      - /uav/gated_camera/detection_points
+      - /uav/gated_camera/right/detection_points
+      - /uav/gated_camera/back/detection_points
+      - /uav/gated_camera/left/detection_points
+    uav_depth_points_topics:
+      - /uav/depth_camera/detection_points
+      - /uav/depth_camera/right/detection_points
+      - /uav/depth_camera/back/detection_points
+      - /uav/depth_camera/left/detection_points
+    uav_observation_active_topic: /uav/observation/active
+    require_uav_observation_active: true
     pseudocolor_gated_points_topic: /gated_camera/pseudocolor/detection_points
     stf_gated_points_topic: /gated_camera/stf_detection_points
     bev_gated_points_topic: /gated_camera/bev_detection_points
     ais_topic: /ais/targets
     camera_fusion_timeout: 0.8
     uav_fusion_timeout: 1.2
-    min_camera_confidence: 0.15
+    # Main camera can acquire a target at 30%; UAV close inspection starts at 15%.
+    min_camera_confidence: 0.30
+    min_uav_camera_confidence: 0.15
+    camera_detection_cluster_radius: 4.0
+    tracker_frame_id: world
+    max_tracks_per_class: 2
+    max_track_misses: 400
+    class_replacement_margin: 0.05
+    mahalanobis_gate: 3.0
+    velocity_gate_mps: 1.0
+    feature_similarity_gate: 0.70
     ais_confidence: 0.88
     min_ais_confidence: 0.45
+    # AIS refreshes any visual track after spatial/MMSI association. Only the
+    # configured target class may create a track without prior YOLO evidence.
+    ais_can_create_tracks: false
+    ais_can_create_target_tracks: true
+    ais_target_class_ids: [0.0]
+    ais_maintenance_gate_m: 25.0
 
 c3_multimodal_buffer_fusion:
   ros__parameters:
     base_frame: base_link
     usv_model_name: wamv
     radar_topics:
-      - /mmwave/front/h10m/detections
-      - /mmwave/right/h10m/detections
-      - /mmwave/back/h10m/detections
-      - /mmwave/left/h10m/detections
+      - /mmwave/front/h3m/detections
+      - /mmwave/right/h3m/detections
+      - /mmwave/back/h3m/detections
+      - /mmwave/left/h3m/detections
       - /mmwave/front/h4m/detections
       - /mmwave/right/h4m/detections
       - /mmwave/back/h4m/detections
@@ -45,52 +78,167 @@ c3_multimodal_buffer_fusion:
       - /mmwave/right/h1p9m/detections
       - /mmwave/back/h1p9m/detections
       - /mmwave/left/h1p9m/detections
-      - /mmwave/front/h1p5m/detections
-      - /mmwave/right/h1p5m/detections
-      - /mmwave/back/h1p5m/detections
-      - /mmwave/left/h1p5m/detections
-      - /mmwave/front/h1m/detections
-      - /mmwave/right/h1m/detections
-      - /mmwave/back/h1m/detections
-      - /mmwave/left/h1m/detections
     # The fusion buffer receives the same delayed/noisy output as the tracker.
     sonar_detect_topic: /sonar/detect
-    normal_camera_topic: /gated_camera/detection_points
-    gated_camera_topic: /gated_camera/pseudocolor/detection_points
+    normal_camera_topic: ""
+    normal_camera_topics:
+      - /gated_camera/detection_points
+      - /gated_camera/right/detection_points
+      - /gated_camera/back/detection_points
+      - /gated_camera/left/detection_points
+    gated_camera_topic: ""
     stf_camera_topic: /gated_camera/stf_detection_points
     bev_topic: /gated_camera/bev_detection_points
-    uav_gated_topic: /uav/gated_camera/detection_points
+    uav_gated_topic: ""
+    uav_gated_topics:
+      - /uav/gated_camera/detection_points
+      - /uav/gated_camera/right/detection_points
+      - /uav/gated_camera/back/detection_points
+      - /uav/gated_camera/left/detection_points
+    # A second UAV YOLO path uses raw RGB with the same depth image for ranging.
+    uav_depth_topics:
+      - /uav/depth_camera/detection_points
+      - /uav/depth_camera/right/detection_points
+      - /uav/depth_camera/back/detection_points
+      - /uav/depth_camera/left/detection_points
+    uav_observation_active_topic: /uav/observation/active
+    require_uav_observation_active: true
     depth_camera_detection_topic: /depth_camera/detection_points
     depth_topic: /depth_camera/dehazed_points
     model_states_topic: /model_states
-    buffer_keep_s: 0.65
-    sync_tolerance_s: 0.35
-    sonar_fusion_window_frames: 3
+    buffer_keep_s: 1.20
+    sync_tolerance_s: 0.80
+    sonar_fusion_window_frames: 5
     publish_rate_hz: 8.0
+    # Dashboard-only RGB diagnostics are rate-limited independently of fusion.
+    diagnostic_image_rate_hz: 3.0
     max_points_per_cloud: 2500
+    # Radar display is clustered independently from the raw radar data used by
+    # heatmap inference, so RViz stays readable without hiding true returns.
+    radar_display_max_points: 100
+    radar_display_cluster_radius_m: 3.0
+    radar_display_min_cluster_points: 2
+    radar_display_max_points_per_cluster: 6
     max_range_m: 160.0
-    radar_min_range_m: 6.0
+    # The converter now suppresses near-field sea clutter itself, so close
+    # radar target returns can stay visible in fusion diagnostics.
+    radar_min_range_m: 2.0
+    # Keep near-hull wake clutter visible for diagnostics but prevent it from
+    # dominating the UAV-search heatmap.
+    radar_near_heatmap_radius_m: 50.0
+    radar_near_heatmap_min_weight: 0.03
     close_range_m: 30.0
     heatmap_resolution_m: 1.0
     heatmap_x_min: 0.0
     heatmap_x_max: 150.0
     heatmap_y_min: -75.0
     heatmap_y_max: 75.0
+    # Point-cloud diagnostic images use a separate full-surround view.  The
+    # forward-only heatmap above remains the UAV-search coordinate system.
+    pointcloud_visual_x_min: -150.0
+    pointcloud_visual_x_max: 150.0
+    pointcloud_visual_y_min: -150.0
+    pointcloud_visual_y_max: 150.0
     heatmap_threshold: 0.55
     heatmap_source_cell_cap: 1.25
+    # Preserve the 1 m grid while fusing neighbouring modal points into clusters.
+    heatmap_cluster_sigma_m: 1.0
+    heatmap_cluster_radius_m: 2.0
+    heatmap_peak_nms_radius_m: 5.0
+    heatmap_max_peaks: 5
+    # vote preserves the original rule-based heatmap. neural runs
+    # pos_confidence_best.onnx using only the buffered sensor observations.
+    heatmap_mode: vote
+    neural_heatmap_model_path: ""
+    neural_heatmap_threshold: 0.50
+    neural_heatmap_nms_kernel: 5
+    heatmap_temporal_smoothing_alpha: 0.70
+    neural_max_points_per_modality: 1200
+    # auto tries CUDA first and falls back to CPU. cuda requires a GPU-enabled
+    # ONNX Runtime distribution; cpu disables CUDA probing explicitly.
+    neural_execution_provider: auto
+    neural_intra_op_threads: 4
+    neural_cuda_device_id: 0
+    neural_depth_optical_frame: true
+    neural_depth_x_offset_m: 1.65
+    neural_depth_y_offset_m: 0.0
+    neural_depth_z_offset_m: 0.98
+    # SonarDetect carries a simulated beam footprint. Keep its delayed returns
+    # long enough to fuse several pings without subscribing to ideal Gazebo rays.
+    sonar_buffer_keep_s: 2.5
+    sonar_sync_tolerance_s: 1.5
+    # Neural mode filters only radar/sonar with sensor-space temporal evidence.
+    # Camera and depth observations keep their existing semantic processing.
+    neural_clutter_filter_enabled: true
+    neural_clutter_cluster_radius_m: 2.5
+    neural_clutter_min_cluster_points: 2
+    neural_clutter_mahalanobis_gate: 9.21
+    neural_clutter_measurement_noise_m: 2.0
+    neural_clutter_velocity_noise_mps: 1.2
+    neural_clutter_confirmation_interval_s: 0.30
+    neural_clutter_min_track_hits: 3
+    neural_clutter_track_timeout_s: 2.0
+    neural_clutter_residual_mean_max: 6.0
+    neural_clutter_cfar_scale: 1.10
+    # Stricter radar-only thresholds. Sonar keeps the general values above.
+    neural_radar_min_cluster_points: 3
+    neural_radar_mahalanobis_gate: 6.0
+    neural_radar_confirmation_interval_s: 0.45
+    neural_radar_min_track_hits: 4
+    neural_radar_residual_mean_max: 3.5
+    neural_radar_cfar_scale: 1.35
     detected_suppression_radius: 9.0
     confirmation_radius: 10.0
     semantic_confirmation_radius: 15.0
     enable_spatial_fallback_confirmation: true
-    spatial_confirmation_min_points: 4
+    spatial_confirmation_min_points: 10
     spatial_confirmation_min_sources: 2
+    spatial_confirmation_min_frames: 3
+    spatial_confirmation_max_spread_m: 4.0
+    spatial_confirmation_association_m: 3.0
+    spatial_confirmation_timeout_s: 1.2
     object_association_radius: 14.0
+    # Existing objects are refreshed by compatible camera/UAV semantic points,
+    # even when that object is not this frame's heatmap maximum.
+    object_semantic_maintenance_radius: 12.0
+    object_semantic_maintenance_min_confidence: 0.22
     detected_object_timeout_s: 30.0
     ekf_process_noise: 0.35
     ekf_measurement_noise: 0.9
-    drone_goal_altitude: 24.0
+    # Transit commands stay low enough for useful gated-camera image scale.
+    drone_goal_altitude: 10.0
     drone_goal_grid_m: 1.0
+    # The USV handles targets inside 30 m.  The UAV is dispatched only to
+    # the strongest heatmap candidate outside that perimeter.
     drone_dispatch_min_range_m: 30.0
+    # A world-frame heatmap cluster must remain spatially stable for seven seconds before the
+    # UAV receives a new mission. Localization is selected hierarchically:
+    # 5 m coarse cell -> 2 m medium cell -> 1 m final cell.
+    uav_goal_stability_window_s: 7.0
+    uav_goal_update_period_s: 7.0
+    uav_goal_min_stability_ratio: 0.65
+    uav_goal_min_samples: 12
+    # Keep world-frame alpha-beta records of inspected heatmap clusters.
+    inspection_cluster_association_m: 7.0
+    inspection_cluster_memory_s: 600.0
+    # UAV observes one stable peak for this long before the next peak is queued.
+    uav_inspection_dwell_s: 4.0
+    # c3_gate classes: moving_vessel, service_boat, research_platform,
+    # fishing_boat, ship_far, obstacle.
+    uav_confirmation_class_ids: [0.0]
+    # Rank deduplicated UAV visual objects. A 15% object is worth approaching;
+    # a 35% result can directly hand the target to the main controller.
+    uav_confirmation_min_confidence: 0.35
+    uav_direct_confirmation_min_confidence: 0.35
+    main_direct_confirmation_min_confidence: 0.30
+    # Weighted UAV recognition: gated three-colour YOLO is preferred; raw RGB
+    # plus depth YOLO supplies an independent visual vote.
+    uav_gated_confidence_weight: 1.20
+    uav_depth_confidence_weight: 0.90
+    # The top ranked object is dispatched only when its fused YOLO score is >=15%.
+    uav_dispatch_min_yolo_confidence: 0.15
+    uav_dispatch_association_m: 12.0
+    visual_candidate_cluster_radius_m: 4.0
     evaluation_model_names:
       - moving_vessel
       - small_fishing_boat
@@ -111,30 +259,30 @@ c3_multimodal_buffer_fusion:
 gated_camera_recognizer:
   ros__parameters:
     image_topic: /gated_camera/image_raw
-    depth_topic: /depth_camera/depth/image_raw
+    depth_topic: /gated_camera/depth/image_raw
     camera_info_topic: /gated_camera/camera_info
     output_prefix: gated_camera
     frame_id: gated_camera_link
-    detection_input: raw
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    detection_input: range_view
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/gated_camera.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    # Current src/usv_bringup/models/best.onnx metadata:
-    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Current gated_camera.onnx metadata:
+    # {0: moving_vessel, 1: service_boat, 2: research_platform,
+    #  3: fishing_boat, 4: ship_far, 5: obstacle}.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
-    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.10
-    enable_yolo_empty_contour_fallback: true
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
     dehaze_min_transmission: 0.18
     dehaze_depth_beta: 0.018
     base_frame: base_link
-    camera_x_offset: 1.55
+    camera_x_offset: 0.78
     camera_y_offset: 0.0
-    camera_z_offset: 1.20
+    camera_z_offset: -0.12
     camera_horizontal_fov: 1.20
     camera_fx: 0.0
     camera_fy: 0.0
@@ -144,8 +292,9 @@ gated_camera_recognizer:
     camera_calibration_height: 0.0
     use_tf_transform: true
     use_camera_info: true
-    depth_roi_shrink: 0.20
-    min_contour_area: 260.0
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
     process_stride: 1
     gate_near: [2.0, 18.0]
     gate_mid: [12.0, 42.0]
@@ -159,16 +308,14 @@ pseudocolor_gated_camera_recognizer:
     output_prefix: gated_camera/pseudocolor
     frame_id: gated_camera_link
     detection_input: range_view
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/gated_camera.onnx when enabled.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    # Current src/usv_bringup/models/best1.onnx metadata:
-    # {0: buoy, 1: debris_container, 2: fishing_boat, 3: floating_obstacle, 4: platform, 5: vessel}.
+    # Matches gated_camera.onnx output order.
     # Keep this list in the exact model output order; detection PointCloud2 class_id uses this order.
-    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.10
-    enable_yolo_empty_contour_fallback: true
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -187,8 +334,9 @@ pseudocolor_gated_camera_recognizer:
     camera_calibration_height: 0.0
     use_tf_transform: true
     use_camera_info: true
-    depth_roi_shrink: 0.20
-    min_contour_area: 260.0
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
     process_stride: 1
     gate_near: [2.0, 18.0]
     gate_mid: [12.0, 42.0]
@@ -202,24 +350,22 @@ uav_gated_camera_recognizer:
     output_prefix: uav/gated_camera
     frame_id: uav_gated_camera_link
     detection_input: range_view
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best1.onnx by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/plane_gated.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    # UAV uses the pseudo-color/range-view model by default.
-    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.10
-    enable_yolo_empty_contour_fallback: true
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
     enable_dehaze: true
     dehaze_strength: 0.55
     dehaze_omega: 0.85
     dehaze_min_transmission: 0.20
     dehaze_depth_beta: 0.010
     base_frame: base_link
-    camera_x_offset: 1.55
+    camera_x_offset: 0.78
     camera_y_offset: 0.0
-    camera_z_offset: 1.20
-    camera_horizontal_fov: 0.82
+    camera_z_offset: -0.12
+    camera_horizontal_fov: 1.15
     camera_fx: 0.0
     camera_fy: 0.0
     camera_cx: 0.0
@@ -228,12 +374,53 @@ uav_gated_camera_recognizer:
     camera_calibration_height: 0.0
     use_tf_transform: true
     use_camera_info: true
-    depth_roi_shrink: 0.20
-    min_contour_area: 360.0
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
     process_stride: 1
-    gate_near: [10.0, 45.0]
-    gate_mid: [35.0, 110.0]
-    gate_far: [90.0, 230.0]
+    # 5 m flight height: keep the near surface and close inspection object in
+    # the three-colour gate instead of masking them as black.
+    gate_near: [1.0, 12.0]
+    gate_mid: [8.0, 30.0]
+    gate_far: [25.0, 100.0]
+
+uav_depth_camera_recognizer:
+  ros__parameters:
+    image_topic: /uav/gated_camera/image_raw
+    depth_topic: /uav/gated_camera/depth/image_raw
+    camera_info_topic: /uav/gated_camera/camera_info
+    output_prefix: uav/depth_camera
+    frame_id: uav_gated_camera_link
+    # Raw RGB detection with depth used only for range and point projection.
+    detection_input: raw
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/plane.onnx.
+    yolo_input_width: 640
+    yolo_input_height: 640
+    yolo_nms_threshold: 0.45
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
+    enable_dehaze: true
+    dehaze_strength: 0.55
+    dehaze_omega: 0.85
+    dehaze_min_transmission: 0.20
+    dehaze_depth_beta: 0.010
+    base_frame: base_link
+    camera_x_offset: 0.78
+    camera_y_offset: 0.0
+    camera_z_offset: -0.12
+    camera_horizontal_fov: 1.15
+    camera_fx: 0.0
+    camera_fy: 0.0
+    camera_cx: 0.0
+    camera_cy: 0.0
+    camera_calibration_width: 0.0
+    camera_calibration_height: 0.0
+    use_tf_transform: true
+    use_camera_info: true
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
+    process_stride: 1
 
 depth_camera_recognizer:
   ros__parameters:
@@ -243,13 +430,12 @@ depth_camera_recognizer:
     output_prefix: depth_camera
     frame_id: depth_camera_link
     detection_input: raw
-    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/best.onnx by default.
+    yolo_model_path: "" # sim.launch.py sets src/usv_bringup/models/camera.onnx by default.
     yolo_input_width: 640
     yolo_input_height: 640
     yolo_nms_threshold: 0.45
-    class_names: [buoy, debris_container, fishing_boat, floating_obstacle, platform, vessel]
-    confidence_threshold: 0.10
-    enable_yolo_empty_contour_fallback: true
+    class_names: [moving_vessel, service_boat, research_platform, fishing_boat, ship_far, obstacle]
+    confidence_threshold: 0.08
     enable_dehaze: true
     dehaze_strength: 0.65
     dehaze_omega: 0.88
@@ -268,8 +454,9 @@ depth_camera_recognizer:
     camera_calibration_height: 0.0
     use_tf_transform: true
     use_camera_info: true
-    depth_roi_shrink: 0.20
-    min_contour_area: 260.0
+    depth_roi_shrink: 0.12
+    bbox_support_grid_side: 3
+    bbox_support_score_scale: 0.82
     process_stride: 1
 
 gated_slice_fusion_recognizer:
@@ -363,20 +550,45 @@ uav_patrol_controller:
   ros__parameters:
     model_name: scout_uav
     update_rate: 8.0
-    center_x: 14.0
+    center_x: 42.0
     center_y: 0.0
-    altitude: 24.0
-    radius_x: 12.0
-    radius_y: 8.0
-    angular_speed: 0.060
-    patrol_speed: 0.70
-    camera_pitch: 0.30
+    # Keep every operating mode low enough that nearby vessels fill the frame.
+    altitude: 5.0
+    radius_x: 10.0
+    radius_y: 10.0
+    angular_speed: 0.120
+    patrol_speed: 1.40
+    # The optical mount is mildly down-looking. Patrol stays shallow enough to
+    # see objects ahead, while observation pitches down toward the close target.
+    camera_pitch: -0.25
+    patrol_camera_pitch: -0.25
+    camera_mount_pitch: 0.55
+    camera_pitch_min: -0.35
+    camera_pitch_max: 0.45
     usv_model_name: wamv
     model_states_topic: /model_states
     external_goal_topic: /c3/drone/goal
-    external_goal_timeout: 4.0
-    external_goal_speed: 1.6
+    assist_request_topic: /uav/assist_request
+    c3_detected_topic: /c3/detected_objects
+    track_status_topic: /tracked_objects_text
+    # C3 updates stable UAV goals every seven seconds; retain the last mission
+    # long enough for the flight controller to reach its observation point.
+    external_goal_timeout: 12.0
+    assist_goal_timeout: 3.0
+    uav_track_timeout: 45.0
+    tracker_target_max_misses: 80
+    external_goal_speed: 3.2
     goal_arrive_radius: 2.0
+    # The USV identifies targets inside 30 m.  UAV patrol and heatmap observation
+    # remain outside this perimeter, then enable UAV-camera detections for tracking.
+    observation_standoff_m: 3.0
+    observation_altitude: 5.0
+    observation_arrive_radius: 1.2
+    observation_active_topic: /uav/observation/active
+    minimum_operating_range_m: 30.0
+    # This Bool represents a future low-battery event. Only return mode may fly inside 30 m.
+    return_requested_topic: /uav/return_requested
+    return_altitude: 5.0
     # "px4" is the real flight-control path; sim.launch.py uses the modeled Classic backend.
     control_backend: px4
     px4_goal_topic: /uav/offboard_goal
@@ -395,10 +607,11 @@ uav_flight_simulator:
     update_rate_hz: 30.0
     command_delay_s: 0.22
     command_timeout_s: 1.5
-    max_speed_mps: 5.0
+    max_speed_mps: 10.0
+    position_speed_gain: 1.44
     max_climb_rate_mps: 2.0
-    max_accel_mps2: 2.4
-    velocity_time_constant_s: 0.65
+    max_accel_mps2: 4.8
+    velocity_time_constant_s: 0.45
     max_yaw_rate_rps: 1.25
     yaw_time_constant_s: 0.45
     wind_speed_mps: 0.65
@@ -428,11 +641,23 @@ usv_target_follower:
     pose_topic: /tracked_object_poses
     track_status_topic: /tracked_objects_text
     c3_detected_topic: /c3/detected_objects
+    uav_assist_topic: /uav/assist_request
+    # Normal mode never reads another Gazebo model's pose. demo_mode is an
+    # explicit opt-in for a stable presentation run only.
+    model_states_topic: /model_states
+    demo_mode: false
+    demo_target_model_name: moving_vessel
+    flight_controller_goal_topic: /usv/offboard_goal
+    flight_controller_standoff_m: 7.0
+    demo_target_confidence: 0.98
+    demo_target_smoothing_tau_s: 1.2
     update_rate: 15.0
     max_speed: 2.20
     max_yaw_rate: 1.05
     desired_standoff: 7.0
-    target_timeout: 5.0
+    # A class-confirmed target is predicted through short sensor dropouts. This
+    # is not permanent following: no measurement for 15 s releases the lock.
+    target_timeout: 60.0
     track_status_timeout: 2.0
     max_follow_range: 170.0
     yaw_gain: 1.45
@@ -444,14 +669,35 @@ usv_target_follower:
     min_chase_speed: 0.80
     far_range_speed_boost: 0.55
     stale_target_speed_scale: 0.85
-    target_lock_timeout: 8.0
-    target_reacquire_gate: 18.0
+    target_lock_timeout: 60.0
+    target_reacquire_gate: 22.0
     turn_slowdown_gain: 0.20
-    follow_class_id: 5.0
-    follow_class_ids: [5.0, 2.0]
+    # Smooth noisy relative bearings before changing hull yaw.  Unconfirmed
+    # tracks cannot stop the vessel as obstacles.
+    target_bearing_filter_tau_s: 7.0
+    heading_deadband_rad: 0.06
+    follow_class_id: 0.0
+    follow_class_ids: [0.0]
     prefer_follow_class: true
     min_follow_confidence: 0.12
-    min_track_hits: 1
+    min_track_hits: 3
+    max_follow_track_misses: 80
+    require_follow_class_for_acquisition: true
+    # AIS/radar/sonar may maintain an acquired lock, but cannot create one by
+    # themselves. First acquisition must come from a camera or C3 confirmation.
+    require_visual_source_for_acquisition: true
+    require_uav_source_for_initial_acquisition: true
+    # Inside the camera-effective range, do not steer into a sector that has no
+    # recent 360-degree ship-camera detection.
+    require_camera_sector_confirmation: true
+    camera_sector_gate_range_m: 80.0
+    camera_sector_timeout_s: 2.0
+    camera_sector_min_confidence: 0.20
+    camera_detection_topics:
+      - /gated_camera/detection_points
+      - /gated_camera/right/detection_points
+      - /gated_camera/back/detection_points
+      - /gated_camera/left/detection_points
     obstacle_lookahead: 34.0
     obstacle_lateral_window: 13.0
     obstacle_clearance: 5.5
@@ -461,6 +707,8 @@ usv_target_follower:
     obstacle_slowdown_gain: 0.38
     min_avoidance_speed_scale: 0.50
     centered_obstacle_bias: 1.0
+    min_obstacle_confidence: 0.35
+    min_obstacle_hits: 2
 
 wave_buoyancy_node:
   ros__parameters:

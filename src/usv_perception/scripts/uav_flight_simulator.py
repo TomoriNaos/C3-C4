@@ -53,7 +53,7 @@ class UavFlightSimulator(Node):
             'command_topic': '/uav/sim/command', 'estimated_pose_topic': '/uav/sim/estimated_pose',
             'estimated_twist_topic': '/uav/sim/estimated_twist', 'status_topic': '/uav/sim/status',
             'update_rate_hz': 30.0, 'command_delay_s': 0.22, 'command_timeout_s': 1.5,
-            'max_speed_mps': 5.0, 'max_climb_rate_mps': 2.0, 'max_accel_mps2': 2.4,
+            'max_speed_mps': 5.0, 'position_speed_gain': 0.72, 'max_climb_rate_mps': 2.0, 'max_accel_mps2': 2.4,
             'velocity_time_constant_s': 0.65, 'max_yaw_rate_rps': 1.25,
             'yaw_time_constant_s': 0.45, 'max_bank_rad': 0.28, 'wind_speed_mps': 0.65,
             'wind_direction_rad': 0.35, 'wind_gust_mps': 0.28, 'wind_gust_hz': 0.16,
@@ -151,7 +151,9 @@ class UavFlightSimulator(Node):
         horizontal_distance = math.hypot(dx, dy)
         velocity = [0.0, 0.0, clamp(0.9 * dz, -float(self.get_parameter('max_climb_rate_mps').value), float(self.get_parameter('max_climb_rate_mps').value))]
         if horizontal_distance > 1e-4:
-            speed = min(float(self.get_parameter('max_speed_mps').value), 0.72 * horizontal_distance)
+            speed = min(
+                float(self.get_parameter('max_speed_mps').value),
+                float(self.get_parameter('position_speed_gain').value) * horizontal_distance)
             velocity[0], velocity[1] = speed * dx / horizontal_distance, speed * dy / horizontal_distance
         _, self.target_pitch, yaw = euler_from_quaternion(self.active_command.pose.orientation)
         return velocity, yaw

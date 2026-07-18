@@ -14,7 +14,7 @@ class MmwaveDetectionDebug(Node):
 
         self._subs = []
         self.topic_map = {}
-        for height in ('h10m', 'h4m', 'h1p9m', 'h1p5m', 'h1m'):
+        for height in ('h3m', 'h4m', 'h1p9m'):
             for sector in ('front', 'right', 'back', 'left'):
                 name = f'{height}_{sector}'
                 self.topic_map[name] = f'/mmwave/{sector}/{height}/detections'

@@ -31,6 +31,8 @@ class SonarScanSimulator(Node):
             'near_detection_probability': 0.96, 'far_detection_probability': 0.52,
             'false_alarm_rate_per_scan': 0.18, 'multipath_probability': 0.10,
             'multipath_range_bias_m': 1.8, 'latency_mean_ms': 95.0, 'latency_jitter_ms': 35.0,
+            'cloud_min_points': 4, 'cloud_max_points': 10,
+            'cloud_range_spread_m': 0.35, 'cloud_bearing_spread_rad': 0.012,
             'sound_speed_mps': 1482.0, 'random_seed': 29,
         }
         for name, value in defaults.items():
@@ -114,13 +116,24 @@ class SonarScanSimulator(Node):
         return detection
 
     def make_cloud(self, header, measured_range, bearing, cluster_size):
-        count = max(3, min(12, cluster_size if cluster_size else 3))
+        min_points = int(self.get_parameter('cloud_min_points').value)
+        max_points = int(self.get_parameter('cloud_max_points').value)
+        count = max(min_points, min(max_points, cluster_size + 2 if cluster_size else min_points))
+        range_spread = float(self.get_parameter('cloud_range_spread_m').value)
+        bearing_spread = float(self.get_parameter('cloud_bearing_spread_rad').value)
         points = []
-        for index in range(count):
-            spread = (index - 0.5 * (count - 1)) * 0.10
-            point_range = measured_range + self.random.gauss(0.0, 0.08)
-            point_bearing = bearing + spread + self.random.gauss(0.0, 0.006)
-            points.append((self.sensor_offset + point_range * math.cos(point_bearing), point_range * math.sin(point_bearing), 0.0, max(0.05, 1.0 - abs(spread) * 3.0)))
+        for _ in range(count):
+            point_range = max(0.0, measured_range + self.random.gauss(0.0, range_spread))
+            point_bearing = bearing + self.random.gauss(0.0, bearing_spread)
+            radial_error = abs(point_range - measured_range)
+            bearing_error = abs(point_bearing - bearing)
+            intensity = max(0.12, 1.0 - 0.9 * radial_error - 12.0 * bearing_error)
+            points.append((
+                self.sensor_offset + point_range * math.cos(point_bearing),
+                point_range * math.sin(point_bearing),
+                0.0,
+                intensity,
+            ))
         cloud = PointCloud2()
         cloud.header, cloud.height, cloud.width = header, 1, len(points)
         cloud.is_bigendian, cloud.is_dense, cloud.point_step = False, True, 16
