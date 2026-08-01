@@ -62,6 +62,11 @@ struct StandardPoint
   float bbox_w{0.0F};
   float bbox_h{0.0F};
   float radial_velocity{0.0F};
+  float power{0.0F};
+  float snr{0.0F};
+  float range{0.0F};
+  float azimuth_rad{0.0F};
+  float point_score{0.0F};
 };
 
 struct TimedCloud
@@ -516,7 +521,7 @@ public:
     radar_display_max_points_per_cluster_ =
       declare_parameter<int>("radar_display_max_points_per_cluster", 6);
     max_range_m_ = declare_parameter<double>("max_range_m", 160.0);
-    radar_min_range_m_ = declare_parameter<double>("radar_min_range_m", 12.0);
+    radar_min_range_m_ = declare_parameter<double>("radar_min_range_m", 1.0);
     radar_near_heatmap_radius_m_ = declare_parameter<double>("radar_near_heatmap_radius_m", 35.0);
     radar_near_heatmap_min_weight_ = declare_parameter<double>("radar_near_heatmap_min_weight", 0.10);
     close_range_m_ = declare_parameter<double>("close_range_m", 30.0);
@@ -570,6 +575,29 @@ public:
     neural_radar_residual_mean_max_ =
       declare_parameter<double>("neural_radar_residual_mean_max", 3.5);
     neural_radar_cfar_scale_ = declare_parameter<double>("neural_radar_cfar_scale", 1.35);
+    radar_point_filter_enabled_ = declare_parameter<bool>("radar_point_filter_enabled", true);
+    radar_filter_zone_a_max_m_ = declare_parameter<double>("radar_filter_zone_a_max_m", 1.0);
+    radar_filter_zone_b_max_m_ = declare_parameter<double>("radar_filter_zone_b_max_m", 100.0);
+    radar_filter_zone_c_max_m_ = declare_parameter<double>("radar_filter_zone_c_max_m", 300.0);
+    radar_filter_zone_b_min_snr_ = declare_parameter<double>("radar_filter_zone_b_min_snr", 0.4);
+    radar_filter_zone_c_min_snr_ = declare_parameter<double>("radar_filter_zone_c_min_snr", 0.3);
+    radar_filter_zone_d_min_snr_ = declare_parameter<double>("radar_filter_zone_d_min_snr", 0.3);
+    radar_filter_zone_b_min_power_ = declare_parameter<double>("radar_filter_zone_b_min_power", 0.0005);
+    radar_filter_zone_c_min_power_ = declare_parameter<double>("radar_filter_zone_c_min_power", 0.0003);
+    radar_filter_zone_d_min_power_ = declare_parameter<double>("radar_filter_zone_d_min_power", 0.0002);
+    radar_filter_min_point_score_ = declare_parameter<double>("radar_filter_min_point_score", 0.8);
+    radar_filter_score_intensity_scale_ =
+      declare_parameter<double>("radar_filter_score_intensity_scale", 8.0);
+    radar_filter_history_frames_ = declare_parameter<int>("radar_filter_history_frames", 3);
+    radar_filter_fail_open_ = declare_parameter<bool>("radar_filter_fail_open", true);
+    radar_filter_local_cfar_enabled_ = declare_parameter<bool>("radar_filter_local_cfar_enabled", true);
+    radar_filter_local_range_bin_m_ = declare_parameter<double>("radar_filter_local_range_bin_m", 5.0);
+    radar_filter_local_azimuth_bin_deg_ =
+      declare_parameter<double>("radar_filter_local_azimuth_bin_deg", 1.0);
+    radar_filter_local_guard_cells_ = declare_parameter<int>("radar_filter_local_guard_cells", 1);
+    radar_filter_local_train_cells_ = declare_parameter<int>("radar_filter_local_train_cells", 3);
+    radar_filter_local_os_quantile_ = declare_parameter<double>("radar_filter_local_os_quantile", 0.75);
+    radar_filter_local_cfar_scale_ = declare_parameter<double>("radar_filter_local_cfar_scale", 1.25);
     detected_suppression_radius_ = declare_parameter<double>("detected_suppression_radius", 9.0);
     confirmation_radius_ = declare_parameter<double>("confirmation_radius", 7.0);
     semantic_confirmation_radius_ = declare_parameter<double>("semantic_confirmation_radius", 12.0);
@@ -733,6 +761,9 @@ private:
       frame.stamp = now();
     }
     frame.points = parse_cloud(*msg, source_id, confidence_scale);
+    if (std::abs(source_id - kSrcRadar) < 0.5F) {
+      frame.points = filter_radar_detection_points(frame.points);
+    }
     if (!frame.points.empty()) {
       buffer.push_back(std::move(frame));
       prune_buffer(buffer, now());
@@ -855,6 +886,10 @@ private:
     const int offset_bbox_w = field_offset(msg, "bbox_w");
     const int offset_bbox_h = field_offset(msg, "bbox_h");
     const int offset_radial_velocity = field_offset(msg, "radial_velocity");
+    const int offset_power = field_offset(msg, "power");
+    const int offset_snr = field_offset(msg, "snr");
+    const int offset_range = field_offset(msg, "range");
+    const int offset_azimuth_deg = field_offset(msg, "azimuth_deg");
 
     const std::size_t count = static_cast<std::size_t>(msg.width) * static_cast<std::size_t>(msg.height);
     const std::size_t stride = std::max<std::size_t>(1, count / static_cast<std::size_t>(std::max(1, max_points_per_cloud_)));
@@ -888,6 +923,25 @@ private:
       point.radial_velocity = offset_radial_velocity >= 0 ? read_float(base, offset_radial_velocity) : 0.0F;
       if (!std::isfinite(point.radial_velocity)) {
         point.radial_velocity = 0.0F;
+      }
+      point.power = offset_power >= 0 ? read_float(base, offset_power) : point.intensity;
+      point.snr = offset_snr >= 0 ? read_float(base, offset_snr) : point.intensity;
+      point.range = offset_range >= 0 ? read_float(base, offset_range) : std::hypot(point.x, point.y);
+      const float azimuth_deg = offset_azimuth_deg >= 0 ?
+        read_float(base, offset_azimuth_deg) :
+        static_cast<float>(std::atan2(point.y, point.x) * 180.0 / M_PI);
+      point.azimuth_rad = static_cast<float>(azimuth_deg * M_PI / 180.0);
+      if (!std::isfinite(point.power)) {
+        point.power = 0.0F;
+      }
+      if (!std::isfinite(point.snr)) {
+        point.snr = 0.0F;
+      }
+      if (!std::isfinite(point.range) || point.range <= 0.0F) {
+        point.range = std::hypot(point.x, point.y);
+      }
+      if (!std::isfinite(point.azimuth_rad)) {
+        point.azimuth_rad = static_cast<float>(std::atan2(point.y, point.x));
       }
       points.push_back(point);
     }
@@ -1033,6 +1087,206 @@ private:
       output.push_back(points[i]);
     }
     return output;
+  }
+
+  int radar_range_zone(double range_m) const
+  {
+    if (range_m < radar_filter_zone_a_max_m_) {
+      return 0;
+    }
+    if (range_m < radar_filter_zone_b_max_m_) {
+      return 1;
+    }
+    if (range_m < radar_filter_zone_c_max_m_) {
+      return 2;
+    }
+    return 3;
+  }
+
+  bool radar_point_hard_filter(const StandardPoint & point) const
+  {
+    if (!std::isfinite(point.range) || point.range <= 0.0F ||
+      !std::isfinite(point.azimuth_rad) || !std::isfinite(point.radial_velocity))
+    {
+      return false;
+    }
+
+    const int zone = radar_range_zone(point.range);
+    if (zone == 0) {
+      return false;
+    }
+    if (zone == 1) {
+      return point.snr >= radar_filter_zone_b_min_snr_ &&
+             point.power >= radar_filter_zone_b_min_power_;
+    }
+    if (zone == 2) {
+      return point.snr >= radar_filter_zone_c_min_snr_ &&
+             point.power >= radar_filter_zone_c_min_power_;
+    }
+    return point.snr >= radar_filter_zone_d_min_snr_ &&
+           point.power >= radar_filter_zone_d_min_power_;
+  }
+
+  std::pair<double, double> radar_power_score_thresholds(int zone) const
+  {
+    if (zone == 1) {
+      return {radar_filter_zone_b_min_power_, 2.0 * radar_filter_zone_b_min_power_};
+    }
+    if (zone == 2) {
+      return {radar_filter_zone_c_min_power_, 2.0 * radar_filter_zone_c_min_power_};
+    }
+    return {radar_filter_zone_d_min_power_, 2.0 * radar_filter_zone_d_min_power_};
+  }
+
+  double radar_detection_strength(const StandardPoint & point) const
+  {
+    return static_cast<double>(std::max(0.0F, point.power)) +
+           0.05 * static_cast<double>(std::max(0.0F, point.snr));
+  }
+
+  double radar_point_score(const StandardPoint & point) const
+  {
+    const int zone = radar_range_zone(point.range);
+    double score = 0.0;
+    if (zone == 1) {
+      if (point.snr >= 5.5F) {
+        score += 4.0;
+      } else if (point.snr >= 4.0F) {
+        score += 3.0;
+      } else if (point.snr >= 3.0F) {
+        score += 1.5;
+      }
+    } else {
+      if (point.snr >= 5.5F) {
+        score += 4.0;
+      } else if (point.snr >= 4.0F) {
+        score += 3.0;
+      } else if (point.snr >= 2.5F) {
+        score += 1.5;
+      }
+    }
+
+    const auto [low_power, mid_power] = radar_power_score_thresholds(zone);
+    if (point.power >= mid_power) {
+      score += 3.0;
+    } else if (point.power >= low_power) {
+      score += 1.5;
+    }
+    if (zone == 2) {
+      score += 0.5;
+    } else if (zone == 3) {
+      score += 1.0;
+    }
+    if (std::abs(point.radial_velocity) >= 0.2F) {
+      score += 0.5;
+    }
+    return score;
+  }
+
+  std::vector<StandardPoint> radar_local_adaptive_detection(
+    const std::vector<StandardPoint> & points) const
+  {
+    if (!radar_filter_local_cfar_enabled_ || points.empty()) {
+      return points;
+    }
+
+    std::vector<StandardPoint> kept;
+    kept.reserve(points.size());
+    const double az_bin_rad = std::max(1e-6, radar_filter_local_azimuth_bin_deg_ * M_PI / 180.0);
+    const double range_bin = std::max(1e-6, radar_filter_local_range_bin_m_);
+    const int guard_cells = std::max(0, radar_filter_local_guard_cells_);
+    const int train_cells = std::max(1, radar_filter_local_train_cells_);
+
+    for (const auto & point : points) {
+      std::vector<double> reference_values;
+      reference_values.reserve(points.size());
+      const int point_range_bin = static_cast<int>(
+        std::floor(static_cast<double>(point.range) / range_bin));
+      const int point_azimuth_bin = static_cast<int>(
+        std::floor(static_cast<double>(point.azimuth_rad) / az_bin_rad));
+
+      for (const auto & other : points) {
+        const int other_range_bin = static_cast<int>(
+          std::floor(static_cast<double>(other.range) / range_bin));
+        const int other_azimuth_bin = static_cast<int>(
+          std::floor(static_cast<double>(other.azimuth_rad) / az_bin_rad));
+        const int dr = std::abs(other_range_bin - point_range_bin);
+        const int da = std::abs(other_azimuth_bin - point_azimuth_bin);
+        const bool in_guard = dr <= guard_cells && da <= guard_cells;
+        const bool in_train = dr <= guard_cells + train_cells && da <= guard_cells + train_cells;
+        if (!in_train || in_guard) {
+          continue;
+        }
+        reference_values.push_back(radar_detection_strength(other));
+      }
+
+      if (reference_values.size() < 6U) {
+        kept.push_back(point);
+        continue;
+      }
+
+      std::sort(reference_values.begin(), reference_values.end());
+      const double quantile = std::clamp(radar_filter_local_os_quantile_, 0.0, 1.0);
+      const auto os_index = std::min(
+        reference_values.size() - 1U,
+        static_cast<std::size_t>(
+          std::floor(quantile * static_cast<double>(reference_values.size() - 1U))));
+      const double threshold = radar_filter_local_cfar_scale_ * reference_values[os_index];
+      if (radar_detection_strength(point) >= threshold) {
+        kept.push_back(point);
+      }
+    }
+    return kept;
+  }
+
+  std::vector<StandardPoint> filter_radar_detection_points(
+    const std::vector<StandardPoint> & raw_points)
+  {
+    if (!radar_point_filter_enabled_ || raw_points.empty()) {
+      return raw_points;
+    }
+
+    radar_filter_history_.push_back(raw_points);
+    const std::size_t history_limit = static_cast<std::size_t>(
+      std::clamp(radar_filter_history_frames_, 1, 4));
+    while (radar_filter_history_.size() > history_limit) {
+      radar_filter_history_.pop_front();
+    }
+
+    std::vector<StandardPoint> fused_raw;
+    std::size_t total_size = 0;
+    for (const auto & frame : radar_filter_history_) {
+      total_size += frame.size();
+    }
+    fused_raw.reserve(total_size);
+    for (const auto & frame : radar_filter_history_) {
+      fused_raw.insert(fused_raw.end(), frame.begin(), frame.end());
+    }
+
+    std::vector<StandardPoint> scored;
+    scored.reserve(fused_raw.size());
+    for (auto point : fused_raw) {
+      if (!radar_point_hard_filter(point)) {
+        continue;
+      }
+      point.point_score = static_cast<float>(radar_point_score(point));
+      if (point.point_score < radar_filter_min_point_score_) {
+        continue;
+      }
+      const double score_intensity = static_cast<double>(point.point_score) /
+        std::max(1e-3, radar_filter_score_intensity_scale_);
+      point.intensity = static_cast<float>(
+        std::clamp(std::max(static_cast<double>(point.intensity), score_intensity), 0.0, 1.0));
+      scored.push_back(point);
+    }
+    if (scored.empty() && radar_filter_fail_open_) {
+      return fused_raw.empty() ? raw_points : fused_raw;
+    }
+    auto filtered = radar_local_adaptive_detection(scored);
+    if (filtered.empty() && radar_filter_fail_open_) {
+      return scored.empty() ? fused_raw : scored;
+    }
+    return filtered;
   }
 
   std::vector<StandardPoint> filter_neural_modal_clutter(
@@ -3184,7 +3438,7 @@ private:
   int radar_display_min_cluster_points_{2};
   int radar_display_max_points_per_cluster_{6};
   double max_range_m_{160.0};
-  double radar_min_range_m_{6.0};
+  double radar_min_range_m_{1.0};
   double radar_near_heatmap_radius_m_{35.0};
   double radar_near_heatmap_min_weight_{0.10};
   double close_range_m_{30.0};
@@ -3236,6 +3490,27 @@ private:
   int neural_radar_min_track_hits_{4};
   double neural_radar_residual_mean_max_{3.5};
   double neural_radar_cfar_scale_{1.35};
+  bool radar_point_filter_enabled_{true};
+  double radar_filter_zone_a_max_m_{1.0};
+  double radar_filter_zone_b_max_m_{100.0};
+  double radar_filter_zone_c_max_m_{300.0};
+  double radar_filter_zone_b_min_snr_{0.4};
+  double radar_filter_zone_c_min_snr_{0.3};
+  double radar_filter_zone_d_min_snr_{0.3};
+  double radar_filter_zone_b_min_power_{0.0005};
+  double radar_filter_zone_c_min_power_{0.0003};
+  double radar_filter_zone_d_min_power_{0.0002};
+  double radar_filter_min_point_score_{0.8};
+  double radar_filter_score_intensity_scale_{8.0};
+  int radar_filter_history_frames_{3};
+  bool radar_filter_fail_open_{true};
+  bool radar_filter_local_cfar_enabled_{true};
+  double radar_filter_local_range_bin_m_{5.0};
+  double radar_filter_local_azimuth_bin_deg_{1.0};
+  int radar_filter_local_guard_cells_{1};
+  int radar_filter_local_train_cells_{3};
+  double radar_filter_local_os_quantile_{0.75};
+  double radar_filter_local_cfar_scale_{1.25};
   double detected_suppression_radius_{9.0};
   double confirmation_radius_{7.0};
   double semantic_confirmation_radius_{12.0};
@@ -3281,6 +3556,7 @@ private:
   std::deque<TimedCloud> depth_buffer_;
   std::vector<std::deque<TimedCloud>> sonar_frame_windows_;
   std::vector<NeuralClutterTrack> neural_clutter_tracks_;
+  std::deque<std::vector<StandardPoint>> radar_filter_history_;
   std::vector<DetectedObject> detected_objects_;
   int next_detected_object_id_{1};
 

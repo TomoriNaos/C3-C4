@@ -130,6 +130,9 @@ public:
     obstacle_slowdown_gain_ = declare_parameter<double>("obstacle_slowdown_gain", 0.38);
     min_avoidance_speed_scale_ = declare_parameter<double>("min_avoidance_speed_scale", 0.50);
     centered_obstacle_bias_ = declare_parameter<double>("centered_obstacle_bias", 1.0);
+    avoidance_max_bearing_offset_ = declare_parameter<double>("avoidance_max_bearing_offset", 0.95);
+    avoidance_target_exclusion_radius_m_ =
+      declare_parameter<double>("avoidance_target_exclusion_radius_m", 8.0);
     min_obstacle_confidence_ = declare_parameter<double>("min_obstacle_confidence", 0.35);
     min_obstacle_hits_ = declare_parameter<int>("min_obstacle_hits", 2);
 
@@ -718,7 +721,7 @@ private:
   {
     AvoidanceCommand command;
     for (const auto & obstacle : tracks) {
-      if (obstacle.id == target_id) {
+      if (obstacle.id == target_id || is_target_neighbor(obstacle)) {
         continue;
       }
       if (obstacle.confidence < min_obstacle_confidence_ ||
@@ -759,8 +762,18 @@ private:
         command.bearing_offset += side * avoidance_gain_ * 0.9;
       }
     }
-    command.bearing_offset = std::clamp(command.bearing_offset, -0.95, 0.95);
+    const double max_offset = std::max(0.0, avoidance_max_bearing_offset_);
+    command.bearing_offset = std::clamp(command.bearing_offset, -max_offset, max_offset);
     return command;
+  }
+
+  bool is_target_neighbor(const TrackObservation & track) const
+  {
+    if (!has_target_ || avoidance_target_exclusion_radius_m_ <= 0.0) {
+      return false;
+    }
+    return std::hypot(track.x - target_.x, track.y - target_.y) <=
+           avoidance_target_exclusion_radius_m_;
   }
 
   bool has_recent_target(const std::chrono::steady_clock::time_point & now) const
@@ -1043,6 +1056,8 @@ private:
   double obstacle_slowdown_gain_{0.38};
   double min_avoidance_speed_scale_{0.50};
   double centered_obstacle_bias_{1.0};
+  double avoidance_max_bearing_offset_{0.95};
+  double avoidance_target_exclusion_radius_m_{8.0};
   double min_obstacle_confidence_{0.35};
   int min_obstacle_hits_{2};
   double x_{0.0};

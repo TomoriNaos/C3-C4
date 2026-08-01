@@ -52,14 +52,14 @@ radar_sonar_tracker:
     mahalanobis_gate: 3.0
     velocity_gate_mps: 1.0
     feature_similarity_gate: 0.70
-    ais_confidence: 0.88
-    min_ais_confidence: 0.45
+    ais_confidence: 0.90
+    min_ais_confidence: 0.40
     # AIS refreshes any visual track after spatial/MMSI association. Only the
     # configured target class may create a track without prior YOLO evidence.
     ais_can_create_tracks: false
     ais_can_create_target_tracks: true
     ais_target_class_ids: [0.0]
-    ais_maintenance_gate_m: 25.0
+    ais_maintenance_gate_m: 45.0
 
 c3_multimodal_buffer_fusion:
   ros__parameters:
@@ -122,7 +122,29 @@ c3_multimodal_buffer_fusion:
     max_range_m: 160.0
     # The converter now suppresses near-field sea clutter itself, so close
     # radar target returns can stay visible in fusion diagnostics.
-    radar_min_range_m: 2.0
+    radar_min_range_m: 1.0
+    # Internal mmWave prefilter before heatmap/tracking: uses range zones,
+    # SNR/power scoring, radial velocity, and a local OS-CFAR approximation.
+    radar_point_filter_enabled: true
+    radar_filter_zone_a_max_m: 1.0
+    radar_filter_zone_b_max_m: 100.0
+    radar_filter_zone_c_max_m: 300.0
+    radar_filter_zone_b_min_snr: 0.4
+    radar_filter_zone_c_min_snr: 0.3
+    radar_filter_zone_d_min_snr: 0.3
+    radar_filter_zone_b_min_power: 0.0005
+    radar_filter_zone_c_min_power: 0.0003
+    radar_filter_zone_d_min_power: 0.0002
+    radar_filter_min_point_score: 0.8
+    radar_filter_history_frames: 3
+    radar_filter_fail_open: true
+    radar_filter_local_cfar_enabled: true
+    radar_filter_local_range_bin_m: 5.0
+    radar_filter_local_azimuth_bin_deg: 1.0
+    radar_filter_local_guard_cells: 1
+    radar_filter_local_train_cells: 3
+    radar_filter_local_os_quantile: 0.75
+    radar_filter_local_cfar_scale: 1.25
     # Keep near-hull wake clutter visible for diagnostics but prevent it from
     # dominating the UAV-search heatmap.
     radar_near_heatmap_radius_m: 50.0
@@ -707,6 +729,8 @@ usv_target_follower:
     obstacle_slowdown_gain: 0.38
     min_avoidance_speed_scale: 0.50
     centered_obstacle_bias: 1.0
+    avoidance_max_bearing_offset: 0.55
+    avoidance_target_exclusion_radius_m: 9.0
     min_obstacle_confidence: 0.35
     min_obstacle_hits: 2
 
