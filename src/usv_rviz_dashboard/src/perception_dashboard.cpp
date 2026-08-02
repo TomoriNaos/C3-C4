@@ -28,24 +28,8 @@ namespace
 constexpr int kShipGated = 0;
 constexpr int kShipDepth = 1;
 constexpr int kUavGated = 2;
-constexpr int kRadar = 3;
-constexpr int kSonar = 4;
-constexpr int kHeatmap = 5;
-constexpr int kShipGatedBev = 6;
-constexpr int kUavGatedBev = 7;
-constexpr int kDepthBev = 8;
-constexpr int kClusterOverlay = 9;
-constexpr int kInspectionClusters = 10;
-
-int field_offset(const sensor_msgs::msg::PointCloud2 & msg, const std::string & name)
-{
-  for (const auto & field : msg.fields) {
-    if (field.name == name && field.datatype == sensor_msgs::msg::PointField::FLOAT32) {
-      return static_cast<int>(field.offset);
-    }
-  }
-  return -1;
-}
+constexpr int kHeatmap = 3;
+constexpr int kInspectionClusters = 4;
 }  // namespace
 
 PerceptionDashboard::PerceptionDashboard(QWidget * parent)
@@ -55,36 +39,36 @@ PerceptionDashboard::PerceptionDashboard(QWidget * parent)
   root->setContentsMargins(6, 6, 6, 6);
   root->setSpacing(6);
 
-  auto * image_rows = new QSplitter(Qt::Vertical);
-  image_rows->setChildrenCollapsible(false);
-  image_rows->setHandleWidth(7);
-  std::array<QSplitter *, 3> rows{};
-  for (auto & row : rows) {
-    row = new QSplitter(Qt::Horizontal, image_rows);
-    row->setChildrenCollapsible(false);
-    row->setHandleWidth(7);
-    connect(row, &QSplitter::splitterMoved, this, [this](int, int) {
+  auto * rows = new QSplitter(Qt::Vertical, this);
+  rows->setChildrenCollapsible(false);
+  rows->setHandleWidth(7);
+  auto * top_row = new QSplitter(Qt::Horizontal, rows);
+  auto * bottom_row = new QSplitter(Qt::Horizontal, rows);
+  top_row->setChildrenCollapsible(false);
+  bottom_row->setChildrenCollapsible(false);
+  top_row->setHandleWidth(7);
+  bottom_row->setHandleWidth(7);
+  const auto refresh_all = [this](int, int) {
       for (int slot = 0; slot < static_cast<int>(image_labels_.size()); ++slot) {
         refresh_image_pixmap(slot);
       }
-    });
-  }
-  connect(image_rows, &QSplitter::splitterMoved, this, [this](int, int) {
-    for (int slot = 0; slot < static_cast<int>(image_labels_.size()); ++slot) {
-      refresh_image_pixmap(slot);
-    }
-  });
-  const std::array<QString, 11> titles{
+    };
+  connect(rows, &QSplitter::splitterMoved, this, refresh_all);
+  connect(top_row, &QSplitter::splitterMoved, this, refresh_all);
+  connect(bottom_row, &QSplitter::splitterMoved, this, refresh_all);
+
+  const std::array<QString, 5> titles{
     "船载门控相机（三色伪彩色）", "船载深度相机图像", "飞控载门控相机（三色伪彩色）",
-    "船载毫米波雷达 BEV", "船载声呐 BEV", "多模态融合热力图",
-    "船载门控相机 BEV 点云", "飞控载门控相机 BEV 点云", "船载深度相机 BEV 点云",
-    "多模态融合点云点簇与真实物体（红框）", "已识别追踪目标（亮绿）与运动预测"};
+    "多模态融合热力图", "已识别追踪目标（亮绿）与运动预测"};
   for (std::size_t i = 0; i < image_labels_.size(); ++i) {
-    image_labels_[i] = make_image_label(titles[i]);
-    rows[i / 4]->addWidget(image_labels_[i]);
+    auto * row = i < 3U ? top_row : bottom_row;
+    row->addWidget(make_image_tile(titles[i], &image_labels_[i]));
+    row->setStretchFactor(static_cast<int>(i < 3U ? i : i - 3U), 1);
   }
-  root->addWidget(image_rows, 1);
-  setMinimumSize(1100, 620);
+  rows->setStretchFactor(0, 1);
+  rows->setStretchFactor(1, 1);
+  root->addWidget(rows, 1);
+  setMinimumSize(980, 560);
 
   connect(this, &PerceptionDashboard::image_ready, this, &PerceptionDashboard::set_image, Qt::QueuedConnection);
 }
@@ -100,23 +84,7 @@ void PerceptionDashboard::onInitialize()
   subscribe_image("/depth_camera/image_raw", kShipDepth, false);
   subscribe_image("/uav/gated_camera/range_view", kUavGated, false);
   subscribe_image("/c3/heatmap/image", kHeatmap, false);
-  subscribe_image("/c3/heatmap/cluster_overlay", kClusterOverlay, false);
   subscribe_image("/c3/inspection_clusters/image", kInspectionClusters, false);
-  cloud_subscriptions_.push_back(node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/c3/buffer/radar_cloud", rclcpp::SensorDataQoS(),
-    [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(kRadar, msg, "船载毫米波雷达 BEV");}));
-  cloud_subscriptions_.push_back(node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/c3/buffer/sonar_cloud", rclcpp::SensorDataQoS(),
-    [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(kSonar, msg, "船载声呐 BEV");}));
-  cloud_subscriptions_.push_back(node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/gated_camera/detection_points", rclcpp::SensorDataQoS(),
-    [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(kShipGatedBev, msg, "船载门控相机 BEV 点云");}));
-  cloud_subscriptions_.push_back(node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/uav/gated_camera/detection_points", rclcpp::SensorDataQoS(),
-    [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(kUavGatedBev, msg, "飞控载门控相机 BEV 点云");}));
-  cloud_subscriptions_.push_back(node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "/depth_camera/detection_points", rclcpp::SensorDataQoS(),
-    [this](sensor_msgs::msg::PointCloud2::SharedPtr msg) {on_cloud(kDepthBev, msg, "船载深度相机 BEV 点云");}));
   // Make the dashboard visible at the top without hiding any RViz panels.
   QTimer::singleShot(0, this, [this]() {
     QDockWidget * dashboard_dock = nullptr;
@@ -132,7 +100,7 @@ void PerceptionDashboard::onInitialize()
     }
     dashboard_dock->setAllowedAreas(Qt::TopDockWidgetArea | Qt::BottomDockWidgetArea);
     main_window->addDockWidget(Qt::TopDockWidgetArea, dashboard_dock);
-    dashboard_dock->setMinimumHeight(620);
+    dashboard_dock->setMinimumHeight(560);
     dashboard_dock->show();
   });
 }
@@ -148,14 +116,6 @@ void PerceptionDashboard::on_image(int slot, bool pseudo_color, const sensor_msg
 {
   if (msg && should_render(slot, std::chrono::milliseconds(200))) {
     emit image_ready(slot, to_qimage(*msg, pseudo_color));
-  }
-}
-
-void PerceptionDashboard::on_cloud(
-  int slot, const sensor_msgs::msg::PointCloud2::SharedPtr msg, const QString & title)
-{
-  if (msg && should_render(slot, std::chrono::milliseconds(250))) {
-    emit image_ready(slot, cloud_to_qimage(*msg, title));
   }
 }
 
@@ -193,13 +153,7 @@ void PerceptionDashboard::refresh_image_pixmap(int slot)
     return;
   }
   auto * label = image_labels_[static_cast<std::size_t>(slot)];
-  QImage titled = image.convertToFormat(QImage::Format_RGB32);
-  QPainter painter(&titled);
-  painter.setPen(QColor(245, 245, 245));
-  painter.setBrush(QColor(0, 0, 0, 155));
-  painter.drawRect(0, 0, titled.width(), 26);
-  painter.drawText(8, 19, label->property("image_title").toString());
-  label->setPixmap(QPixmap::fromImage(titled).scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+  label->setPixmap(QPixmap::fromImage(image).scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
 }
 
 QImage PerceptionDashboard::to_qimage(const sensor_msgs::msg::Image & msg, bool pseudo_color)
@@ -294,61 +248,36 @@ QImage PerceptionDashboard::false_color(const QImage & image)
   return result;
 }
 
-QImage PerceptionDashboard::cloud_to_qimage(const sensor_msgs::msg::PointCloud2 & msg, const QString & title)
-{
-  constexpr int width = 420;
-  constexpr int height = 250;
-  constexpr double max_range = 150.0;
-  QImage image(width, height, QImage::Format_RGB32);
-  image.fill(QColor(10, 20, 30));
-  QPainter painter(&image);
-  painter.setRenderHint(QPainter::Antialiasing);
-  painter.setPen(QColor(70, 110, 135));
-  const QPoint origin(width / 2, height / 2);
-  const double pixel_radius = 0.48 * std::min(width, height);
-  for (int radius = 30; radius <= 150; radius += 30) {
-    const int pixels = static_cast<int>(radius / max_range * pixel_radius);
-    painter.drawEllipse(origin, pixels, pixels);
-  }
-  painter.drawLine(origin.x(), 0, origin.x(), height);
-  painter.drawLine(0, origin.y(), width, origin.y());
-  painter.setPen(QColor(220, 235, 245));
-  painter.drawText(8, 18, title);
-  painter.setPen(QColor(100, 160, 185));
-  painter.drawText(8, height - 5, "360 deg / range 150 m");
-
-  const int x_offset = field_offset(msg, "x");
-  const int y_offset = field_offset(msg, "y");
-  if (x_offset < 0 || y_offset < 0 || msg.point_step == 0) {
-    return image;
-  }
-  const std::size_t point_count = std::min<std::size_t>(msg.width * msg.height, msg.data.size() / msg.point_step);
-  painter.setPen(QPen(QColor(255, 205, 65), 4));
-  for (std::size_t index = 0; index < point_count; ++index) {
-    const auto * point = msg.data.data() + index * msg.point_step;
-    float x = 0.0F;
-    float y = 0.0F;
-    std::memcpy(&x, point + x_offset, sizeof(float));
-    std::memcpy(&y, point + y_offset, sizeof(float));
-    if (!std::isfinite(x) || !std::isfinite(y) || std::hypot(x, y) > max_range) {
-      continue;
-    }
-    const int px = origin.x() - static_cast<int>(y / max_range * pixel_radius);
-    const int py = origin.y() - static_cast<int>(x / max_range * pixel_radius);
-    painter.drawPoint(px, py);
-  }
-  return image;
-}
-
 QLabel * PerceptionDashboard::make_image_label(const QString & title)
 {
-  auto * label = new QLabel(title + "\nwaiting for topic...");
+  (void)title;
+  auto * label = new QLabel();
   label->setProperty("image_title", title);
   label->setAlignment(Qt::AlignCenter);
   label->setMinimumSize(220, 140);
   label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-  label->setStyleSheet("QLabel { background: #0b1720; color: #c9e7f5; border: 1px solid #315466; font-weight: bold; }");
+  label->setStyleSheet("QLabel { background: #0b1720; border: 1px solid #315466; }");
   return label;
+}
+
+QWidget * PerceptionDashboard::make_image_tile(const QString & title, QLabel ** image_label)
+{
+  auto * tile = new QWidget();
+  auto * layout = new QVBoxLayout(tile);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(2);
+
+  auto * title_label = new QLabel(title);
+  title_label->setAlignment(Qt::AlignCenter);
+  title_label->setFixedHeight(22);
+  title_label->setStyleSheet(
+    "QLabel { background: #102230; color: #c9e7f5; border: 1px solid #315466; "
+    "font-weight: bold; }");
+  layout->addWidget(title_label, 0);
+
+  *image_label = make_image_label(title);
+  layout->addWidget(*image_label, 1);
+  return tile;
 }
 
 }  // namespace usv_rviz_dashboard

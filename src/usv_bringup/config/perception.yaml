@@ -599,7 +599,7 @@ uav_patrol_controller:
     assist_goal_timeout: 3.0
     uav_track_timeout: 45.0
     tracker_target_max_misses: 80
-    external_goal_speed: 3.2
+    external_goal_speed: 2.2
     goal_arrive_radius: 2.0
     # The USV identifies targets inside 30 m.  UAV patrol and heatmap observation
     # remain outside this perimeter, then enable UAV-camera detections for tracking.
@@ -629,20 +629,27 @@ uav_flight_simulator:
     update_rate_hz: 30.0
     command_delay_s: 0.22
     command_timeout_s: 1.5
-    max_speed_mps: 10.0
-    position_speed_gain: 1.44
-    max_climb_rate_mps: 2.0
-    max_accel_mps2: 4.8
-    velocity_time_constant_s: 0.45
-    max_yaw_rate_rps: 1.25
-    yaw_time_constant_s: 0.45
-    wind_speed_mps: 0.65
+    max_speed_mps: 4.0
+    position_speed_gain: 0.62
+    max_climb_rate_mps: 1.4
+    max_accel_mps2: 1.8
+    max_jerk_mps3: 2.6
+    velocity_time_constant_s: 0.95
+    max_yaw_rate_rps: 0.65
+    yaw_time_constant_s: 0.90
+    max_yaw_accel_rps2: 1.1
+    max_bank_rad: 0.18
+    attitude_time_constant_s: 0.80
+    max_bank_rate_rps: 0.45
+    max_pitch_rate_rps: 0.35
+    wind_speed_mps: 0.45
     wind_direction_rad: 0.35
-    wind_gust_mps: 0.28
-    wind_gust_hz: 0.16
-    position_noise_stddev_m: 0.18
-    altitude_noise_stddev_m: 0.10
-    yaw_noise_stddev_rad: 0.025
+    wind_gust_mps: 0.12
+    wind_gust_hz: 0.10
+    position_noise_stddev_m: 0.10
+    altitude_noise_stddev_m: 0.06
+    yaw_noise_stddev_rad: 0.015
+    velocity_noise_stddev_mps: 0.05
 
 px4_offboard_bridge:
   ros__parameters:

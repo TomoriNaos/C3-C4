@@ -52,22 +52,19 @@ Visualization Manager:
       Collision Enabled: false
       Alpha: 1
       Value: true
-    - Class: rviz_default_plugins/PointCloud2
-      Name: C3 Radar Cloud
+    - Class: rviz_default_plugins/LaserScan
+      Name: Raw mmWave Radar
       Enabled: true
       Topic:
-        Value: /c3/buffer/radar_cloud
-        Reliability Policy: Reliable
+        Value: /radar/front/h3m/raw_scan
+        Reliability Policy: Best Effort
         Durability Policy: Volatile
         History Policy: Keep Last
         Depth: 5
-      Style: Spheres
-      Size (m): 0.25
-      Color Transformer: Intensity
-      Channel Name: intensity
-      Min Intensity: 0
-      Max Intensity: 1
-      Queue Size: 10
+      Style: Points
+      Size (m): 0.08
+      Color: 255; 205; 65
+      Use Fixed Frame: true
       Value: true
     - Class: rviz_default_plugins/LaserScan
       Name: Forward Sonar

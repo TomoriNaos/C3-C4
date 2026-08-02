@@ -53,12 +53,13 @@ class UavFlightSimulator(Node):
             'command_topic': '/uav/sim/command', 'estimated_pose_topic': '/uav/sim/estimated_pose',
             'estimated_twist_topic': '/uav/sim/estimated_twist', 'status_topic': '/uav/sim/status',
             'update_rate_hz': 30.0, 'command_delay_s': 0.22, 'command_timeout_s': 1.5,
-            'max_speed_mps': 5.0, 'position_speed_gain': 0.72, 'max_climb_rate_mps': 2.0, 'max_accel_mps2': 2.4,
-            'velocity_time_constant_s': 0.65, 'max_yaw_rate_rps': 1.25,
-            'yaw_time_constant_s': 0.45, 'max_bank_rad': 0.28, 'wind_speed_mps': 0.65,
-            'wind_direction_rad': 0.35, 'wind_gust_mps': 0.28, 'wind_gust_hz': 0.16,
-            'position_noise_stddev_m': 0.18, 'altitude_noise_stddev_m': 0.10,
-            'yaw_noise_stddev_rad': 0.025, 'velocity_noise_stddev_mps': 0.06,
+            'max_speed_mps': 4.0, 'position_speed_gain': 0.62, 'max_climb_rate_mps': 1.4, 'max_accel_mps2': 1.8,
+            'max_jerk_mps3': 2.6, 'velocity_time_constant_s': 0.95, 'max_yaw_rate_rps': 0.65,
+            'yaw_time_constant_s': 0.90, 'max_yaw_accel_rps2': 1.1, 'max_bank_rad': 0.18,
+            'attitude_time_constant_s': 0.80, 'max_bank_rate_rps': 0.45, 'max_pitch_rate_rps': 0.35,
+            'wind_speed_mps': 0.45, 'wind_direction_rad': 0.35, 'wind_gust_mps': 0.12, 'wind_gust_hz': 0.10,
+            'position_noise_stddev_m': 0.10, 'altitude_noise_stddev_m': 0.06,
+            'yaw_noise_stddev_rad': 0.015, 'velocity_noise_stddev_mps': 0.05,
             'random_seed': 17,
         }
         for name, value in defaults.items():
@@ -72,8 +73,11 @@ class UavFlightSimulator(Node):
         self.initialized = False
         self.position = [0.0, 0.0, 0.0]
         self.velocity = [0.0, 0.0, 0.0]
+        self.acceleration = [0.0, 0.0, 0.0]
         self.yaw = 0.0
         self.yaw_rate = 0.0
+        self.roll = 0.0
+        self.pitch = 0.0
         self.target_pitch = 0.0
         self.random = random.Random(int(self.get_parameter('random_seed').value))
 
@@ -125,8 +129,12 @@ class UavFlightSimulator(Node):
         max_accel = float(self.get_parameter('max_accel_mps2').value)
         if accel_norm > max_accel:
             desired_accel = [value * max_accel / accel_norm for value in desired_accel]
+        max_jerk = float(self.get_parameter('max_jerk_mps3').value)
         for index in range(3):
-            self.velocity[index] += desired_accel[index] * dt
+            delta_accel = clamp(desired_accel[index] - self.acceleration[index], -max_jerk * dt, max_jerk * dt)
+            self.acceleration[index] += delta_accel
+        for index in range(3):
+            self.velocity[index] += self.acceleration[index] * dt
         wind_x, wind_y = self.wind_velocity(now)
         self.position[0] += (self.velocity[0] + wind_x) * dt
         self.position[1] += (self.velocity[1] + wind_y) * dt
@@ -135,13 +143,26 @@ class UavFlightSimulator(Node):
         yaw_tau = max(0.05, float(self.get_parameter('yaw_time_constant_s').value))
         max_yaw_rate = float(self.get_parameter('max_yaw_rate_rps').value)
         desired_yaw_rate = clamp(wrap_angle(target_yaw - self.yaw) / yaw_tau, -max_yaw_rate, max_yaw_rate)
-        self.yaw_rate += clamp((desired_yaw_rate - self.yaw_rate) * 3.0, -4.0, 4.0) * dt
+        max_yaw_accel = float(self.get_parameter('max_yaw_accel_rps2').value)
+        self.yaw_rate += clamp(
+            (desired_yaw_rate - self.yaw_rate) / yaw_tau, -max_yaw_accel, max_yaw_accel) * dt
         self.yaw_rate = clamp(self.yaw_rate, -max_yaw_rate, max_yaw_rate)
         self.yaw = wrap_angle(self.yaw + self.yaw_rate * dt)
-        lateral_accel = -math.sin(self.yaw) * desired_accel[0] + math.cos(self.yaw) * desired_accel[1]
-        roll = clamp(-math.atan2(lateral_accel, 9.81), -float(self.get_parameter('max_bank_rad').value), float(self.get_parameter('max_bank_rad').value))
-        self.write_gazebo_state(roll, clamp(self.target_pitch, -0.45, 0.45), wind_x, wind_y)
-        self.publish_estimate(now, roll, wind_x, wind_y, fresh)
+        lateral_accel = -math.sin(self.yaw) * self.acceleration[0] + math.cos(self.yaw) * self.acceleration[1]
+        max_bank = float(self.get_parameter('max_bank_rad').value)
+        desired_roll = clamp(-math.atan2(lateral_accel, 9.81), -max_bank, max_bank)
+        desired_pitch = clamp(self.target_pitch, -0.35, 0.35)
+        attitude_tau = max(0.05, float(self.get_parameter('attitude_time_constant_s').value))
+        self.roll += clamp(
+            (desired_roll - self.roll) / attitude_tau,
+            -float(self.get_parameter('max_bank_rate_rps').value),
+            float(self.get_parameter('max_bank_rate_rps').value)) * dt
+        self.pitch += clamp(
+            (desired_pitch - self.pitch) / attitude_tau,
+            -float(self.get_parameter('max_pitch_rate_rps').value),
+            float(self.get_parameter('max_pitch_rate_rps').value)) * dt
+        self.write_gazebo_state(self.roll, self.pitch, wind_x, wind_y)
+        self.publish_estimate(now, self.roll, wind_x, wind_y, fresh)
 
     def command_velocity(self, fresh):
         if not fresh:
@@ -186,7 +207,7 @@ class UavFlightSimulator(Node):
         pose.pose.position.x = self.position[0] + self.random.gauss(0.0, pos_noise)
         pose.pose.position.y = self.position[1] + self.random.gauss(0.0, pos_noise)
         pose.pose.position.z = self.position[2] + self.random.gauss(0.0, float(self.get_parameter('altitude_noise_stddev_m').value))
-        qx, qy, qz, qw = quaternion_from_euler(roll, self.target_pitch, self.yaw + self.random.gauss(0.0, float(self.get_parameter('yaw_noise_stddev_rad').value)))
+        qx, qy, qz, qw = quaternion_from_euler(roll, self.pitch, self.yaw + self.random.gauss(0.0, float(self.get_parameter('yaw_noise_stddev_rad').value)))
         pose.pose.orientation.x, pose.pose.orientation.y = qx, qy
         pose.pose.orientation.z, pose.pose.orientation.w = qz, qw
         self.pose_pub.publish(pose)
